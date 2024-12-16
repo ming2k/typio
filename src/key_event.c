@@ -1,5 +1,5 @@
-#include "input_method/key_event.h"
-#include "input_method/utils.h"
+#include "key_event.h"
+#include "utils.h"
 #include <time.h>
 #include <sys/time.h>
 

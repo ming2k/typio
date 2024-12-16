@@ -1,5 +1,5 @@
-#include "input_method/context.h"
-#include "input_method/key_event.h"
+#include "context.h"
+#include "key_event.h"
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>

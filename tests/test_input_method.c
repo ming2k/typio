@@ -1,6 +1,6 @@
-#include "input_method/context.h"
-#include "input_method/key_event.h"
-#include "input_method/utils.h"
+#include "context.h"
+#include "key_event.h"
+#include "utils.h"
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>

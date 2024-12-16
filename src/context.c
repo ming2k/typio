@@ -1,5 +1,5 @@
-#include "input_method/context.h"
-#include "input_method/utils.h"
+#include "context.h"
+#include "utils.h"
 #include <string.h>
 
 #define MIN_BUFFER_SIZE 32
