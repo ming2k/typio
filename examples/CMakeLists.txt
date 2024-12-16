@@ -1,0 +1,2 @@
+add_executable(simple_input simple_input.c)
+target_link_libraries(simple_input PRIVATE input_method) 
