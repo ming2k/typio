@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(input_method VERSION 0.1.0 LANGUAGES C)
+project(typio VERSION 0.1.0 LANGUAGES C)
 
 # Set C standard
 set(CMAKE_C_STANDARD 11)
@@ -25,7 +25,9 @@ target_include_directories(input_method
 
 # Example program
 add_executable(simple_input examples/simple_input.c)
+add_executable(key_capture examples/key_capture.c)
 target_link_libraries(simple_input PRIVATE input_method)
+target_link_libraries(key_capture PRIVATE input_method)
 
 # Tests (optional)
 option(BUILD_TESTS "Build test programs" OFF)

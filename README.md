@@ -1,13 +1,4 @@
-# Input Method Framework
+# Typio
 
-A lightweight and extensible input method framework written in C.
+A smart input method framework focus on user data.
 
-## Features
-
-- Modular design
-- Unicode support
-- Cross-platform compatibility
-- Easy integration
-- Extensible architecture
-
-## Building
