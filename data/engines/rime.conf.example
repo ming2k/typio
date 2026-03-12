@@ -1,0 +1,9 @@
+# Typio Rime engine configuration
+schema = luna_pinyin
+page_size = 9
+popup_theme = auto
+candidate_layout = horizontal
+font_size = 11
+# shared_data_dir = /usr/share/rime-data
+# user_data_dir = ~/.local/share/typio/rime
+# full_check = false

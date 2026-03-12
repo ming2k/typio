@@ -1,0 +1,66 @@
+add_executable(test_core test_core.c)
+target_link_libraries(test_core PRIVATE typio-core)
+add_test(NAME test_core COMMAND test_core)
+
+add_executable(test_config test_config.c)
+target_link_libraries(test_config PRIVATE typio-core)
+add_test(NAME test_config COMMAND test_config)
+
+add_executable(test_engine_manager test_engine_manager.c)
+target_link_libraries(test_engine_manager PRIVATE typio-core)
+add_test(NAME test_engine_manager COMMAND test_engine_manager)
+
+add_executable(test_inline_ui
+    test_inline_ui.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/inline_ui.c
+)
+target_include_directories(test_inline_ui PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+)
+add_test(NAME test_inline_ui COMMAND test_inline_ui)
+
+if(HAVE_SYSTRAY)
+    add_executable(test_tray_icon_pixmap
+        test_tray_icon_pixmap.c
+        ${CMAKE_SOURCE_DIR}/src/server/tray/icon_pixmap.c
+    )
+    target_include_directories(test_tray_icon_pixmap PRIVATE
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}/src/server/tray
+        ${CAIRO_PANGO_INCLUDE_DIRS}
+    )
+    target_link_libraries(test_tray_icon_pixmap PRIVATE ${CAIRO_PANGO_LIBRARIES})
+    add_test(NAME test_tray_icon_pixmap COMMAND test_tray_icon_pixmap)
+endif()
+
+add_executable(test_startup_guard
+    test_startup_guard.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/startup_guard.c
+)
+target_include_directories(test_startup_guard PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+)
+add_test(NAME test_startup_guard COMMAND test_startup_guard)
+
+if(BUILD_RIME_ENGINE)
+    add_executable(test_rime_path_expand
+        test_rime_path_expand.c
+        ${CMAKE_SOURCE_DIR}/src/engines/rime/path_expand.c
+    )
+    target_include_directories(test_rime_path_expand PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/lib
+        ${CMAKE_SOURCE_DIR}/src/engines/rime
+    )
+    target_link_libraries(test_rime_path_expand PRIVATE typio-core)
+    add_test(NAME test_rime_path_expand COMMAND test_rime_path_expand)
+
+    add_executable(test_rime_engine test_rime_engine.c)
+    target_link_libraries(test_rime_engine PRIVATE typio-core)
+    target_compile_definitions(test_rime_engine PRIVATE
+        TYPIO_TEST_RIME_ENGINE_DIR="${CMAKE_BINARY_DIR}/engines"
+    )
+    add_dependencies(test_rime_engine typio-engine-rime)
+    add_test(NAME test_rime_engine COMMAND test_rime_engine)
+endif()

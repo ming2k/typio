@@ -1,0 +1,7 @@
+# Typio configuration example
+
+# The built-in basic engine is always available.
+default_engine = basic
+
+# When the Rime plugin is installed, you can switch to:
+# default_engine = rime

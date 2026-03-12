@@ -1,0 +1,80 @@
+# Typio Server
+
+set(TYPIO_SERVER_SOURCES main.c)
+set(TYPIO_SERVER_INCLUDE_DIRS
+    ${CMAKE_BINARY_DIR}
+    ${CMAKE_SOURCE_DIR}/src/lib
+)
+set(TYPIO_SERVER_LIBRARIES typio-core dl)
+
+# Wayland frontend support
+if(HAVE_WAYLAND)
+    # Generate protocol code
+    wayland_generate_protocol(
+        PROTOCOL_XML ${CMAKE_SOURCE_DIR}/protocols/input-method-unstable-v2.xml
+        GENERATED_SOURCES INPUT_METHOD_PROTOCOL_SOURCES
+    )
+
+    wayland_generate_protocol(
+        PROTOCOL_XML ${CMAKE_SOURCE_DIR}/protocols/virtual-keyboard-unstable-v1.xml
+        GENERATED_SOURCES VIRTUAL_KEYBOARD_PROTOCOL_SOURCES
+    )
+
+    list(APPEND TYPIO_SERVER_SOURCES
+        wayland/popup.c
+        wayland/startup_guard.c
+        wayland/wl_frontend.c
+        wayland/inline_ui.c
+        wayland/wl_input_method.c
+        wayland/wl_keyboard.c
+        ${INPUT_METHOD_PROTOCOL_SOURCES}
+        ${VIRTUAL_KEYBOARD_PROTOCOL_SOURCES}
+    )
+
+    list(APPEND TYPIO_SERVER_INCLUDE_DIRS
+        ${CMAKE_CURRENT_BINARY_DIR}/wayland-protocols
+        ${CMAKE_CURRENT_SOURCE_DIR}/wayland
+        ${CAIRO_PANGO_INCLUDE_DIRS}
+        ${WAYLAND_CLIENT_INCLUDE_DIRS}
+        ${XKBCOMMON_INCLUDE_DIRS}
+    )
+
+    list(APPEND TYPIO_SERVER_LIBRARIES
+        ${CAIRO_PANGO_LIBRARIES}
+        ${WAYLAND_CLIENT_LIBRARIES}
+        ${XKBCOMMON_LIBRARIES}
+    )
+endif()
+
+# System tray support
+if(HAVE_SYSTRAY)
+    list(APPEND TYPIO_SERVER_SOURCES
+        tray/icon_pixmap.c
+        tray/sni.c
+    )
+
+    list(APPEND TYPIO_SERVER_INCLUDE_DIRS
+        ${CMAKE_CURRENT_SOURCE_DIR}/tray
+        ${DBUS_INCLUDE_DIRS}
+    )
+
+    list(APPEND TYPIO_SERVER_LIBRARIES
+        ${DBUS_LIBRARIES}
+    )
+endif()
+
+add_executable(typio-server ${TYPIO_SERVER_SOURCES})
+
+target_include_directories(typio-server PRIVATE ${TYPIO_SERVER_INCLUDE_DIRS})
+
+target_link_libraries(typio-server PRIVATE ${TYPIO_SERVER_LIBRARIES})
+
+set_target_properties(typio-server PROPERTIES
+    OUTPUT_NAME "typio"
+    BUILD_RPATH "${CMAKE_BINARY_DIR}/src/lib"
+    INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+)
+
+install(TARGETS typio-server
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
