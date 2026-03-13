@@ -34,11 +34,21 @@ static int tests_passed = 0;
     } while (0)
 
 TEST(cleans_up_orphan_release_for_shortcut_modifiers) {
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(TYPIO_MOD_CTRL));
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(TYPIO_MOD_ALT));
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(TYPIO_MOD_SUPER));
-    ASSERT(!typio_wl_boundary_bridge_should_cleanup_orphan_release(TYPIO_MOD_SHIFT));
-    ASSERT(!typio_wl_boundary_bridge_should_cleanup_orphan_release(TYPIO_MOD_NONE));
+    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_MOD_CTRL, false));
+    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_MOD_ALT, false));
+    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_MOD_SUPER, false));
+    ASSERT(!typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_MOD_SHIFT, false));
+    ASSERT(!typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_MOD_NONE, false));
+}
+
+TEST(cleans_up_orphan_release_after_modifier_was_seen) {
+    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_MOD_NONE, true));
 }
 
 TEST(resets_carried_modifiers_outside_deactivating) {
@@ -71,6 +81,7 @@ int main(void) {
     printf("Running boundary bridge tests:\n");
 
     run_test_cleans_up_orphan_release_for_shortcut_modifiers();
+    run_test_cleans_up_orphan_release_after_modifier_was_seen();
     run_test_resets_carried_modifiers_outside_deactivating();
     run_test_carries_modifiers_only_for_owned_deactivation_with_mask();
 

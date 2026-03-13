@@ -145,6 +145,11 @@ static void keyboard_update_physical_modifier_state(TypioWlKeyboard *keyboard,
         keyboard->physical_modifiers |= bit;
     else
         keyboard->physical_modifiers &= ~bit;
+
+    if ((keyboard->physical_modifiers &
+         (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0) {
+        keyboard->saw_blocking_modifier = true;
+    }
 }
 
 static void keyboard_sync_physical_modifiers(TypioWlKeyboard *keyboard) {
@@ -506,6 +511,8 @@ static void kb_handle_modifiers(void *data,
     keyboard->mods_group = group;
     uint32_t cur_mods = xkb_to_typio_modifiers(keyboard);
     keyboard_sync_physical_modifiers(keyboard);
+    if ((cur_mods & (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0)
+        keyboard->saw_blocking_modifier = true;
 
     /* Cancel IME-side key repeat on blocking modifier transition */
     if (keyboard->repeating &&

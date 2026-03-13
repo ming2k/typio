@@ -77,6 +77,7 @@ struct TypioWlKeyboard {
     uint32_t mods_latched;
     uint32_t mods_locked;
     uint32_t mods_group;
+    bool saw_blocking_modifier;
 
     /* Key repeat */
     int32_t repeat_rate;    /* Keys per second */

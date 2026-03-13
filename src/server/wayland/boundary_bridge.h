@@ -16,7 +16,8 @@ extern "C" {
 #endif
 
 bool typio_wl_boundary_bridge_should_cleanup_orphan_release(
-    uint32_t modifiers);
+    uint32_t modifiers,
+    bool saw_blocking_modifier);
 bool typio_wl_boundary_bridge_should_reset_carried_modifiers(
     TypioWlLifecyclePhase phase,
     bool carried_vk_modifiers);
