@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-14
+
+### Added
+
+- **GTK4 control panel**: added the optional `typio-control` desktop client for
+  viewing runtime state, switching engines, and reloading configuration over
+  Typio's D-Bus control surface.
+- **D-Bus control methods**: the session-bus `org.typio.InputMethod1`
+  interface now exposes `ActivateEngine(s)` and `ReloadConfig()` in addition to
+  structured runtime properties.
+
+### Changed
+
+- **Status bus decoupled from tray support**: the runtime D-Bus status/control
+  interface is now controlled by `ENABLE_STATUS_BUS`, while tray support
+  remains separately controlled by `ENABLE_SYSTRAY`.
+- **Control-panel build option**: added `BUILD_CONTROL_PANEL` so the GTK4 UI is
+  built only when explicitly requested.
+- **Tray watcher handling simplified**: watcher ownership tracking now uses a
+  single D-Bus match/filter path and removes redundant polling-style fallback
+  logic.
+- **Lifecycle reactivation rules centralized**: deferred activate and
+  reactivation-commit decisions are now expressed through lifecycle helper
+  rules and covered by dedicated tests, instead of being implicit in
+  `wl_input_method.c` branches.
+
 ### Fixed
 
 - **Late tray-host registration recovery**: when `StatusNotifierWatcher` was
@@ -23,16 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `active` phase while the current session is still focused, preventing
   in-flight press/release pairs from being cut off before `done` commits the
   reactivation boundary.
-
-### Changed
-
-- **Lifecycle reactivation rules centralized**: deferred activate and
-  reactivation-commit decisions are now expressed through lifecycle helper
-  rules and covered by dedicated tests, instead of being implicit in
-  `wl_input_method.c` branches.
-- **Tray watcher handling simplified**: watcher ownership tracking now uses a
-  single D-Bus match/filter path and removes redundant polling-style fallback
-  logic.
+- **Explicit Ctrl+Shift engine switching**: modifier-only `Ctrl+Shift` chords
+  are now handled explicitly inside Typio so engine switching remains available
+  even while the IME keyboard grab is active.
+- **Narrower startup Enter suppression**: startup `Enter` suppression now only
+  applies during the short stale-key window of a fresh grab, reducing false
+  positives when switching windows and immediately pressing `Enter`.
 
 ## [1.0.3] - 2026-03-14
 
@@ -127,6 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `wayland_generate_protocol()` macro. Supports build-tree testing without
   installation.
 
+[1.1.0]: https://github.com/user/typio/releases/tag/v1.1.0
 [1.0.3]: https://github.com/user/typio/releases/tag/v1.0.3
 [1.0.2]: https://github.com/user/typio/releases/tag/v1.0.2
 [1.0.1]: https://github.com/user/typio/releases/tag/v1.0.1
