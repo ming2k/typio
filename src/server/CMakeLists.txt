@@ -61,6 +61,7 @@ endif()
 if(HAVE_SYSTRAY)
     list(APPEND TYPIO_SERVER_SOURCES
         tray/icon_pixmap.c
+        tray/bus.c
         tray/sni.c
     )
 
