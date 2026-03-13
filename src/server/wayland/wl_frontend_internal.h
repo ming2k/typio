@@ -48,13 +48,11 @@ typedef struct TypioWlPopup TypioWlPopup;
  *   IDLE ──press──▶ FORWARDED          (forwarded to app)
  *   IDLE ──press──▶ APP_SHORTCUT       (application shortcut bypasses engine)
  *   IDLE ──press──▶ SUPPRESSED_STARTUP (held key from previous grab)
- *   IDLE ──press──▶ SUPPRESSED_ENTER   (new Enter press inside startup guard)
  *   APP_SHORTCUT ─physical release──▶ IDLE
  *   FORWARDED ─force release──▶ RELEASED_PENDING
  *   FORWARDED ─physical release──▶ IDLE
  *   RELEASED_PENDING ─physical release──▶ IDLE  (consumed)
  *   SUPPRESSED_STARTUP ─physical release──▶ IDLE
- *   SUPPRESSED_ENTER ─physical release──▶ IDLE
  */
 
 /**

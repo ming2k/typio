@@ -87,9 +87,6 @@ static void keyboard_repeat_trace(TypioWlKeyboard *keyboard,
     case TYPIO_KEY_SUPPRESSED_STARTUP:
         route = "suppressed_startup";
         break;
-    case TYPIO_KEY_SUPPRESSED_ENTER:
-        route = "suppressed_enter";
-        break;
     }
 
     typio_wl_trace(keyboard->frontend,

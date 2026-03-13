@@ -30,7 +30,6 @@
 #endif
 
 static TypioInstance *g_instance = NULL;
-static volatile bool g_running = true;
 #ifdef HAVE_WAYLAND
 static TypioWlFrontend *g_wl_frontend = NULL;
 #endif
@@ -41,11 +40,8 @@ static TypioStatusBus *g_status_bus = NULL;
 static TypioTray *g_tray = NULL;
 #endif
 
-static volatile sig_atomic_t g_signal_received = 0;
-
 static void signal_handler(int sig) {
-    g_signal_received = sig;
-    g_running = false;
+    (void)sig;
 #ifdef HAVE_WAYLAND
     if (g_wl_frontend) {
         typio_wl_frontend_stop(g_wl_frontend);
@@ -237,7 +233,6 @@ static void tray_menu_callback(TypioTray *tray, const char *action, void *user_d
     (void)user_data;
 
     if (strcmp(action, "quit") == 0) {
-        g_running = false;
 #ifdef HAVE_WAYLAND
         if (g_wl_frontend) {
             typio_wl_frontend_stop(g_wl_frontend);

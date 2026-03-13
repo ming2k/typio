@@ -19,7 +19,6 @@ typedef enum {
     TYPIO_KEY_APP_SHORTCUT,
     TYPIO_KEY_RELEASED_PENDING,
     TYPIO_KEY_SUPPRESSED_STARTUP,
-    TYPIO_KEY_SUPPRESSED_ENTER,
 } TypioKeyTrackState;
 
 void typio_wl_key_tracking_reset(TypioKeyTrackState *states, size_t count);

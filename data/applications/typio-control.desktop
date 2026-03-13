@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Typio Control
+Comment=Control panel for Typio input method
+Exec=typio-control
+Icon=typio-keyboard
+Terminal=false
+StartupNotify=true
+Categories=Settings;Utility;
+Keywords=input;ime;keyboard;typio;

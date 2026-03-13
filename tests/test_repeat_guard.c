@@ -65,8 +65,6 @@ TEST(blocks_repeat_for_suppressed_or_pending_states) {
     ASSERT(!typio_wl_repeat_should_run_for_state(
         TYPIO_KEY_SUPPRESSED_STARTUP));
     ASSERT(!typio_wl_repeat_should_run_for_state(
-        TYPIO_KEY_SUPPRESSED_ENTER));
-    ASSERT(!typio_wl_repeat_should_run_for_state(
         TYPIO_KEY_RELEASED_PENDING));
 }
 

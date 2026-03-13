@@ -770,40 +770,42 @@ static void build_rime_submenu(DBusMessageIter *parent, TypioTray *tray) {
 }
 
 /* Handle DBusMenu GetLayout */
-static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
-    dbus_int32_t parent_id, depth;
-    char **property_names = NULL;
-    int n_property_names = 0;
-    DBusMessage *reply;
-    DBusMessageIter iter, root_st, root_dict, children;
-    bool parsed = false;
+static bool parse_menu_getlayout_request(DBusMessage *msg,
+                                         dbus_int32_t *parent_id,
+                                         dbus_int32_t *depth) {
+    DBusMessageIter iter;
 
-    /* Try standard signature (iias) */
-    if (dbus_message_get_args(msg, NULL,
-                              DBUS_TYPE_INT32, &parent_id,
-                              DBUS_TYPE_INT32, &depth,
-                              DBUS_TYPE_ARRAY, DBUS_TYPE_STRING, &property_names, &n_property_names,
-                              DBUS_TYPE_INVALID)) {
-        parsed = true;
-    } 
-    /* Fallback to legacy signature (ii) */
-    else if (dbus_message_get_args(msg, NULL,
-                                   DBUS_TYPE_INT32, &parent_id,
-                                   DBUS_TYPE_INT32, &depth,
-                                   DBUS_TYPE_INVALID)) {
-        parsed = true;
-        property_names = NULL;
-        n_property_names = 0;
+    if (!msg || !parent_id || !depth) {
+        return false;
     }
 
-    if (!parsed) {
+    if (!dbus_message_iter_init(msg, &iter) ||
+        dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_INT32) {
+        return false;
+    }
+    dbus_message_iter_get_basic(&iter, parent_id);
+
+    if (!dbus_message_iter_next(&iter) ||
+        dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_INT32) {
+        return false;
+    }
+    dbus_message_iter_get_basic(&iter, depth);
+    return true;
+}
+
+static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
+    dbus_int32_t parent_id;
+    dbus_int32_t depth;
+    DBusMessage *reply;
+    DBusMessageIter iter, root_st, root_dict, children;
+
+    if (!parse_menu_getlayout_request(msg, &parent_id, &depth)) {
         return dbus_message_new_error(msg, DBUS_ERROR_INVALID_ARGS,
                                       "Invalid arguments");
     }
 
     reply = dbus_message_new_method_return(msg);
     if (!reply) {
-        if (property_names) dbus_free_string_array(property_names);
         return NULL;
     }
 
@@ -878,10 +880,6 @@ static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
 
     dbus_message_iter_close_container(&root_st, &children);
     dbus_message_iter_close_container(&iter, &root_st);
-
-    if (property_names) {
-        dbus_free_string_array(property_names);
-    }
 
     return reply;
 }

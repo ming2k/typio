@@ -113,6 +113,13 @@ install(
     FILES_MATCHING PATTERN "*.example"
 )
 
+if(BUILD_CONTROL_PANEL)
+    install(
+        FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/applications/typio-control.desktop"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/applications"
+    )
+endif()
+
 install(
     EXPORT typio-targets
     FILE TypioTargets.cmake

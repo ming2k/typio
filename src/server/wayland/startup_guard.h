@@ -3,8 +3,7 @@
  * @brief Time-based startup filtering for freshly activated keyboard grabs
  *
  * Startup suppression is only for the very early "stale key may still be held"
- * window on a fresh grab. Enter uses a narrower rule layered on top of that
- * same startup window rather than a long independent timeout.
+ * window on a fresh grab.
  */
 
 #ifndef TYPIO_WL_STARTUP_GUARD_H
@@ -23,16 +22,12 @@ extern "C" {
 typedef enum {
     TYPIO_WL_STARTUP_SUPPRESS_NONE = 0,
     TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY,
-    TYPIO_WL_STARTUP_SUPPRESS_ENTER,
 } TypioWlStartupSuppressReason;
 
 bool typio_wl_startup_guard_should_ignore_stale_press(uint64_t started_at_ms,
                                                       uint64_t now_ms);
 bool typio_wl_startup_guard_should_cleanup_stale_release(uint64_t started_at_ms,
                                                          uint64_t now_ms);
-bool typio_wl_startup_guard_should_ignore_enter(uint64_t started_at_ms,
-                                                uint64_t now_ms,
-                                                uint32_t keysym);
 TypioWlStartupSuppressReason typio_wl_startup_guard_classify_press(
     uint64_t started_at_ms,
     uint64_t now_ms,

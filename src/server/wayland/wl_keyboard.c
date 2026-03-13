@@ -72,8 +72,6 @@ static const char *key_state_name(TypioKeyTrackState state) {
         return "released_pending";
     case TYPIO_KEY_SUPPRESSED_STARTUP:
         return "suppressed_startup";
-    case TYPIO_KEY_SUPPRESSED_ENTER:
-        return "suppressed_enter";
     default:
         return "unknown";
     }

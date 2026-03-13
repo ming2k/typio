@@ -62,8 +62,6 @@ static const char *key_route_state_name(TypioKeyTrackState state) {
         return "released_pending";
     case TYPIO_KEY_SUPPRESSED_STARTUP:
         return "suppressed_startup";
-    case TYPIO_KEY_SUPPRESSED_ENTER:
-        return "suppressed_enter";
     default:
         return "unknown";
     }
@@ -216,8 +214,7 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         return;
     }
 
-    if (kstate == TYPIO_KEY_SUPPRESSED_STARTUP ||
-        kstate == TYPIO_KEY_SUPPRESSED_ENTER) {
+    if (kstate == TYPIO_KEY_SUPPRESSED_STARTUP) {
         key_route_trace(keyboard, "press-ignore", key, keysym, modifiers, unicode,
                         kstate, "startup guarded repeat");
         typio_log(TYPIO_LOG_DEBUG,
@@ -268,26 +265,14 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
                   "Startup key suppression cleared (startup window elapsed)");
     }
 
-    if (suppress_reason != TYPIO_WL_STARTUP_SUPPRESS_NONE) {
-        TypioKeyTrackState suppressed_state =
-            suppress_reason == TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY
-                ? TYPIO_KEY_SUPPRESSED_STARTUP
-                : TYPIO_KEY_SUPPRESSED_ENTER;
-
-        key_set_state(frontend, key, suppressed_state);
-        if (suppress_reason == TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY)
-            keyboard->startup_suppressed_count++;
+    if (suppress_reason == TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY) {
+        key_set_state(frontend, key, TYPIO_KEY_SUPPRESSED_STARTUP);
+        keyboard->startup_suppressed_count++;
         key_route_trace(keyboard, "press-suppress", key, keysym, modifiers, unicode,
-                        suppressed_state,
-                        suppress_reason == TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY
-                            ? "startup stale"
-                            : "startup enter");
+                        TYPIO_KEY_SUPPRESSED_STARTUP, "startup stale");
         typio_log(TYPIO_LOG_DEBUG,
-                  "Suppressing startup key press: keycode=%u keysym=0x%x reason=%s",
-                  key, keysym,
-                  suppress_reason == TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY
-                      ? "stale"
-                      : "enter");
+                  "Suppressing startup key press: keycode=%u keysym=0x%x reason=stale",
+                  key, keysym);
         return;
     }
 
@@ -370,14 +355,6 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
         typio_wl_vk_forward_key(keyboard, time, key, WL_KEYBOARD_KEY_STATE_RELEASED, unicode);
         typio_log(TYPIO_LOG_DEBUG,
                   "Forwarding release for startup key: keycode=%u", key);
-        return;
-
-    case TYPIO_KEY_SUPPRESSED_ENTER:
-        key_route_trace(keyboard, "release-consume", key, keysym, modifiers, unicode,
-                        kstate, "suppressed enter");
-        key_clear_tracking(frontend, key);
-        typio_log(TYPIO_LOG_DEBUG,
-                  "Consumed release for suppressed Enter: keycode=%u", key);
         return;
 
     case TYPIO_KEY_APP_SHORTCUT:

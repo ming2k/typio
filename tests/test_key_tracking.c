@@ -38,7 +38,7 @@ TEST(reset_clears_all_states) {
         TYPIO_KEY_APP_SHORTCUT,
         TYPIO_KEY_RELEASED_PENDING,
         TYPIO_KEY_SUPPRESSED_STARTUP,
-        TYPIO_KEY_SUPPRESSED_ENTER,
+        TYPIO_KEY_IDLE,
         TYPIO_KEY_IDLE,
     };
 
@@ -64,7 +64,7 @@ TEST(mark_released_pending_only_changes_forwarded_keys) {
         TYPIO_KEY_APP_SHORTCUT,
         TYPIO_KEY_SUPPRESSED_STARTUP,
         TYPIO_KEY_FORWARDED,
-        TYPIO_KEY_SUPPRESSED_ENTER,
+        TYPIO_KEY_IDLE,
     };
 
     ASSERT(typio_wl_key_tracking_mark_released_pending(states, 6) == 3);
@@ -73,7 +73,7 @@ TEST(mark_released_pending_only_changes_forwarded_keys) {
     ASSERT(states[2] == TYPIO_KEY_RELEASED_PENDING);
     ASSERT(states[3] == TYPIO_KEY_SUPPRESSED_STARTUP);
     ASSERT(states[4] == TYPIO_KEY_RELEASED_PENDING);
-    ASSERT(states[5] == TYPIO_KEY_SUPPRESSED_ENTER);
+    ASSERT(states[5] == TYPIO_KEY_IDLE);
 }
 
 TEST(ctrl_shortcut_invariant_keeps_forwarded_key_until_boundary_cleanup) {

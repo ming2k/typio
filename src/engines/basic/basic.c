@@ -1,28 +1,14 @@
 #include "typio/typio.h"
 #include "typio_build_config.h"
 
-#include <stdlib.h>
-#include <stddef.h>
-
-typedef struct BasicEngineState {
-    int unused;
-} BasicEngineState;
-
 static TypioResult basic_init(TypioEngine *engine, TypioInstance *instance) {
+    (void)engine;
     (void)instance;
-
-    BasicEngineState *state = calloc(1, sizeof(BasicEngineState));
-    if (!state) {
-        return TYPIO_ERROR_OUT_OF_MEMORY;
-    }
-
-    typio_engine_set_user_data(engine, state);
     return TYPIO_OK;
 }
 
 static void basic_destroy(TypioEngine *engine) {
-    free(typio_engine_get_user_data(engine));
-    typio_engine_set_user_data(engine, NULL);
+    (void)engine;
 }
 
 static bool basic_has_blocking_modifiers(const TypioKeyEvent *event) {
