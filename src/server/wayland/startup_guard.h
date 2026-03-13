@@ -30,7 +30,6 @@ bool typio_wl_startup_guard_should_ignore_stale_press(uint64_t started_at_ms,
                                                       uint64_t now_ms);
 bool typio_wl_startup_guard_should_cleanup_stale_release(uint64_t started_at_ms,
                                                          uint64_t now_ms);
-bool typio_wl_startup_guard_should_cleanup_shortcut_orphan_release(uint32_t modifiers);
 bool typio_wl_startup_guard_should_ignore_enter(uint64_t started_at_ms,
                                                 uint64_t now_ms,
                                                 uint32_t keysym);

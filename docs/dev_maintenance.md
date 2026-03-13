@@ -35,9 +35,11 @@ The current lifecycle is:
 On deactivation:
 
 1. forwarded keys are force-released to the virtual keyboard
-2. repeat is cancelled
-3. on focus loss in `done`, the keyboard grab is destroyed
-4. per-key tracking state is reset
+2. modifier carry may preserve the last compositor-reported modifier mask across
+   the boundary for the newly focused client
+3. repeat is cancelled
+4. on focus loss in `done`, the keyboard grab is destroyed
+5. per-key tracking state is reset
 
 Rule: no `TypioKeyTrackState` value may survive from one activation to the next.
 
@@ -72,7 +74,7 @@ They have different ownership and release semantics.
 
 ## Startup Guard Rules
 
-The startup guard is intentionally split into two policies:
+The startup guard is intentionally split into two time-based policies:
 
 - stale-key guard: a very short window that absorbs keys already held when a new grab starts
 - Enter guard: a longer window that blocks accidental immediate submission when no composition is active
@@ -82,6 +84,9 @@ Classification is centralized in
 
 Rule: if a decision depends on "why" a key is suppressed, add that rule to the
 classifier instead of duplicating time-window logic in `wl_keyboard.c`.
+
+The startup guard does not own activation-boundary VK handoff decisions. Orphan
+release cleanup and carried modifier behavior belong to `boundary_bridge.*`.
 
 ## Lifecycle Cleanup Boundary
 
@@ -96,9 +101,26 @@ modifier-path operation. If a change needs to rewrite many key states at once,
 it belongs at a focus/grab boundary and should be implemented through this
 helper layer.
 
+`boundary_bridge.*` owns the policy decisions for short-lived bridge behavior at
+activation boundaries:
+
+- whether an orphan non-modifier release should be forwarded as cleanup
+- whether carried virtual-keyboard modifiers must be reset
+- whether deactivation may carry the compositor's last modifier mask across the
+  boundary
+
+Rule: keep boundary handoff decisions in `boundary_bridge.*`; callers may
+execute the resulting VK or lifecycle action, but should not duplicate the
+conditions inline.
+
 Rule: virtual keyboard output is only valid for keys Typio actually owns in the
 current generation. Do not use VK events to "repair" a key cycle whose press
 did not pass through Typio.
+
+Exception: at the `deactivate` boundary, Typio may carry the last compositor-
+reported modifier mask to the virtual keyboard so a held Ctrl/Alt/Super can
+still affect the newly focused client. That carried VK modifier state is a
+short-lived bridge only and must be cleared before the next activation starts.
 
 ## Modifier Truth
 
@@ -144,6 +166,7 @@ Before merging keyboard-path changes, verify:
 At minimum, keyboard-path changes should keep these areas covered:
 
 - startup guard classification
+- boundary bridge policy
 - repeat cancellation helper logic
 - activation-boundary reset of key tracking state
 - stale key suppression and release cleanup
@@ -168,14 +191,15 @@ Typical signatures:
 - first press after refocus disappears: likely stale `RELEASED_PENDING` state
 - app receives release without prior press: wrong suppression-state release handling
 - Ctrl-based shortcut behaves oddly: main-path key sequence is being rewritten instead of only syncing modifiers
-- app keeps repeating a shortcut letter after refocus: the application saw the
-  old `press`, but Typio consumed the matching `release` after the activation
-  boundary; stale orphan releases in the startup window must be forwarded as
-  cleanup releases to the virtual keyboard for non-modifier keys
+- app keeps repeating a shortcut letter after refocus: `boundary_bridge.*`
+  likely missed an orphan-release VK cleanup decision
 - a held Ctrl/Alt/Super stops affecting shortcuts after grab recreation: the
   new grab saw the modifier only via XKB/modifier events, not a fresh key
   press; physical modifier state must be resynchronized from XKB on modifier
   updates so later shortcuts still inherit the held modifier
+- a held Ctrl/Alt/Super stops affecting the newly focused client after
+  deactivation: verify whether the last compositor modifier mask was carried
+  across the boundary and later reset before the next activation
 
 ## Documentation Update Policy
 

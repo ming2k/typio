@@ -3,6 +3,7 @@
  * @brief Lifecycle and timing helpers for Wayland input-method sessions
  */
 
+#include "boundary_bridge.h"
 #include "lifecycle.h"
 #include "wl_frontend_internal.h"
 #include "wl_trace.h"
@@ -40,6 +41,7 @@ void typio_wl_lifecycle_set_phase(TypioWlFrontend *frontend,
 void typio_wl_lifecycle_hard_reset_keyboard(TypioWlFrontend *frontend,
                                             const char *reason) {
     bool own_current_generation;
+    bool carry_vk_modifiers = false;
 
     if (!frontend)
         return;
@@ -51,9 +53,35 @@ void typio_wl_lifecycle_hard_reset_keyboard(TypioWlFrontend *frontend,
 
     own_current_generation = frontend->active_generation_owned_keys;
 
+    if (typio_wl_boundary_bridge_should_reset_carried_modifiers(
+            frontend->lifecycle_phase,
+            frontend->carried_vk_modifiers)) {
+        typio_wl_vk_reset_modifiers(frontend);
+    }
+
     if (own_current_generation) {
         typio_wl_vk_release_forwarded_keys(frontend, NULL);
-        typio_wl_vk_reset_modifiers(frontend);
+        if (frontend->keyboard &&
+            typio_wl_boundary_bridge_should_carry_modifiers(
+                frontend->lifecycle_phase,
+                own_current_generation,
+                frontend->keyboard->mods_depressed,
+                frontend->keyboard->mods_latched,
+                frontend->keyboard->mods_locked)) {
+            typio_wl_vk_forward_modifier_state(
+                frontend,
+                frontend->keyboard->mods_depressed,
+                frontend->keyboard->mods_latched,
+                frontend->keyboard->mods_locked,
+                frontend->keyboard->mods_group);
+            frontend->carried_vk_modifiers = true;
+            carry_vk_modifiers = true;
+            typio_wl_trace(frontend,
+                           "vk_modifiers",
+                           "reason=deactivate_carry status=preserved");
+        } else {
+            typio_wl_vk_reset_modifiers(frontend);
+        }
     }
 
     if (frontend->keyboard) {
@@ -63,5 +91,5 @@ void typio_wl_lifecycle_hard_reset_keyboard(TypioWlFrontend *frontend,
     }
 
     frontend->active_generation_owned_keys = false;
-    frontend->active_generation_vk_dirty = false;
+    frontend->active_generation_vk_dirty = carry_vk_modifiers;
 }

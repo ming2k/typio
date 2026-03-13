@@ -81,6 +81,25 @@ void typio_wl_vk_forward_modifiers(struct TypioWlKeyboard *keyboard,
                                       mods_locked, group);
 }
 
+void typio_wl_vk_forward_modifier_state(TypioWlFrontend *frontend,
+                                        uint32_t mods_depressed,
+                                        uint32_t mods_latched,
+                                        uint32_t mods_locked,
+                                        uint32_t group) {
+    if (!frontend || !frontend->virtual_keyboard ||
+        !frontend->virtual_keyboard_has_keymap)
+        return;
+
+    frontend->active_generation_vk_dirty = true;
+    typio_wl_trace(frontend,
+                   "vk_modifiers",
+                   "depressed=0x%x latched=0x%x locked=0x%x group=%u",
+                   mods_depressed, mods_latched, mods_locked, group);
+    zwp_virtual_keyboard_v1_modifiers(frontend->virtual_keyboard,
+                                      mods_depressed, mods_latched,
+                                      mods_locked, group);
+}
+
 void typio_wl_vk_release_forwarded_keys(TypioWlFrontend *frontend,
                                         const char *(*key_state_name)(TypioKeyTrackState state)) {
     size_t released;
@@ -128,9 +147,14 @@ void typio_wl_vk_reset_modifiers(TypioWlFrontend *frontend) {
                    "vk_reset_modifiers",
                    "depressed=0x0 latched=0x0 locked=0x0 group=0");
     zwp_virtual_keyboard_v1_modifiers(frontend->virtual_keyboard, 0, 0, 0, 0);
+    frontend->carried_vk_modifiers = false;
 
     if (frontend->keyboard) {
         frontend->keyboard->physical_modifiers = 0;
+        frontend->keyboard->mods_depressed = 0;
+        frontend->keyboard->mods_latched = 0;
+        frontend->keyboard->mods_locked = 0;
+        frontend->keyboard->mods_group = 0;
         if (frontend->keyboard->xkb_state) {
             xkb_state_update_mask(frontend->keyboard->xkb_state,
                                   0, 0, 0, 0, 0, 0);

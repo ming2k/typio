@@ -66,6 +66,17 @@ TEST(only_active_phase_allows_key_events) {
         TYPIO_WL_PHASE_DEACTIVATING));
 }
 
+TEST(activating_and_active_phases_allow_modifier_events) {
+    ASSERT(!typio_wl_lifecycle_phase_allows_modifier_events(
+        TYPIO_WL_PHASE_INACTIVE));
+    ASSERT(typio_wl_lifecycle_phase_allows_modifier_events(
+        TYPIO_WL_PHASE_ACTIVATING));
+    ASSERT(typio_wl_lifecycle_phase_allows_modifier_events(
+        TYPIO_WL_PHASE_ACTIVE));
+    ASSERT(!typio_wl_lifecycle_phase_allows_modifier_events(
+        TYPIO_WL_PHASE_DEACTIVATING));
+}
+
 int main(void) {
     printf("Running lifecycle tests:\n");
 
@@ -73,6 +84,7 @@ int main(void) {
     run_test_valid_transitions_follow_timing_model();
     run_test_rejects_unexpected_shortcuts_between_phases();
     run_test_only_active_phase_allows_key_events();
+    run_test_activating_and_active_phases_allow_modifier_events();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

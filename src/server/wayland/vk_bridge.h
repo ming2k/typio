@@ -27,6 +27,11 @@ void typio_wl_vk_forward_modifiers(struct TypioWlKeyboard *keyboard,
                                    uint32_t mods_latched,
                                    uint32_t mods_locked,
                                    uint32_t group);
+void typio_wl_vk_forward_modifier_state(struct TypioWlFrontend *frontend,
+                                        uint32_t mods_depressed,
+                                        uint32_t mods_latched,
+                                        uint32_t mods_locked,
+                                        uint32_t group);
 void typio_wl_vk_release_forwarded_keys(struct TypioWlFrontend *frontend,
                                         const char *(*key_state_name)(TypioKeyTrackState state));
 void typio_wl_vk_reset_modifiers(struct TypioWlFrontend *frontend);

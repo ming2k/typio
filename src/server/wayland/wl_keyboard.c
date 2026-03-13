@@ -491,7 +491,7 @@ static void kb_handle_modifiers(void *data,
 
     if (!keyboard->xkb_state)
         return;
-    if (!typio_wl_lifecycle_phase_allows_key_events(
+    if (!typio_wl_lifecycle_phase_allows_modifier_events(
             keyboard->frontend->lifecycle_phase))
         return;
 
@@ -500,6 +500,10 @@ static void kb_handle_modifiers(void *data,
     xkb_state_update_mask(keyboard->xkb_state,
                           mods_depressed, mods_latched, mods_locked,
                           0, 0, group);
+    keyboard->mods_depressed = mods_depressed;
+    keyboard->mods_latched = mods_latched;
+    keyboard->mods_locked = mods_locked;
+    keyboard->mods_group = group;
     uint32_t cur_mods = xkb_to_typio_modifiers(keyboard);
     keyboard_sync_physical_modifiers(keyboard);
 

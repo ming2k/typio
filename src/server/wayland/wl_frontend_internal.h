@@ -73,6 +73,10 @@ struct TypioWlKeyboard {
     xkb_mod_index_t mod_caps;
     xkb_mod_index_t mod_num;
     uint32_t physical_modifiers;
+    uint32_t mods_depressed;
+    uint32_t mods_latched;
+    uint32_t mods_locked;
+    uint32_t mods_group;
 
     /* Key repeat */
     int32_t repeat_rate;    /* Keys per second */
@@ -152,6 +156,7 @@ struct TypioWlFrontend {
     uint64_t trace_sequence;
     bool active_generation_owned_keys;
     bool active_generation_vk_dirty;
+    bool carried_vk_modifiers;
 
     /* Session and keyboard state */
     TypioWlSession *session;

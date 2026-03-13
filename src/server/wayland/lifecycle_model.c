@@ -42,3 +42,9 @@ bool typio_wl_lifecycle_transition_is_valid(TypioWlLifecyclePhase from,
 bool typio_wl_lifecycle_phase_allows_key_events(TypioWlLifecyclePhase phase) {
     return phase == TYPIO_WL_PHASE_ACTIVE;
 }
+
+bool typio_wl_lifecycle_phase_allows_modifier_events(
+    TypioWlLifecyclePhase phase) {
+    return phase == TYPIO_WL_PHASE_ACTIVATING ||
+           phase == TYPIO_WL_PHASE_ACTIVE;
+}

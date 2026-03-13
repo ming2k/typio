@@ -7,6 +7,7 @@
 
 #include "key_route.h"
 
+#include "boundary_bridge.h"
 #include "key_debug.h"
 #include "startup_guard.h"
 #include "vk_bridge.h"
@@ -370,7 +371,7 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                 !is_modifier &&
                 (typio_wl_startup_guard_should_cleanup_stale_release(
                      keyboard->created_at_ms, now_ms) ||
-                 typio_wl_startup_guard_should_cleanup_shortcut_orphan_release(
+                 typio_wl_boundary_bridge_should_cleanup_orphan_release(
                      modifiers));
 
             if (should_cleanup_stale_release) {

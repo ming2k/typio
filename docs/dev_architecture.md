@@ -119,12 +119,9 @@ Each engine instance receives a config path such as:
 
 ## Keyboard Safety Model
 
-The Wayland keyboard grab path uses an explicit per-key state machine to track:
-
-- keys forwarded to applications
-- synthetic releases issued by Typio
-- stale held keys from a previous activation
-- Enter presses blocked by the startup guard
+The Wayland keyboard grab path uses an explicit per-key state machine for
+forwarded keys, synthetic releases, and startup suppression. Activation-
+boundary handoff policy is kept separate in `boundary_bridge.*`.
 
 The intended forwarding model is conservative: if the IME does not consume a
 key, Typio forwards the original press/release sequence and separately keeps

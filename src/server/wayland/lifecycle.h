@@ -27,6 +27,8 @@ const char *typio_wl_lifecycle_phase_name(TypioWlLifecyclePhase phase);
 bool typio_wl_lifecycle_transition_is_valid(TypioWlLifecyclePhase from,
                                             TypioWlLifecyclePhase to);
 bool typio_wl_lifecycle_phase_allows_key_events(TypioWlLifecyclePhase phase);
+bool typio_wl_lifecycle_phase_allows_modifier_events(
+    TypioWlLifecyclePhase phase);
 
 void typio_wl_lifecycle_set_phase(struct TypioWlFrontend *frontend,
                                   TypioWlLifecyclePhase phase,

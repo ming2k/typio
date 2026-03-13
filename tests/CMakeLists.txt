@@ -37,12 +37,25 @@ endif()
 add_executable(test_startup_guard
     test_startup_guard.c
     ${CMAKE_SOURCE_DIR}/src/server/wayland/startup_guard.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/boundary_bridge.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/lifecycle_model.c
 )
 target_include_directories(test_startup_guard PRIVATE
     ${CMAKE_SOURCE_DIR}/src/lib
     ${CMAKE_SOURCE_DIR}/src/server/wayland
 )
 add_test(NAME test_startup_guard COMMAND test_startup_guard)
+
+add_executable(test_boundary_bridge
+    test_boundary_bridge.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/boundary_bridge.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/lifecycle_model.c
+)
+target_include_directories(test_boundary_bridge PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+)
+add_test(NAME test_boundary_bridge COMMAND test_boundary_bridge)
 
 add_executable(test_repeat_guard
     test_repeat_guard.c
