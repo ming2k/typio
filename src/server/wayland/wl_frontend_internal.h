@@ -123,9 +123,6 @@ struct TypioWlSession {
         uint32_t content_purpose;
     } current;
 
-    /* Protocol serial for commit synchronization */
-    uint32_t serial;
-
     /* Back reference */
     TypioWlFrontend *frontend;
 };
@@ -161,6 +158,7 @@ struct TypioWlFrontend {
     bool carried_vk_modifiers;
     bool shortcut_chord_saw_non_modifier;
     bool shortcut_chord_switch_triggered;
+    bool shortcut_chord_armed;
 
     /* Session and keyboard state */
     TypioWlSession *session;
@@ -174,6 +172,9 @@ struct TypioWlFrontend {
     /* System tray */
     TypioTray *tray;
 #endif
+
+    /* Protocol serial: must increment on every done, even without a session */
+    uint32_t im_serial;
 
     /* Event loop state */
     volatile bool running;

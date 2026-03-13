@@ -158,12 +158,11 @@ static bool key_route_is_app_shortcut(uint32_t keysym, uint32_t modifiers) {
     }
 }
 
-static void key_route_maybe_switch_engine_on_modifier_chord(
+static void key_route_maybe_arm_engine_switch_chord(
     TypioWlKeyboard *keyboard,
     uint32_t keysym,
     uint32_t modifiers) {
     TypioWlFrontend *frontend;
-    TypioEngineManager *manager;
 
     if (!keyboard || !keyboard->frontend || !keyboard->frontend->instance)
         return;
@@ -177,16 +176,9 @@ static void key_route_maybe_switch_engine_on_modifier_chord(
         return;
     }
 
-    manager = typio_instance_get_engine_manager(frontend->instance);
-    if (!manager)
-        return;
-
-    if (typio_engine_manager_next(manager) == TYPIO_OK) {
-        frontend->shortcut_chord_switch_triggered = true;
-        key_route_trace(keyboard, "shortcut-switch", 0, keysym, modifiers, 0,
-                        TYPIO_KEY_IDLE, "ctrl+shift engine switch");
-        typio_log(TYPIO_LOG_INFO, "Switched engine via Ctrl+Shift chord");
-    }
+    frontend->shortcut_chord_armed = true;
+    key_route_trace(keyboard, "shortcut-arm", 0, keysym, modifiers, 0,
+                    TYPIO_KEY_IDLE, "ctrl+shift chord armed");
 }
 
 void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
@@ -287,7 +279,7 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         return;
     }
 
-    key_route_maybe_switch_engine_on_modifier_chord(keyboard, keysym, modifiers);
+    key_route_maybe_arm_engine_switch_chord(keyboard, keysym, modifiers);
 
     {
         TypioKeyEvent event = {

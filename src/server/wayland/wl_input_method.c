@@ -26,6 +26,7 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
 static bool session_is_focused(TypioWlFrontend *frontend);
 static void set_pending_reactivation(TypioWlFrontend *frontend, bool pending);
 static TypioEngine *active_engine(TypioWlFrontend *frontend);
+static void trace_session_state(TypioWlFrontend *frontend, const char *event);
 static bool rebuild_keyboard_grab(TypioWlFrontend *frontend,
                                   const char *reset_reason,
                                   const char *failure_reason);
@@ -83,6 +84,32 @@ static TypioEngine *active_engine(TypioWlFrontend *frontend) {
     return manager ? typio_engine_manager_get_active(manager) : NULL;
 }
 
+static void trace_session_state(TypioWlFrontend *frontend, const char *event) {
+    bool focused;
+    bool pending_active;
+    uint32_t serial;
+
+    if (!frontend) {
+        return;
+    }
+
+    focused = session_is_focused(frontend);
+    pending_active = frontend->session ? frontend->session->pending.active : false;
+    serial = frontend->im_serial;
+
+    typio_wl_trace(frontend,
+                   "im_state",
+                   "event=%s phase=%s focused=%s pending_active=%s pending_reactivation=%s session=%s keyboard=%s serial=%u",
+                   event ? event : "unknown",
+                   typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
+                   focused ? "yes" : "no",
+                   pending_active ? "yes" : "no",
+                   frontend->pending_reactivation ? "yes" : "no",
+                   frontend->session ? "yes" : "no",
+                   frontend->keyboard ? "yes" : "no",
+                   serial);
+}
+
 static bool rebuild_keyboard_grab(TypioWlFrontend *frontend,
                                   const char *reset_reason,
                                   const char *failure_reason) {
@@ -90,15 +117,34 @@ static bool rebuild_keyboard_grab(TypioWlFrontend *frontend,
         return false;
     }
 
+    typio_wl_trace(frontend,
+                   "keyboard_grab",
+                   "action=rebuild begin reason=%s phase=%s focused=%s existing_keyboard=%s",
+                   reset_reason ? reset_reason : "keyboard rebuild",
+                   typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
+                   session_is_focused(frontend) ? "yes" : "no",
+                   frontend->keyboard ? "yes" : "no");
     typio_wl_lifecycle_hard_reset_keyboard(frontend,
                                            reset_reason ? reset_reason : "keyboard rebuild");
     frontend->keyboard = typio_wl_keyboard_create(frontend);
     if (!frontend->keyboard) {
         typio_log(TYPIO_LOG_ERROR,
                   "%s", failure_reason ? failure_reason : "Failed to rebuild keyboard grab");
+        typio_wl_trace_level(TYPIO_LOG_ERROR,
+                             frontend,
+                             "keyboard_grab",
+                             "action=rebuild result=failed reason=%s phase=%s focused=%s",
+                             failure_reason ? failure_reason : "Failed to rebuild keyboard grab",
+                             typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
+                             session_is_focused(frontend) ? "yes" : "no");
         return false;
     }
 
+    typio_wl_trace(frontend,
+                   "keyboard_grab",
+                   "action=rebuild result=ok created_at_ms=%" PRIu64 " suppress_stale_keys=%s",
+                   frontend->keyboard->created_at_ms,
+                   frontend->keyboard->suppress_stale_keys ? "yes" : "no");
     return true;
 }
 
@@ -182,9 +228,6 @@ void typio_wl_session_apply_pending(TypioWlSession *session) {
                                             (int)session->current.cursor,
                                             (int)session->current.anchor);
     }
-
-    /* Increment serial */
-    session->serial++;
 }
 
 /* Commit helpers */
@@ -209,7 +252,7 @@ void typio_wl_commit(TypioWlFrontend *frontend) {
     if (!frontend || !frontend->input_method || !frontend->session) {
         return;
     }
-    zwp_input_method_v2_commit(frontend->input_method, frontend->session->serial);
+    zwp_input_method_v2_commit(frontend->input_method, frontend->im_serial);
 }
 
 /* Input method event handlers */
@@ -218,6 +261,7 @@ static void im_handle_activate(void *data, struct zwp_input_method_v2 *im) {
     (void)im;
 
     typio_wl_trace(frontend, "im", "event=activate");
+    trace_session_state(frontend, "activate_begin");
 
     /* Create session if needed */
     if (!frontend->session) {
@@ -244,6 +288,7 @@ static void im_handle_activate(void *data, struct zwp_input_method_v2 *im) {
     /* Reset session state for new activation */
     typio_wl_session_reset(frontend->session);
     frontend->session->pending.active = true;
+    trace_session_state(frontend, "activate_end");
 }
 
 static void im_handle_deactivate(void *data, struct zwp_input_method_v2 *im) {
@@ -251,6 +296,7 @@ static void im_handle_deactivate(void *data, struct zwp_input_method_v2 *im) {
     (void)im;
 
     typio_wl_trace(frontend, "im", "event=deactivate");
+    trace_session_state(frontend, "deactivate_begin");
     set_pending_reactivation(frontend, false);
     typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_DEACTIVATING, "deactivate event");
     typio_wl_lifecycle_hard_reset_keyboard(frontend, "deactivate event");
@@ -258,6 +304,7 @@ static void im_handle_deactivate(void *data, struct zwp_input_method_v2 *im) {
     if (frontend->session) {
         frontend->session->pending.active = false;
     }
+    trace_session_state(frontend, "deactivate_end");
 }
 
 static void im_handle_surrounding_text(void *data, struct zwp_input_method_v2 *im,
@@ -314,14 +361,28 @@ static void im_handle_done(void *data, struct zwp_input_method_v2 *im) {
     bool needs_reactivation;
     (void)im;
 
+    frontend->im_serial++;
+
     if (!frontend->session) {
+        typio_log(TYPIO_LOG_WARNING,
+                  "Received done event without session (serial=%u)",
+                  frontend->im_serial);
         return;
     }
 
+    trace_session_state(frontend, "done_begin");
     bool was_active = session_is_focused(frontend);
     bool now_active = frontend->session->pending.active;
     needs_reactivation = typio_wl_lifecycle_should_commit_reactivation(
         frontend->pending_reactivation, was_active, now_active);
+
+    typio_wl_trace(frontend,
+                   "im_done",
+                   "was_active=%s now_active=%s needs_reactivation=%s phase=%s",
+                   was_active ? "yes" : "no",
+                   now_active ? "yes" : "no",
+                   needs_reactivation ? "yes" : "no",
+                   typio_wl_lifecycle_phase_name(frontend->lifecycle_phase));
 
     /* Apply pending state */
     typio_wl_session_apply_pending(frontend->session);
@@ -352,6 +413,7 @@ static void im_handle_done(void *data, struct zwp_input_method_v2 *im) {
 
         typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_ACTIVE, "focus in complete");
         set_pending_reactivation(frontend, false);
+        trace_session_state(frontend, "done_focus_in_complete");
     } else if (needs_reactivation) {
         TypioEngine *engine = active_engine(frontend);
 
@@ -376,6 +438,7 @@ static void im_handle_done(void *data, struct zwp_input_method_v2 *im) {
         }
 
         set_pending_reactivation(frontend, false);
+        trace_session_state(frontend, "done_reactivation_complete");
     } else if (!now_active && was_active) {
         typio_log(TYPIO_LOG_INFO, "Input context unfocused");
         typio_input_context_focus_out(frontend->session->ctx);
@@ -385,6 +448,9 @@ static void im_handle_done(void *data, struct zwp_input_method_v2 *im) {
         typio_wl_lifecycle_hard_reset_keyboard(frontend, "focus out");
         typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_INACTIVE, "focus out complete");
         set_pending_reactivation(frontend, false);
+        trace_session_state(frontend, "done_focus_out_complete");
+    } else {
+        trace_session_state(frontend, "done_no_transition");
     }
 }
 

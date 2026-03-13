@@ -149,8 +149,22 @@ static void keyboard_update_physical_modifier_state(TypioWlKeyboard *keyboard,
 
     if (frontend &&
         typio_wl_shortcut_chord_should_reset(keyboard->physical_modifiers)) {
+        if (frontend->shortcut_chord_armed &&
+            !frontend->shortcut_chord_saw_non_modifier &&
+            !frontend->shortcut_chord_switch_triggered) {
+            TypioEngineManager *manager =
+                typio_instance_get_engine_manager(frontend->instance);
+            if (manager && typio_engine_manager_next(manager) == TYPIO_OK) {
+                frontend->shortcut_chord_switch_triggered = true;
+                typio_wl_trace(frontend, "key",
+                               "stage=shortcut-switch detail=ctrl+shift engine switch on release");
+                typio_log(TYPIO_LOG_INFO,
+                          "Switched engine via Ctrl+Shift chord (on release)");
+            }
+        }
         frontend->shortcut_chord_saw_non_modifier = false;
         frontend->shortcut_chord_switch_triggered = false;
+        frontend->shortcut_chord_armed = false;
     }
 
     if ((keyboard->physical_modifiers &
