@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-03-14
+
+### Fixed
+
+- **Modifier continuity across deactivation**: when `Ctrl/Alt/Super` stays held
+  across IME deactivation, Typio now carries the compositor's last modifier
+  mask across the boundary so the newly focused client can still receive the
+  intended shortcut, such as `Ctrl+T`, without requiring the modifier to be
+  re-pressed.
+
+### Changed
+
+- **Boundary handoff policy extraction**: activation-boundary orphan-release
+  cleanup and deactivation modifier carry rules are now centralized in
+  `boundary_bridge.*` instead of being split across unrelated helper modules.
+- **Developer documentation cleanup**: timing, maintenance, and architecture
+  docs now reflect the boundary-bridge model and remove older, superseded
+  descriptions of startup-guard ownership and trace workflow details.
+
 ## [1.0.1] - 2026-03-14
 
 ### Fixed
@@ -70,5 +89,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `wayland_generate_protocol()` macro. Supports build-tree testing without
   installation.
 
+[1.0.2]: https://github.com/user/typio/releases/tag/v1.0.2
 [1.0.1]: https://github.com/user/typio/releases/tag/v1.0.1
 [1.0.0]: https://github.com/user/typio/releases/tag/v1.0.0
