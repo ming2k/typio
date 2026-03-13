@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-03-14
+
+### Added
+
+- **Autostart desktop entry**: added an XDG autostart launcher and install rule
+  so `typio` can be started automatically for user sessions.
+
+### Changed
+
+- **Ctrl+Shift engine switching**: engine cycling now triggers on modifier
+  release and tracks input-method serial state globally so the Wayland input
+  method path stays in sync across focus and grab transitions.
+
 ## [1.1.1] - 2026-03-14
 
 ### Added
@@ -162,6 +175,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `wayland_generate_protocol()` macro. Supports build-tree testing without
   installation.
 
+[1.1.2]: https://github.com/user/typio/releases/tag/v1.1.2
 [1.1.1]: https://github.com/user/typio/releases/tag/v1.1.1
 [1.1.0]: https://github.com/user/typio/releases/tag/v1.1.0
 [1.0.3]: https://github.com/user/typio/releases/tag/v1.0.3
