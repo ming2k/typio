@@ -22,6 +22,9 @@
 #include "wayland/wl_frontend.h"
 #endif
 
+#ifdef HAVE_STATUS_BUS
+#include "status/status.h"
+#endif
 #ifdef HAVE_SYSTRAY
 #include "tray/tray.h"
 #endif
@@ -30,6 +33,9 @@ static TypioInstance *g_instance = NULL;
 static volatile bool g_running = true;
 #ifdef HAVE_WAYLAND
 static TypioWlFrontend *g_wl_frontend = NULL;
+#endif
+#ifdef HAVE_STATUS_BUS
+static TypioStatusBus *g_status_bus = NULL;
 #endif
 #ifdef HAVE_SYSTRAY
 static TypioTray *g_tray = NULL;
@@ -65,6 +71,7 @@ static void print_help(const char *prog) {
     printf("  --version           Show version information\n");
 }
 
+#ifdef HAVE_SYSTRAY
 static bool ensure_dir_recursive(const char *path) {
     char *copy;
     bool ok = true;
@@ -158,6 +165,7 @@ static bool write_rime_schema_config(const char *schema_name) {
     typio_config_free(config);
     return result == TYPIO_OK;
 }
+#endif
 
 static void log_callback(TypioLogLevel level, const char *message, void *user_data) {
     (void)user_data;
@@ -213,7 +221,17 @@ static void update_tray_engine_status(void) {
     typio_tray_set_icon(g_tray, icon_name);
     typio_tray_update_engine(g_tray, engine_name, active != NULL);
 }
+#endif
 
+#ifdef HAVE_STATUS_BUS
+static void update_status_bus_state(void) {
+    if (g_status_bus) {
+        typio_status_bus_emit_properties_changed(g_status_bus);
+    }
+}
+#endif
+
+#ifdef HAVE_SYSTRAY
 static void tray_menu_callback(TypioTray *tray, const char *action, void *user_data) {
     (void)tray;
     (void)user_data;
@@ -229,24 +247,20 @@ static void tray_menu_callback(TypioTray *tray, const char *action, void *user_d
         /* Left-click: cycle to next engine */
         TypioEngineManager *manager = typio_instance_get_engine_manager(g_instance);
         typio_engine_manager_next(manager);
-        update_tray_engine_status();
         typio_log(TYPIO_LOG_INFO, "Switched to next engine");
     } else if (strcmp(action, "scroll_up") == 0) {
         /* Scroll up: previous engine */
         TypioEngineManager *manager = typio_instance_get_engine_manager(g_instance);
         typio_engine_manager_prev(manager);
-        update_tray_engine_status();
     } else if (strcmp(action, "scroll_down") == 0) {
         /* Scroll down: next engine */
         TypioEngineManager *manager = typio_instance_get_engine_manager(g_instance);
         typio_engine_manager_next(manager);
-        update_tray_engine_status();
     } else if (strncmp(action, "engine:", 7) == 0) {
         /* Select specific engine: "engine:rime" or "engine:whisper" */
         const char *engine_name = action + 7;
         TypioEngineManager *manager = typio_instance_get_engine_manager(g_instance);
         if (typio_engine_manager_set_active(manager, engine_name) == TYPIO_OK) {
-            update_tray_engine_status();
             typio_log(TYPIO_LOG_INFO, "Switched to engine: %s", engine_name);
         }
     } else if (strncmp(action, "rime-schema:", 12) == 0) {
@@ -254,6 +268,7 @@ static void tray_menu_callback(TypioTray *tray, const char *action, void *user_d
         if (write_rime_schema_config(schema_name) &&
             typio_instance_reload_config(g_instance) == TYPIO_OK) {
             update_tray_engine_status();
+            update_status_bus_state();
             typio_log(TYPIO_LOG_INFO, "Switched Rime schema to: %s", schema_name);
         } else {
             typio_log(TYPIO_LOG_ERROR, "Failed to update Rime schema: %s", schema_name);
@@ -261,6 +276,7 @@ static void tray_menu_callback(TypioTray *tray, const char *action, void *user_d
     } else if (strcmp(action, "rime-reload") == 0) {
         if (typio_instance_reload_config(g_instance) == TYPIO_OK) {
             update_tray_engine_status();
+            update_status_bus_state();
             typio_log(TYPIO_LOG_INFO, "Reloaded Rime configuration");
         } else {
             typio_log(TYPIO_LOG_ERROR, "Failed to reload Rime configuration");
@@ -269,10 +285,17 @@ static void tray_menu_callback(TypioTray *tray, const char *action, void *user_d
 }
 #endif
 
-static void on_engine_change(void *user_data) {
+static void on_engine_change(TypioInstance *instance,
+                             const TypioEngineInfo *engine,
+                             void *user_data) {
+    (void)instance;
+    (void)engine;
     (void)user_data;
 #ifdef HAVE_SYSTRAY
     update_tray_engine_status();
+#endif
+#ifdef HAVE_STATUS_BUS
+    update_status_bus_state();
 #endif
     TypioEngineManager *manager = typio_instance_get_engine_manager(g_instance);
     TypioEngine *active = typio_engine_manager_get_active(manager);
@@ -377,6 +400,15 @@ int main(int argc, char *argv[]) {
     printf("\nPress Ctrl+C to exit\n\n");
 
     /* Create system tray */
+#ifdef HAVE_STATUS_BUS
+    g_status_bus = typio_status_bus_new(g_instance);
+    if (g_status_bus) {
+        printf("D-Bus status interface initialized\n");
+    } else {
+        printf("D-Bus status interface not available\n");
+    }
+#endif
+
 #ifdef HAVE_SYSTRAY
     TypioTrayConfig tray_config = {
         .icon_name = "typio-keyboard",
@@ -409,6 +441,12 @@ int main(int argc, char *argv[]) {
             g_tray = NULL;
         }
 #endif
+#ifdef HAVE_STATUS_BUS
+        if (g_status_bus) {
+            typio_status_bus_destroy(g_status_bus);
+            g_status_bus = NULL;
+        }
+#endif
         typio_instance_free(g_instance);
         return 1;
     }
@@ -419,10 +457,14 @@ int main(int argc, char *argv[]) {
         typio_wl_frontend_set_tray(g_wl_frontend, g_tray);
     }
 #endif
+#ifdef HAVE_STATUS_BUS
+    if (g_status_bus) {
+        typio_wl_frontend_set_status_bus(g_wl_frontend, g_status_bus);
+    }
+#endif
 
-    /* Set engine change callback for tray icon updates */
-    typio_wl_frontend_set_engine_change_callback(g_wl_frontend,
-        on_engine_change, NULL);
+    /* Set engine change callback for external state updates */
+    typio_instance_set_engine_changed_callback(g_instance, on_engine_change, NULL);
 
     printf("Wayland input method frontend started\n");
 
@@ -444,6 +486,12 @@ int main(int argc, char *argv[]) {
             g_tray = NULL;
         }
 #endif
+#ifdef HAVE_STATUS_BUS
+        if (g_status_bus) {
+            typio_status_bus_destroy(g_status_bus);
+            g_status_bus = NULL;
+        }
+#endif
         typio_instance_free(g_instance);
         return 1;
     }
@@ -456,6 +504,12 @@ int main(int argc, char *argv[]) {
         g_tray = NULL;
     }
 #endif
+#ifdef HAVE_STATUS_BUS
+    if (g_status_bus) {
+        typio_status_bus_destroy(g_status_bus);
+        g_status_bus = NULL;
+    }
+#endif
     typio_instance_free(g_instance);
     return 1;
 #endif
@@ -465,6 +519,12 @@ int main(int argc, char *argv[]) {
     if (g_tray) {
         typio_tray_destroy(g_tray);
         g_tray = NULL;
+    }
+#endif
+#ifdef HAVE_STATUS_BUS
+    if (g_status_bus) {
+        typio_status_bus_destroy(g_status_bus);
+        g_status_bus = NULL;
     }
 #endif
 

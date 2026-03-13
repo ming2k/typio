@@ -22,6 +22,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef HAVE_STATUS_BUS
+#include "status/status.h"
+#endif
 #ifdef HAVE_SYSTRAY
 #include "tray.h"
 #endif
@@ -158,20 +161,21 @@ struct TypioWlFrontend {
     bool active_generation_owned_keys;
     bool active_generation_vk_dirty;
     bool carried_vk_modifiers;
+    bool shortcut_chord_saw_non_modifier;
+    bool shortcut_chord_switch_triggered;
 
     /* Session and keyboard state */
     TypioWlSession *session;
     TypioWlKeyboard *keyboard;
     TypioWlPopup *popup;
 
+#ifdef HAVE_STATUS_BUS
+    TypioStatusBus *status_bus;
+#endif
 #ifdef HAVE_SYSTRAY
     /* System tray */
     TypioTray *tray;
 #endif
-
-    /* Engine change callback */
-    void (*engine_change_callback)(void *user_data);
-    void *engine_change_user_data;
 
     /* Event loop state */
     volatile bool running;

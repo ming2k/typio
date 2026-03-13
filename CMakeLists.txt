@@ -19,10 +19,12 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(BUILD_SHARED_LIBS "Build shared Typio libraries" ON)
 option(BUILD_SERVER "Build the Typio Wayland input method daemon" ON)
+option(BUILD_CONTROL_PANEL "Build the GTK4 control panel" OFF)
 option(BUILD_TESTS "Build Typio test programs" ON)
 option(BUILD_BASIC_ENGINE "Build the built-in basic keyboard engine" ON)
 option(BUILD_RIME_ENGINE "Build the Rime engine" ON)
 option(ENABLE_WAYLAND "Enable Wayland input-method frontend support" ON)
+option(ENABLE_STATUS_BUS "Enable D-Bus runtime status/control interface" ON)
 option(ENABLE_SYSTRAY "Enable StatusNotifierItem tray support" ON)
 
 set(TYPIO_INSTALL_BINDIR "${CMAKE_INSTALL_BINDIR}")
@@ -41,9 +43,20 @@ if(ENABLE_WAYLAND)
     set(HAVE_WAYLAND ON)
 endif()
 
-if(ENABLE_SYSTRAY)
+if(ENABLE_STATUS_BUS OR ENABLE_SYSTRAY)
     pkg_check_modules(DBUS REQUIRED dbus-1)
+endif()
+
+if(ENABLE_STATUS_BUS)
+    set(HAVE_STATUS_BUS ON)
+endif()
+
+if(ENABLE_SYSTRAY)
     set(HAVE_SYSTRAY ON)
+endif()
+
+if(BUILD_CONTROL_PANEL)
+    pkg_check_modules(GTK4 REQUIRED gtk4)
 endif()
 
 if(BUILD_RIME_ENGINE)
@@ -68,6 +81,10 @@ add_subdirectory(src/engines)
 
 if(BUILD_SERVER)
     add_subdirectory(src/server)
+endif()
+
+if(BUILD_CONTROL_PANEL)
+    add_subdirectory(src/control)
 endif()
 
 if(BUILD_TESTS)

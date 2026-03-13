@@ -32,6 +32,22 @@ if(HAVE_SYSTRAY)
     )
     target_link_libraries(test_tray_icon_pixmap PRIVATE ${CAIRO_PANGO_LIBRARIES})
     add_test(NAME test_tray_icon_pixmap COMMAND test_tray_icon_pixmap)
+
+endif()
+
+if(HAVE_STATUS_BUS)
+    add_executable(test_status_bus
+        test_status_bus.c
+        ${CMAKE_SOURCE_DIR}/src/server/status/status.c
+    )
+    target_include_directories(test_status_bus PRIVATE
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}/src/server
+        ${CMAKE_SOURCE_DIR}/src/lib
+        ${DBUS_INCLUDE_DIRS}
+    )
+    target_link_libraries(test_status_bus PRIVATE typio-core ${DBUS_LIBRARIES})
+    add_test(NAME test_status_bus COMMAND test_status_bus)
 endif()
 
 add_executable(test_startup_guard
@@ -66,6 +82,16 @@ target_include_directories(test_repeat_guard PRIVATE
     ${CMAKE_SOURCE_DIR}/src/server/wayland
 )
 add_test(NAME test_repeat_guard COMMAND test_repeat_guard)
+
+add_executable(test_shortcut_chord
+    test_shortcut_chord.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/shortcut_chord.c
+)
+target_include_directories(test_shortcut_chord PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+)
+add_test(NAME test_shortcut_chord COMMAND test_shortcut_chord)
 
 add_executable(test_modifier_policy
     test_modifier_policy.c

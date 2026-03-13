@@ -9,11 +9,13 @@
 
 #include "boundary_bridge.h"
 #include "key_debug.h"
+#include "shortcut_chord.h"
 #include "startup_guard.h"
 #include "vk_bridge.h"
 #include "wl_frontend_internal.h"
 #include "wl_trace.h"
 #include "typio/typio.h"
+#include "typio/engine_manager.h"
 #include "utils/log.h"
 
 #include <time.h>
@@ -158,6 +160,37 @@ static bool key_route_is_app_shortcut(uint32_t keysym, uint32_t modifiers) {
     }
 }
 
+static void key_route_maybe_switch_engine_on_modifier_chord(
+    TypioWlKeyboard *keyboard,
+    uint32_t keysym,
+    uint32_t modifiers) {
+    TypioWlFrontend *frontend;
+    TypioEngineManager *manager;
+
+    if (!keyboard || !keyboard->frontend || !keyboard->frontend->instance)
+        return;
+
+    frontend = keyboard->frontend;
+    if (!typio_wl_shortcut_chord_should_switch_engine(
+            keysym,
+            modifiers,
+            frontend->shortcut_chord_saw_non_modifier,
+            frontend->shortcut_chord_switch_triggered)) {
+        return;
+    }
+
+    manager = typio_instance_get_engine_manager(frontend->instance);
+    if (!manager)
+        return;
+
+    if (typio_engine_manager_next(manager) == TYPIO_OK) {
+        frontend->shortcut_chord_switch_triggered = true;
+        key_route_trace(keyboard, "shortcut-switch", 0, keysym, modifiers, 0,
+                        TYPIO_KEY_IDLE, "ctrl+shift engine switch");
+        typio_log(TYPIO_LOG_INFO, "Switched engine via Ctrl+Shift chord");
+    }
+}
+
 void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
                                       TypioWlSession *session,
                                       uint32_t key,
@@ -213,6 +246,11 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         return;
     }
 
+    if (!typio_wl_shortcut_chord_is_switch_modifier(keysym) &&
+        (keyboard->physical_modifiers & (TYPIO_MOD_CTRL | TYPIO_MOD_SHIFT)) != 0) {
+        frontend->shortcut_chord_saw_non_modifier = true;
+    }
+
     key_claim_current_generation(frontend, key);
 
     suppress_reason = typio_wl_startup_guard_classify_press(
@@ -263,6 +301,8 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
                   key, keysym, modifiers);
         return;
     }
+
+    key_route_maybe_switch_engine_on_modifier_chord(keyboard, keysym, modifiers);
 
     {
         TypioKeyEvent event = {

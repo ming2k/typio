@@ -87,16 +87,22 @@ TEST(classifies_stale_press_before_enter_guard) {
 
 TEST(classifies_enter_without_composition) {
     ASSERT(typio_wl_startup_guard_classify_press(
-        1000, 1200, TYPIO_KEY_Return, false, false) ==
+        1000, 1020, TYPIO_KEY_Return, false, true) ==
         TYPIO_WL_STARTUP_SUPPRESS_ENTER);
     ASSERT(typio_wl_startup_guard_classify_press(
-        1000, 1200, TYPIO_KEY_KP_Enter, false, false) ==
+        1000, 1020, TYPIO_KEY_KP_Enter, false, true) ==
         TYPIO_WL_STARTUP_SUPPRESS_ENTER);
 }
 
 TEST(allows_enter_when_composition_is_active) {
     ASSERT(typio_wl_startup_guard_classify_press(
-        1000, 1200, TYPIO_KEY_Return, true, false) ==
+        1000, 1020, TYPIO_KEY_Return, true, true) ==
+        TYPIO_WL_STARTUP_SUPPRESS_NONE);
+}
+
+TEST(allows_enter_after_startup_stale_guard_clears) {
+    ASSERT(typio_wl_startup_guard_classify_press(
+        1000, 1020, TYPIO_KEY_Return, false, false) ==
         TYPIO_WL_STARTUP_SUPPRESS_NONE);
 }
 
@@ -108,7 +114,7 @@ TEST(allows_non_enter_after_stale_window) {
 
 TEST(allows_enter_after_startup_window) {
     ASSERT(!typio_wl_startup_guard_should_ignore_enter(
-        1000, 2201, TYPIO_KEY_Return));
+        1000, 1051, TYPIO_KEY_Return));
 }
 
 TEST(allows_other_keys) {
@@ -133,6 +139,7 @@ int main(void) {
     run_test_classifies_stale_press_before_enter_guard();
     run_test_classifies_enter_without_composition();
     run_test_allows_enter_when_composition_is_active();
+    run_test_allows_enter_after_startup_stale_guard_clears();
     run_test_allows_non_enter_after_stale_window();
     run_test_ignores_enter_during_startup_window();
     run_test_allows_enter_after_startup_window();

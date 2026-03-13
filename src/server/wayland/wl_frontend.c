@@ -185,6 +185,9 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 #ifdef HAVE_SYSTRAY
     int tray_fd = frontend->tray ? typio_tray_get_fd(frontend->tray) : -1;
 #endif
+#ifdef HAVE_STATUS_BUS
+    int status_fd = frontend->status_bus ? typio_status_bus_get_fd(frontend->status_bus) : -1;
+#endif
 
     while (frontend->running) {
         /* Flush pending requests */
@@ -200,17 +203,25 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             return -1;
         }
 
-        /* Build poll set: wayland fd + optional tray fd + optional repeat fd */
-        struct pollfd fds[3];
+        /* Build poll set: wayland fd + optional tray/status dbus fds + optional repeat fd */
+        struct pollfd fds[4];
         int nfds = 0;
         int idx_display = nfds;
         fds[nfds++] = (struct pollfd){ .fd = display_fd, .events = POLLIN };
 
-        int idx_tray = -1;
 #ifdef HAVE_SYSTRAY
+        int idx_tray = -1;
         if (tray_fd >= 0) {
             idx_tray = nfds;
             fds[nfds++] = (struct pollfd){ .fd = tray_fd, .events = POLLIN };
+        }
+#endif
+
+        int idx_status = -1;
+#ifdef HAVE_STATUS_BUS
+        if (status_fd >= 0) {
+            idx_status = nfds;
+            fds[nfds++] = (struct pollfd){ .fd = status_fd, .events = POLLIN };
         }
 #endif
 
@@ -266,6 +277,15 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
                 typio_tray_dispatch(frontend->tray);
             }
             tray_fd = frontend->tray ? typio_tray_get_fd(frontend->tray) : -1;
+        }
+#endif
+
+#ifdef HAVE_STATUS_BUS
+        if (idx_status >= 0 && fds[idx_status].revents) {
+            if (fds[idx_status].revents & POLLIN) {
+                typio_status_bus_dispatch(frontend->status_bus);
+            }
+            status_fd = frontend->status_bus ? typio_status_bus_get_fd(frontend->status_bus) : -1;
         }
 #endif
 
@@ -412,15 +432,6 @@ static void seat_handle_name(void *data, struct wl_seat *seat, const char *name)
     typio_log(TYPIO_LOG_DEBUG, "Seat name: %s", name);
 }
 
-void typio_wl_frontend_set_engine_change_callback(TypioWlFrontend *frontend,
-                                                    void (*callback)(void *),
-                                                    void *user_data) {
-    if (frontend) {
-        frontend->engine_change_callback = callback;
-        frontend->engine_change_user_data = user_data;
-    }
-}
-
 void typio_wl_frontend_set_tray(TypioWlFrontend *frontend, void *tray) {
 #ifdef HAVE_SYSTRAY
     if (frontend) {
@@ -429,5 +440,16 @@ void typio_wl_frontend_set_tray(TypioWlFrontend *frontend, void *tray) {
 #else
     (void)frontend;
     (void)tray;
+#endif
+}
+
+void typio_wl_frontend_set_status_bus(TypioWlFrontend *frontend, void *status_bus) {
+#ifdef HAVE_STATUS_BUS
+    if (frontend) {
+        frontend->status_bus = (TypioStatusBus *)status_bus;
+    }
+#else
+    (void)frontend;
+    (void)status_bus;
 #endif
 }

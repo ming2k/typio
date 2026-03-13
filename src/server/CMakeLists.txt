@@ -3,6 +3,7 @@
 set(TYPIO_SERVER_SOURCES main.c)
 set(TYPIO_SERVER_INCLUDE_DIRS
     ${CMAKE_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/src/lib
 )
 set(TYPIO_SERVER_LIBRARIES typio-core dl)
@@ -31,6 +32,7 @@ if(HAVE_WAYLAND)
         wayland/modifier_policy.c
         wayland/popup.c
         wayland/repeat_guard.c
+        wayland/shortcut_chord.c
         wayland/startup_guard.c
         wayland/vk_bridge.c
         wayland/wl_frontend.c
@@ -57,6 +59,21 @@ if(HAVE_WAYLAND)
     )
 endif()
 
+# Status D-Bus support
+if(HAVE_STATUS_BUS)
+    list(APPEND TYPIO_SERVER_SOURCES
+        status/status.c
+    )
+
+    list(APPEND TYPIO_SERVER_INCLUDE_DIRS
+        ${DBUS_INCLUDE_DIRS}
+    )
+
+    list(APPEND TYPIO_SERVER_LIBRARIES
+        ${DBUS_LIBRARIES}
+    )
+endif()
+
 # System tray support
 if(HAVE_SYSTRAY)
     list(APPEND TYPIO_SERVER_SOURCES
@@ -67,11 +84,6 @@ if(HAVE_SYSTRAY)
 
     list(APPEND TYPIO_SERVER_INCLUDE_DIRS
         ${CMAKE_CURRENT_SOURCE_DIR}/tray
-        ${DBUS_INCLUDE_DIRS}
-    )
-
-    list(APPEND TYPIO_SERVER_LIBRARIES
-        ${DBUS_LIBRARIES}
     )
 endif()
 

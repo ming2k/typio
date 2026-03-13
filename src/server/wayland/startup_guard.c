@@ -44,7 +44,8 @@ TypioWlStartupSuppressReason typio_wl_startup_guard_classify_press(
         return TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY;
     }
 
-    if (!has_composition &&
+    if (suppress_stale_keys &&
+        !has_composition &&
         typio_wl_startup_guard_should_ignore_enter(started_at_ms, now_ms, keysym)) {
         return TYPIO_WL_STARTUP_SUPPRESS_ENTER;
     }

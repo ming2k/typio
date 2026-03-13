@@ -9,6 +9,8 @@ Wayland text-input/input-method protocol stack and provides:
 - `rime`: the default Chinese input engine plugin backed by `librime`
 - a shared-library engine ABI for richer out-of-tree engines
 - a pure-Wayland candidate popup surface for engines that expose candidates
+- a D-Bus status interface for structured runtime state beyond what a tray icon
+  can express
 
 ## Protocol Stack
 
@@ -40,6 +42,14 @@ Build and test:
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
+```
+
+Build with the optional GTK4 control panel:
+
+```bash
+cmake -S . -B build -DBUILD_CONTROL_PANEL=ON
+cmake --build build
+./build/src/control/typio-control
 ```
 
 Run directly from the build tree (no install needed):
@@ -98,6 +108,9 @@ Installed artifacts:
 - Default CMake options are used unless a command shows a `-D...` override.
 - The default build includes the `rime` plugin.
 - If you want a smaller build without Rime, configure with `-DBUILD_RIME_ENGINE=OFF`.
+- Tray support is a separate compile-time feature. Disable it with `-DENABLE_SYSTRAY=OFF`.
+- The session D-Bus status/control interface is also a separate feature. Disable it with `-DENABLE_STATUS_BUS=OFF`.
+- The optional GTK4 control panel is built with `-DBUILD_CONTROL_PANEL=ON`.
 - Only one input method can own the Wayland input-method seat at a time.
 - Typio directly implements the Wayland input-method side and depends on the compositor/application text-input-v3 path for end-to-end text input.
 - The built-in `basic` engine does not provide candidate UI.
@@ -105,5 +118,9 @@ Installed artifacts:
 - The Rime popup defaults to a horizontal layout and can follow common desktop light/dark theme hints, with `rime.conf` overrides when needed.
 - Tray hosts that ignore themed icon paths can still render the current engine icon through the exported `IconPixmap` fallback.
 - When the active engine is `rime`, the tray menu exposes a dedicated submenu with the current schema and schema-switch actions.
+- Typio also exports a D-Bus status object at `org.typio.InputMethod1` so shells
+  such as quickshell can read the active engine, available engines, and
+  engine/config state as structured properties instead of inferring everything
+  from tray icon changes.
 - Build-tree plugin testing is supported with `typio --engine-dir <build-dir>/engines`.
 - The pre-`typio-core` prototype API and examples were removed; the maintained public headers now live under `src/lib/typio/`.

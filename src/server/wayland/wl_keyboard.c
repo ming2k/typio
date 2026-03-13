@@ -17,6 +17,7 @@
 #include "key_route.h"
 #include "keyboard_repeat.h"
 #include "repeat_guard.h"
+#include "shortcut_chord.h"
 #include "startup_guard.h"
 #include "vk_bridge.h"
 #include "typio/typio.h"
@@ -129,10 +130,12 @@ static uint32_t keyboard_event_modifiers(TypioWlKeyboard *keyboard,
 static void keyboard_update_physical_modifier_state(TypioWlKeyboard *keyboard,
                                                     uint32_t keysym,
                                                     uint32_t state) {
+    TypioWlFrontend *frontend;
     uint32_t bit;
 
     if (!keyboard)
         return;
+    frontend = keyboard->frontend;
 
     bit = typio_wl_modifier_policy_effective_modifiers(
         TYPIO_MOD_NONE, TYPIO_MOD_NONE, true, keysym,
@@ -145,6 +148,12 @@ static void keyboard_update_physical_modifier_state(TypioWlKeyboard *keyboard,
         keyboard->physical_modifiers |= bit;
     else
         keyboard->physical_modifiers &= ~bit;
+
+    if (frontend &&
+        typio_wl_shortcut_chord_should_reset(keyboard->physical_modifiers)) {
+        frontend->shortcut_chord_saw_non_modifier = false;
+        frontend->shortcut_chord_switch_triggered = false;
+    }
 
     if ((keyboard->physical_modifiers &
          (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0) {

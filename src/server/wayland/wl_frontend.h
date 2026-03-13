@@ -84,16 +84,7 @@ const char *typio_wl_frontend_get_error(TypioWlFrontend *frontend);
  * The tray's D-Bus events will be processed alongside Wayland events.
  */
 void typio_wl_frontend_set_tray(TypioWlFrontend *frontend, void *tray);
-
-/**
- * @brief Set a callback to be invoked when the active engine changes
- * @param frontend Wayland frontend
- * @param callback Function to call on engine change
- * @param user_data User data passed to callback
- */
-void typio_wl_frontend_set_engine_change_callback(TypioWlFrontend *frontend,
-                                                    void (*callback)(void *),
-                                                    void *user_data);
+void typio_wl_frontend_set_status_bus(TypioWlFrontend *frontend, void *status_bus);
 
 #ifdef __cplusplus
 }

@@ -1,0 +1,349 @@
+/**
+ * @file test_status_bus.c
+ * @brief D-Bus status interface integration tests
+ */
+
+#define _POSIX_C_SOURCE 200809L
+
+#include "status/status.h"
+#include "typio/typio.h"
+
+#include <dbus/dbus.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+
+static int tests_run = 0;
+static int tests_passed = 0;
+
+#define TEST(name) \
+    static void test_##name(void); \
+    static void run_test_##name(void) { \
+        printf("  Running %s... ", #name); \
+        tests_run++; \
+        test_##name(); \
+        tests_passed++; \
+        printf("OK\n"); \
+    } \
+    static void test_##name(void)
+
+#define ASSERT(expr) \
+    do { \
+        if (!(expr)) { \
+            printf("FAILED\n"); \
+            printf("    Assertion failed: %s\n", #expr); \
+            printf("    At %s:%d\n", __FILE__, __LINE__); \
+            exit(1); \
+        } \
+    } while (0)
+
+typedef struct TestBusProcess {
+    pid_t pid;
+    char address[1024];
+} TestBusProcess;
+
+static void sleep_briefly(void) {
+    const struct timespec delay = {
+        .tv_sec = 0,
+        .tv_nsec = 1000 * 1000,
+    };
+
+    nanosleep(&delay, NULL);
+}
+
+static void read_line_or_die(int fd, char *buf, size_t size) {
+    size_t i = 0;
+    char ch;
+
+    ASSERT(buf && size > 1);
+
+    while (i + 1 < size) {
+        ssize_t n = read(fd, &ch, 1);
+        ASSERT(n == 1);
+        if (ch == '\n') {
+            break;
+        }
+        buf[i++] = ch;
+    }
+    buf[i] = '\0';
+}
+
+static TestBusProcess start_test_bus(void) {
+    int pipefd[2];
+    pid_t pid;
+    TestBusProcess bus = {0};
+    char pid_line[64];
+
+    ASSERT(pipe(pipefd) == 0);
+
+    pid = fork();
+    ASSERT(pid >= 0);
+
+    if (pid == 0) {
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+        execlp("dbus-daemon", "dbus-daemon",
+               "--session", "--nofork",
+               "--print-address=1", "--print-pid=1",
+               (char *)NULL);
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+    read_line_or_die(pipefd[0], bus.address, sizeof(bus.address));
+    read_line_or_die(pipefd[0], pid_line, sizeof(pid_line));
+    close(pipefd[0]);
+
+    bus.pid = (pid_t)atoi(pid_line);
+    ASSERT(bus.pid > 0);
+    ASSERT(setenv("DBUS_SESSION_BUS_ADDRESS", bus.address, 1) == 0);
+    return bus;
+}
+
+static void stop_test_bus(TestBusProcess *bus) {
+    int status;
+
+    if (!bus || bus->pid <= 0) {
+        return;
+    }
+
+    kill(bus->pid, SIGTERM);
+    waitpid(bus->pid, &status, 0);
+    bus->pid = 0;
+}
+
+static DBusConnection *open_client_connection(const char *address) {
+    DBusConnection *conn;
+    DBusError err;
+
+    dbus_error_init(&err);
+    conn = dbus_connection_open_private(address, &err);
+    ASSERT(conn != NULL);
+    ASSERT(!dbus_error_is_set(&err));
+    ASSERT(dbus_bus_register(conn, &err));
+    ASSERT(!dbus_error_is_set(&err));
+    return conn;
+}
+
+static DBusMessage *call_get_all(DBusConnection *client,
+                                 TypioStatusBus *bus) {
+    DBusMessage *msg;
+    DBusPendingCall *pending = NULL;
+    DBusMessage *reply = NULL;
+    const char *interface = TYPIO_STATUS_DBUS_INTERFACE;
+
+    msg = dbus_message_new_method_call(TYPIO_STATUS_DBUS_SERVICE,
+                                       TYPIO_STATUS_DBUS_PATH,
+                                       "org.freedesktop.DBus.Properties",
+                                       "GetAll");
+    ASSERT(msg != NULL);
+    ASSERT(dbus_message_append_args(msg,
+                                    DBUS_TYPE_STRING, &interface,
+                                    DBUS_TYPE_INVALID));
+    ASSERT(dbus_connection_send_with_reply(client, msg, &pending, 1000));
+    ASSERT(pending != NULL);
+    dbus_message_unref(msg);
+
+    for (int i = 0; i < 100 && !dbus_pending_call_get_completed(pending); ++i) {
+        typio_status_bus_dispatch(bus);
+        dbus_connection_read_write_dispatch(client, 10);
+        sleep_briefly();
+    }
+
+    ASSERT(dbus_pending_call_get_completed(pending));
+    reply = dbus_pending_call_steal_reply(pending);
+    dbus_pending_call_unref(pending);
+    ASSERT(reply != NULL);
+    return reply;
+}
+
+static DBusMessage *call_status_method(DBusConnection *client,
+                                       TypioStatusBus *bus,
+                                       const char *method,
+                                       const char *string_arg) {
+    DBusMessage *msg;
+    DBusPendingCall *pending = NULL;
+    DBusMessage *reply = NULL;
+
+    msg = dbus_message_new_method_call(TYPIO_STATUS_DBUS_SERVICE,
+                                       TYPIO_STATUS_DBUS_PATH,
+                                       TYPIO_STATUS_DBUS_INTERFACE,
+                                       method);
+    ASSERT(msg != NULL);
+    if (string_arg) {
+        ASSERT(dbus_message_append_args(msg,
+                                        DBUS_TYPE_STRING, &string_arg,
+                                        DBUS_TYPE_INVALID));
+    }
+    ASSERT(dbus_connection_send_with_reply(client, msg, &pending, 1000));
+    ASSERT(pending != NULL);
+    dbus_message_unref(msg);
+
+    for (int i = 0; i < 100 && !dbus_pending_call_get_completed(pending); ++i) {
+        typio_status_bus_dispatch(bus);
+        dbus_connection_read_write_dispatch(client, 10);
+        sleep_briefly();
+    }
+
+    ASSERT(dbus_pending_call_get_completed(pending));
+    reply = dbus_pending_call_steal_reply(pending);
+    dbus_pending_call_unref(pending);
+    ASSERT(reply != NULL);
+    return reply;
+}
+
+static bool dict_contains_string(DBusMessageIter *dict,
+                                 const char *key,
+                                 const char *expected) {
+    DBusMessageIter entry;
+
+    while (dbus_message_iter_get_arg_type(dict) == DBUS_TYPE_DICT_ENTRY) {
+        DBusMessageIter kv;
+        DBusMessageIter variant;
+        const char *entry_key = NULL;
+        const char *entry_val = NULL;
+
+        dbus_message_iter_recurse(dict, &entry);
+        kv = entry;
+        if (dbus_message_iter_get_arg_type(&kv) != DBUS_TYPE_STRING) {
+            dbus_message_iter_next(dict);
+            continue;
+        }
+
+        dbus_message_iter_get_basic(&kv, &entry_key);
+        dbus_message_iter_next(&kv);
+        if (dbus_message_iter_get_arg_type(&kv) != DBUS_TYPE_VARIANT) {
+            dbus_message_iter_next(dict);
+            continue;
+        }
+
+        dbus_message_iter_recurse(&kv, &variant);
+        if (strcmp(entry_key, key) == 0 &&
+            dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_STRING) {
+            dbus_message_iter_get_basic(&variant, &entry_val);
+            return strcmp(entry_val, expected) == 0;
+        }
+
+        dbus_message_iter_next(dict);
+    }
+
+    return false;
+}
+
+static bool reply_contains_active_engine(DBusMessage *reply,
+                                         const char *expected_engine) {
+    DBusMessageIter iter;
+    DBusMessageIter dict;
+
+    ASSERT(dbus_message_iter_init(reply, &iter));
+    ASSERT(dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_ARRAY);
+    dbus_message_iter_recurse(&iter, &dict);
+    return dict_contains_string(&dict, "ActiveEngine", expected_engine);
+}
+
+static bool reply_contains_engine_state_name(DBusMessage *reply,
+                                             const char *expected_engine) {
+    DBusMessageIter iter;
+    DBusMessageIter dict;
+
+    ASSERT(dbus_message_iter_init(reply, &iter));
+    ASSERT(dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_ARRAY);
+    dbus_message_iter_recurse(&iter, &dict);
+
+    while (dbus_message_iter_get_arg_type(&dict) == DBUS_TYPE_DICT_ENTRY) {
+        DBusMessageIter entry;
+        DBusMessageIter kv;
+        DBusMessageIter variant;
+        DBusMessageIter state_dict;
+        const char *entry_key = NULL;
+
+        dbus_message_iter_recurse(&dict, &entry);
+        kv = entry;
+        dbus_message_iter_get_basic(&kv, &entry_key);
+        dbus_message_iter_next(&kv);
+        dbus_message_iter_recurse(&kv, &variant);
+
+        if (strcmp(entry_key, "ActiveEngineState") == 0 &&
+            dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_ARRAY) {
+            dbus_message_iter_recurse(&variant, &state_dict);
+            return dict_contains_string(&state_dict, "name", expected_engine);
+        }
+
+        dbus_message_iter_next(&dict);
+    }
+
+    return false;
+}
+
+TEST(exports_basic_engine_state_and_emits_change_signal) {
+    TestBusProcess bus_proc;
+    TypioInstanceConfig config = { .default_engine = "basic" };
+    TypioInstance *instance;
+    TypioStatusBus *bus;
+    DBusConnection *client;
+    DBusMessage *reply;
+    DBusError err;
+    DBusMessage *signal_msg = NULL;
+
+    bus_proc = start_test_bus();
+    instance = typio_instance_new_with_config(&config);
+    ASSERT(instance != NULL);
+    ASSERT(typio_instance_init(instance) == TYPIO_OK);
+
+    bus = typio_status_bus_new(instance);
+    ASSERT(bus != NULL);
+
+    client = open_client_connection(bus_proc.address);
+    reply = call_get_all(client, bus);
+    ASSERT(reply_contains_active_engine(reply, "basic"));
+    ASSERT(reply_contains_engine_state_name(reply, "basic"));
+    dbus_message_unref(reply);
+
+    reply = call_status_method(client, bus, "ActivateEngine", "basic");
+    dbus_message_unref(reply);
+
+    reply = call_status_method(client, bus, "ReloadConfig", NULL);
+    dbus_message_unref(reply);
+
+    dbus_error_init(&err);
+    dbus_bus_add_match(client,
+                       "type='signal',interface='org.freedesktop.DBus.Properties',"
+                       "path='/org/typio/InputMethod1'",
+                       &err);
+    ASSERT(!dbus_error_is_set(&err));
+    dbus_connection_flush(client);
+
+    typio_status_bus_emit_properties_changed(bus);
+    for (int i = 0; i < 100 && signal_msg == NULL; ++i) {
+        typio_status_bus_dispatch(bus);
+        dbus_connection_read_write(client, 10);
+        signal_msg = dbus_connection_pop_message(client);
+        sleep_briefly();
+    }
+
+    ASSERT(signal_msg != NULL);
+    ASSERT(dbus_message_is_signal(signal_msg,
+                                  "org.freedesktop.DBus.Properties",
+                                  "PropertiesChanged"));
+    dbus_message_unref(signal_msg);
+
+    dbus_connection_close(client);
+    dbus_connection_unref(client);
+    typio_status_bus_destroy(bus);
+    typio_instance_free(instance);
+    stop_test_bus(&bus_proc);
+}
+
+int main(void) {
+    printf("Running status bus tests:\n");
+    run_test_exports_basic_engine_state_and_emits_change_signal();
+    printf("\n%d/%d tests passed\n", tests_passed, tests_run);
+    return tests_passed == tests_run ? 0 : 1;
+}

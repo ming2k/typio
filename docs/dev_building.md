@@ -15,6 +15,8 @@ Also required for the default build:
 
 Optional:
 
+- `gtk4` for `BUILD_CONTROL_PANEL=ON`
+- `dbus-1` for `ENABLE_STATUS_BUS=ON`
 - `dbus-1` for `ENABLE_SYSTRAY=ON`
 
 ## Configure and Build
@@ -78,9 +80,11 @@ sudo cmake --install build --prefix /usr/local
 |--------|---------|---------|
 | `BUILD_SHARED_LIBS` | `ON` | Build `typio-core` as a shared library for plugin use |
 | `BUILD_SERVER` | `ON` | Build the `typio` daemon |
+| `BUILD_CONTROL_PANEL` | `OFF` | Build the `typio-control` GTK4 control panel |
 | `BUILD_TESTS` | `ON` | Build unit tests |
 | `BUILD_BASIC_ENGINE` | `ON` | Build the built-in basic keyboard engine |
 | `ENABLE_WAYLAND` | `ON` | Enable the Wayland frontend |
+| `ENABLE_STATUS_BUS` | `ON` | Enable the D-Bus runtime status/control interface |
 | `ENABLE_SYSTRAY` | `ON` | Enable D-Bus StatusNotifierItem support |
 | `BUILD_EXAMPLES` | `OFF` | Reserved for future maintained examples |
 | `BUILD_RIME_ENGINE` | `ON` | Build the default `librime` engine plugin |
@@ -100,6 +104,13 @@ Debug build with the default plugin set:
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 ctest --test-dir build --output-on-failure
+```
+
+Debug build with control panel but no tray icon:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_CONTROL_PANEL=ON -DENABLE_SYSTRAY=OFF
+cmake --build build
 ```
 
 Run from build tree with Rime:
@@ -128,5 +139,6 @@ Fedora:
 sudo dnf install gcc cmake pkgconf-pkg-config wayland-devel libxkbcommon-devel wayland-protocols-devel
 ```
 
-If you enable systray support, also install the `dbus-1` development package for your distribution.
+If you enable the D-Bus status bus or systray support, also install the `dbus-1` development package for your distribution.
+If you build the control panel, also install the `gtk4` development package for your distribution.
 If you intentionally build with `-DBUILD_RIME_ENGINE=OFF`, the `librime` package is no longer required.

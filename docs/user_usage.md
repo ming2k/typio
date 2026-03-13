@@ -44,6 +44,50 @@ If the session exposes the Wayland input-method/text-input stack and no other
 input method currently owns it, Typio will stay in the foreground and process
 Wayland events.
 
+## D-Bus Status Interface
+
+Typio exports structured runtime state on the session bus at:
+
+- service: `org.typio.InputMethod1`
+- path: `/org/typio/InputMethod1`
+- interface: `org.typio.InputMethod1`
+
+Read-only properties:
+
+- `Version`
+- `ActiveEngine`
+- `AvailableEngines`
+- `ActiveEngineState`
+
+Methods:
+
+- `ActivateEngine(s)`
+- `ReloadConfig()`
+
+`ActiveEngineState` is an `a{sv}` map containing stable engine metadata plus
+top-level engine config keys prefixed as `config.*`, such as
+`config.schema` or `config.page_size` for Rime. Typio emits the standard
+`org.freedesktop.DBus.Properties.PropertiesChanged` signal when these values
+change, so richer shells and widgets can react without relying on tray icon
+changes alone.
+
+## GTK4 Control Panel
+
+If Typio was built with `-DBUILD_CONTROL_PANEL=ON`, the build tree also
+contains:
+
+```bash
+./build/src/control/typio-control
+```
+
+The control panel reads Typio state from `org.typio.InputMethod1` and can:
+
+- show the current engine
+- list available engines
+- display structured engine/config state
+- switch engines
+- reload Typio configuration
+
 ## Built-In `basic` Engine
 
 The built-in engine is the baseline keyboard engine. It:

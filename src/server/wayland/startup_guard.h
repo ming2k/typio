@@ -2,9 +2,9 @@
  * @file startup_guard.h
  * @brief Time-based startup filtering for freshly activated keyboard grabs
  *
- * Two small time windows are used:
- * - a very short stale-key window to absorb held keys replayed into a new grab
- * - a longer Enter window to prevent accidental immediate submission
+ * Startup suppression is only for the very early "stale key may still be held"
+ * window on a fresh grab. Enter uses a narrower rule layered on top of that
+ * same startup window rather than a long independent timeout.
  */
 
 #ifndef TYPIO_WL_STARTUP_GUARD_H
@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 #define TYPIO_WL_STARTUP_STALE_KEY_GUARD_MS 50ULL
-#define TYPIO_WL_STARTUP_ENTER_GUARD_MS 1000ULL
+#define TYPIO_WL_STARTUP_ENTER_GUARD_MS TYPIO_WL_STARTUP_STALE_KEY_GUARD_MS
 
 typedef enum {
     TYPIO_WL_STARTUP_SUPPRESS_NONE = 0,
