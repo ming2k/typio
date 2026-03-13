@@ -191,6 +191,12 @@ static void im_handle_deactivate(void *data, struct zwp_input_method_v2 *im) {
 
     typio_log(TYPIO_LOG_DEBUG, "Input method deactivate");
 
+    typio_wl_keyboard_release_forwarded_keys(frontend);
+
+    if (frontend->keyboard) {
+        typio_wl_keyboard_cancel_repeat(frontend->keyboard);
+    }
+
     if (frontend->session) {
         frontend->session->pending.active = false;
     }

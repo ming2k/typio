@@ -192,6 +192,35 @@ TEST(basic_engine_commit) {
     typio_instance_free(instance);
 }
 
+TEST(basic_engine_skips_ctrl_shortcuts) {
+    TypioInstance *instance = typio_instance_new();
+    ASSERT_NOT_NULL(instance);
+    ASSERT_EQ(typio_instance_init(instance), TYPIO_OK);
+
+    TypioInputContext *ctx = typio_instance_create_context(instance);
+    ASSERT_NOT_NULL(ctx);
+
+    char *committed = NULL;
+    typio_input_context_set_commit_callback(ctx, capture_commit, &committed);
+    typio_input_context_focus_in(ctx);
+
+    TypioKeyEvent event = {
+        .type = TYPIO_EVENT_KEY_PRESS,
+        .keycode = 28,
+        .keysym = 't',
+        .modifiers = TYPIO_MOD_CTRL,
+        .unicode = 't',
+        .time = 0,
+        .is_repeat = false,
+    };
+
+    ASSERT(!typio_input_context_process_key(ctx, &event));
+    ASSERT_NULL(committed);
+
+    typio_instance_destroy_context(instance, ctx);
+    typio_instance_free(instance);
+}
+
 /* Test: Key event creation */
 TEST(key_event) {
     TypioKeyEvent *event = typio_key_event_new(
@@ -260,6 +289,7 @@ int main(void) {
     run_test_context_focus();
     run_test_context_properties();
     run_test_basic_engine_commit();
+    run_test_basic_engine_skips_ctrl_shortcuts();
     run_test_key_event();
     run_test_key_event_modifiers();
     run_test_key_event_special();

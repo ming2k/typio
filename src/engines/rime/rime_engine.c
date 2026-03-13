@@ -628,13 +628,6 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
         return TYPIO_KEY_NOT_HANDLED;
     }
 
-    /* Skip Ctrl/Alt/Super combos on press (but still pass modifier-only
-     * keys like Shift so Rime can handle ascii_mode toggle). */
-    if (!is_release && !typio_key_event_is_modifier_only(event) &&
-        (event->modifiers & (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0) {
-        return TYPIO_KEY_NOT_HANDLED;
-    }
-
     session = typio_rime_get_session(engine, ctx, true);
     if (!session || !session->state->api->process_key) {
         return TYPIO_KEY_NOT_HANDLED;

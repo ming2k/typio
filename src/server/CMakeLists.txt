@@ -22,6 +22,7 @@ if(HAVE_WAYLAND)
 
     list(APPEND TYPIO_SERVER_SOURCES
         wayland/popup.c
+        wayland/repeat_guard.c
         wayland/startup_guard.c
         wayland/wl_frontend.c
         wayland/inline_ui.c

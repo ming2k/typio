@@ -6,6 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "wl_frontend_internal.h"
+#include "repeat_guard.h"
 #include "startup_guard.h"
 #include "typio/typio.h"
 #include "typio/engine_manager.h"
@@ -23,8 +24,17 @@
 
 /* Forward declarations */
 static uint32_t xkb_to_typio_modifiers(TypioWlKeyboard *keyboard);
+static uint32_t keyboard_modifiers_for_event(uint32_t modifiers,
+                                             uint32_t keysym,
+                                             uint32_t state);
 static void keyboard_forward_key(TypioWlKeyboard *keyboard, uint32_t time,
                                   uint32_t key, uint32_t state);
+static bool keyboard_is_tracked_key(uint32_t key);
+static void keyboard_track_forwarded_key(TypioWlFrontend *frontend,
+                                         uint32_t key,
+                                         uint32_t state);
+static bool keyboard_consume_suppressed_release(TypioWlFrontend *frontend,
+                                                uint32_t key);
 
 /* Keyboard grab event handlers */
 static void kb_handle_keymap(void *data,
@@ -62,11 +72,81 @@ static uint64_t keyboard_monotonic_ms(void) {
     return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000L);
 }
 
+static bool keyboard_should_repeat(uint32_t modifiers) {
+    return (modifiers & (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) == 0;
+}
+
+static uint32_t keyboard_modifiers_for_event(uint32_t modifiers,
+                                             uint32_t keysym,
+                                             uint32_t state) {
+    uint32_t bit = TYPIO_MOD_NONE;
+
+    switch (keysym) {
+    case XKB_KEY_Shift_L:
+    case XKB_KEY_Shift_R:
+        bit = TYPIO_MOD_SHIFT;
+        break;
+    case XKB_KEY_Control_L:
+    case XKB_KEY_Control_R:
+        bit = TYPIO_MOD_CTRL;
+        break;
+    case XKB_KEY_Alt_L:
+    case XKB_KEY_Alt_R:
+        bit = TYPIO_MOD_ALT;
+        break;
+    case XKB_KEY_Super_L:
+    case XKB_KEY_Super_R:
+        bit = TYPIO_MOD_SUPER;
+        break;
+    default:
+        return modifiers;
+    }
+
+    if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+        return modifiers | bit;
+    }
+
+    return modifiers & ~bit;
+}
+
+static bool keyboard_is_tracked_key(uint32_t key) {
+    return key < TYPIO_WL_MAX_TRACKED_KEYS;
+}
+
+static void keyboard_track_forwarded_key(TypioWlFrontend *frontend,
+                                         uint32_t key,
+                                         uint32_t state) {
+    if (!frontend || !keyboard_is_tracked_key(key)) {
+        return;
+    }
+
+    if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+        frontend->forwarded_keys[key] = true;
+        frontend->suppressed_forwarded_releases[key] = false;
+        return;
+    }
+
+    frontend->forwarded_keys[key] = false;
+    frontend->suppressed_forwarded_releases[key] = false;
+}
+
+static bool keyboard_consume_suppressed_release(TypioWlFrontend *frontend,
+                                                uint32_t key) {
+    if (!frontend || !keyboard_is_tracked_key(key) ||
+        !frontend->suppressed_forwarded_releases[key]) {
+        return false;
+    }
+
+    frontend->suppressed_forwarded_releases[key] = false;
+    return true;
+}
+
 static void keyboard_repeat_start(TypioWlKeyboard *keyboard, uint32_t key,
-                                   uint32_t time) {
+                                   uint32_t time, uint32_t modifiers) {
     struct itimerspec its;
 
-    if (keyboard->repeat_timer_fd < 0 || keyboard->repeat_rate <= 0) {
+    if (keyboard->repeat_timer_fd < 0 || keyboard->repeat_rate <= 0 ||
+        !keyboard_should_repeat(modifiers)) {
         return;
     }
 
@@ -96,6 +176,39 @@ static void keyboard_repeat_stop(TypioWlKeyboard *keyboard) {
         timerfd_settime(keyboard->repeat_timer_fd, 0, &its, NULL);
     }
     keyboard->repeating = false;
+}
+
+void typio_wl_keyboard_cancel_repeat(TypioWlKeyboard *keyboard) {
+    if (!keyboard || !keyboard->repeating) {
+        return;
+    }
+
+    keyboard_repeat_stop(keyboard);
+}
+
+void typio_wl_keyboard_release_forwarded_keys(TypioWlFrontend *frontend) {
+    uint32_t time;
+    size_t key;
+
+    if (!frontend || !frontend->virtual_keyboard ||
+        !frontend->virtual_keyboard_has_keymap) {
+        return;
+    }
+
+    time = (uint32_t)keyboard_monotonic_ms();
+
+    for (key = 0; key < TYPIO_WL_MAX_TRACKED_KEYS; key++) {
+        if (!frontend->forwarded_keys[key]) {
+            continue;
+        }
+
+        zwp_virtual_keyboard_v1_key(frontend->virtual_keyboard,
+                                    time,
+                                    (uint32_t)key,
+                                    WL_KEYBOARD_KEY_STATE_RELEASED);
+        frontend->forwarded_keys[key] = false;
+        frontend->suppressed_forwarded_releases[key] = true;
+    }
 }
 
 int typio_wl_keyboard_get_repeat_fd(TypioWlKeyboard *keyboard) {
@@ -204,6 +317,7 @@ void typio_wl_keyboard_destroy(TypioWlKeyboard *keyboard) {
         return;
     }
 
+    typio_wl_keyboard_release_forwarded_keys(keyboard->frontend);
     typio_wl_keyboard_release_grab(keyboard);
     keyboard_repeat_stop(keyboard);
 
@@ -320,6 +434,7 @@ static void keyboard_forward_key(TypioWlKeyboard *keyboard, uint32_t time,
         return;
     }
     zwp_virtual_keyboard_v1_key(frontend->virtual_keyboard, time, key, state);
+    keyboard_track_forwarded_key(frontend, key, state);
 }
 
 static void keyboard_forward_modifiers(TypioWlKeyboard *keyboard,
@@ -422,14 +537,31 @@ static void kb_handle_key(void *data,
                           uint32_t serial, uint32_t time, uint32_t key,
                           uint32_t state) {
     TypioWlKeyboard *keyboard = data;
+    TypioWlFrontend *frontend = keyboard->frontend;
+    bool was_suppressed_startup_key;
     (void)kb;
     (void)serial;
 
-    if (!keyboard->xkb_state || !keyboard->frontend->session) {
+    if (!keyboard->xkb_state) {
         return;
     }
 
-    TypioWlSession *session = keyboard->frontend->session;
+    if (state == WL_KEYBOARD_KEY_STATE_RELEASED &&
+        keyboard_consume_suppressed_release(frontend, key)) {
+        typio_log(TYPIO_LOG_DEBUG,
+                  "Suppressing physical release for forced-released key: keycode=%u",
+                  key);
+        if (keyboard->repeating && keyboard->repeat_key == key) {
+            keyboard_repeat_stop(keyboard);
+        }
+        return;
+    }
+
+    if (!frontend->session) {
+        return;
+    }
+
+    TypioWlSession *session = frontend->session;
     if (!session->ctx || !typio_input_context_is_focused(session->ctx)) {
         return;
     }
@@ -443,12 +575,14 @@ static void kb_handle_key(void *data,
     /* Get Unicode character */
     uint32_t unicode = xkb_state_key_get_utf32(keyboard->xkb_state, xkb_keycode);
 
-    /* Get modifiers */
+    /* Get modifiers from XKB state, then fold in the current modifier key's
+     * own transition because the compositor updates xkb_state separately. */
     uint32_t modifiers = xkb_to_typio_modifiers(keyboard);
+    uint32_t event_modifiers = keyboard_modifiers_for_event(modifiers, keysym, state);
 
     typio_log(TYPIO_LOG_DEBUG, "Key %s: keycode=%u, keysym=0x%x, unicode=0x%x, mods=0x%x",
               state == WL_KEYBOARD_KEY_STATE_PRESSED ? "press" : "release",
-              key, keysym, unicode, modifiers);
+              key, keysym, unicode, event_modifiers);
 
     if (state == WL_KEYBOARD_KEY_STATE_PRESSED &&
         typio_wl_startup_guard_track_press(keyboard->suppressed_keys,
@@ -471,6 +605,11 @@ static void kb_handle_key(void *data,
         return;
     }
 
+    was_suppressed_startup_key =
+        state == WL_KEYBOARD_KEY_STATE_RELEASED &&
+        key < TYPIO_WL_MAX_TRACKED_KEYS &&
+        keyboard->suppressed_keys[key];
+
     if (state == WL_KEYBOARD_KEY_STATE_RELEASED &&
         typio_wl_startup_guard_track_release(keyboard->suppressed_keys,
                                              TYPIO_WL_MAX_TRACKED_KEYS,
@@ -480,7 +619,15 @@ static void kb_handle_key(void *data,
         if (!keyboard->suppress_stale_keys) {
             typio_log(TYPIO_LOG_DEBUG, "Startup key suppression cleared");
         }
-        return;
+        if (!was_suppressed_startup_key ||
+            key >= TYPIO_WL_MAX_TRACKED_KEYS ||
+            !frontend->forwarded_keys[key]) {
+            return;
+        }
+
+        typio_log(TYPIO_LOG_DEBUG,
+                  "Forwarding release for stale key that remained logically pressed: keycode=%u",
+                  key);
     }
 
     /* Handle key releases */
@@ -495,7 +642,7 @@ static void kb_handle_key(void *data,
             .type = TYPIO_EVENT_KEY_RELEASE,
             .keycode = key,
             .keysym = keysym,
-            .modifiers = modifiers,
+            .modifiers = event_modifiers,
             .unicode = unicode,
             .time = time,
             .is_repeat = false,
@@ -523,7 +670,7 @@ static void kb_handle_key(void *data,
         .type = TYPIO_EVENT_KEY_PRESS,
         .keycode = key,
         .keysym = keysym,
-        .modifiers = modifiers,
+        .modifiers = event_modifiers,
         .unicode = unicode,
         .time = time,
         .is_repeat = false,
@@ -543,7 +690,7 @@ static void kb_handle_key(void *data,
     /* Start key repeat if the key repeats according to XKB */
     if (keyboard->repeat_rate > 0 && keyboard->xkb_keymap &&
         xkb_keymap_key_repeats(keyboard->xkb_keymap, xkb_keycode)) {
-        keyboard_repeat_start(keyboard, key, time);
+        keyboard_repeat_start(keyboard, key, time, event_modifiers);
     }
 }
 
@@ -553,6 +700,8 @@ static void kb_handle_modifiers(void *data,
                                 uint32_t mods_latched, uint32_t mods_locked,
                                 uint32_t group) {
     TypioWlKeyboard *keyboard = data;
+    uint32_t previous_modifiers;
+    uint32_t current_modifiers;
     (void)kb;
     (void)serial;
 
@@ -562,10 +711,20 @@ static void kb_handle_modifiers(void *data,
 
     /* Check Ctrl+Shift state BEFORE updating xkb_state */
     bool was_ctrl_shift = keyboard->engine_switch_armed;
+    previous_modifiers = xkb_to_typio_modifiers(keyboard);
 
     xkb_state_update_mask(keyboard->xkb_state,
                           mods_depressed, mods_latched, mods_locked,
                           0, 0, group);
+    current_modifiers = xkb_to_typio_modifiers(keyboard);
+
+    if (keyboard->repeating &&
+        typio_wl_repeat_should_cancel_on_modifier_transition(
+            previous_modifiers, current_modifiers)) {
+        keyboard_repeat_stop(keyboard);
+        typio_log(TYPIO_LOG_DEBUG,
+                  "Stopped key repeat after blocking modifier transition");
+    }
 
     /* Check if Ctrl+Shift are both currently pressed (and nothing else) */
     bool ctrl_active = xkb_state_mod_index_is_active(keyboard->xkb_state,

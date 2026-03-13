@@ -44,6 +44,16 @@ target_include_directories(test_startup_guard PRIVATE
 )
 add_test(NAME test_startup_guard COMMAND test_startup_guard)
 
+add_executable(test_repeat_guard
+    test_repeat_guard.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/repeat_guard.c
+)
+target_include_directories(test_repeat_guard PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+)
+add_test(NAME test_repeat_guard COMMAND test_repeat_guard)
+
 if(BUILD_RIME_ENGINE)
     add_executable(test_rime_path_expand
         test_rime_path_expand.c

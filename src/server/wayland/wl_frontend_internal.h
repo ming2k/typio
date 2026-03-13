@@ -130,6 +130,8 @@ struct TypioWlFrontend {
     struct zwp_virtual_keyboard_manager_v1 *vk_manager;
     struct zwp_virtual_keyboard_v1 *virtual_keyboard;
     bool virtual_keyboard_has_keymap;
+    bool forwarded_keys[TYPIO_WL_MAX_TRACKED_KEYS];
+    bool suppressed_forwarded_releases[TYPIO_WL_MAX_TRACKED_KEYS];
 
     /* Session and keyboard state */
     TypioWlSession *session;
@@ -165,6 +167,8 @@ void typio_wl_session_apply_pending(TypioWlSession *session);
 TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend);
 void typio_wl_keyboard_destroy(TypioWlKeyboard *keyboard);
 void typio_wl_keyboard_release_grab(TypioWlKeyboard *keyboard);
+void typio_wl_keyboard_cancel_repeat(TypioWlKeyboard *keyboard);
+void typio_wl_keyboard_release_forwarded_keys(TypioWlFrontend *frontend);
 int typio_wl_keyboard_get_repeat_fd(TypioWlKeyboard *keyboard);
 void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard);
 
