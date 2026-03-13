@@ -69,7 +69,12 @@ popup_theme = dark
 candidate_layout = horizontal
 ```
 
-If the tray shows a generic icon instead of the Rime icon, make sure you are running a rebuilt binary. Typio now exports both themed icons and an `IconPixmap` fallback, but tray hosts still vary in how aggressively they refresh icons.
+If the tray shows a generic icon instead of the Rime icon, make sure you are
+running a rebuilt binary and that the installed icon theme path is readable.
+Typio now prefers the installed `hicolor` theme directory over the source-tree
+icon directory when exporting `IconThemePath`, and still provides an
+`IconPixmap` fallback for tray hosts that do not resolve themed icons
+consistently.
 
 ## Debug Logging
 

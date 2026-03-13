@@ -418,10 +418,15 @@ static void kb_process_key_press(TypioWlKeyboard *keyboard,
                                  uint32_t key, xkb_keysym_t keysym,
                                  uint32_t modifiers, uint32_t unicode,
                                  uint32_t time) {
+    TypioKeyTrackState state_before_repeat;
+
     typio_wl_key_route_process_press(keyboard, session, key, (uint32_t)keysym,
                                      modifiers, unicode, time);
 
+    state_before_repeat = key_get_state(keyboard->frontend, key);
+
     if (keyboard->repeat_rate > 0 && keyboard->xkb_keymap &&
+        typio_wl_repeat_should_run_for_state(state_before_repeat) &&
         xkb_keymap_key_repeats(keyboard->xkb_keymap, key + 8)) {
         typio_wl_keyboard_repeat_maybe_start(keyboard, key, time, modifiers);
     }

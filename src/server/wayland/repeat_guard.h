@@ -1,10 +1,12 @@
 /**
  * @file repeat_guard.h
- * @brief Helpers for deciding when keyboard repeat should be cancelled
+ * @brief Helpers for deciding when keyboard repeat may run or should be cancelled
  */
 
 #ifndef TYPIO_WL_REPEAT_GUARD_H
 #define TYPIO_WL_REPEAT_GUARD_H
+
+#include "key_tracking.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -16,6 +18,7 @@ extern "C" {
 bool typio_wl_repeat_should_cancel_on_modifier_transition(
     uint32_t previous_modifiers,
     uint32_t current_modifiers);
+bool typio_wl_repeat_should_run_for_state(TypioKeyTrackState state);
 
 #ifdef __cplusplus
 }

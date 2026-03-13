@@ -21,6 +21,9 @@ extern "C" {
 #define SNI_ITEM_INTERFACE "org.kde.StatusNotifierItem"
 #define SNI_ITEM_PATH "/StatusNotifierItem"
 
+#define DBUS_SERVICE "org.freedesktop.DBus"
+#define DBUS_PATH "/org/freedesktop/DBus"
+#define DBUS_INTERFACE "org.freedesktop.DBus"
 #define DBUS_PROPERTIES_INTERFACE "org.freedesktop.DBus.Properties"
 
 /* Menu interface */

@@ -4,11 +4,16 @@
  */
 
 #include "boundary_bridge.h"
+#include "typio/event.h"
 #include "typio/types.h"
 
 bool typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    uint32_t keysym,
     uint32_t modifiers,
     bool saw_blocking_modifier) {
+    if (keysym == TYPIO_KEY_Return || keysym == TYPIO_KEY_KP_Enter)
+        return true;
+
     return saw_blocking_modifier ||
            (modifiers & (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0;
 }

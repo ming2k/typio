@@ -385,9 +385,12 @@ int main(int argc, char *argv[]) {
         .user_data = NULL,
     };
     g_tray = typio_tray_new(g_instance, &tray_config);
-    if (g_tray) {
+    if (g_tray && typio_tray_is_registered(g_tray)) {
         update_tray_engine_status();
         printf("System tray initialized\n");
+    } else if (g_tray) {
+        update_tray_engine_status();
+        printf("System tray pending (StatusNotifierWatcher not running yet)\n");
     } else {
         printf("System tray not available (StatusNotifierWatcher may not be running)\n");
     }

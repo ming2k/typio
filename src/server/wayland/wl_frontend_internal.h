@@ -176,6 +176,7 @@ struct TypioWlFrontend {
     /* Event loop state */
     volatile bool running;
     TypioWlLifecyclePhase lifecycle_phase;
+    bool pending_reactivation;
 
     /* Error message buffer */
     char error_msg[256];

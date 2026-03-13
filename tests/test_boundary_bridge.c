@@ -4,6 +4,7 @@
  */
 
 #include "boundary_bridge.h"
+#include "typio/event.h"
 #include "typio/types.h"
 
 #include <stdio.h>
@@ -35,20 +36,35 @@ static int tests_passed = 0;
 
 TEST(cleans_up_orphan_release_for_shortcut_modifiers) {
     ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_KEY_space,
         TYPIO_MOD_CTRL, false));
     ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_KEY_space,
         TYPIO_MOD_ALT, false));
     ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_KEY_space,
         TYPIO_MOD_SUPER, false));
     ASSERT(!typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_KEY_space,
         TYPIO_MOD_SHIFT, false));
     ASSERT(!typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_KEY_space,
         TYPIO_MOD_NONE, false));
 }
 
 TEST(cleans_up_orphan_release_after_modifier_was_seen) {
     ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_KEY_space,
         TYPIO_MOD_NONE, true));
+}
+
+TEST(cleans_up_orphan_release_for_enter_without_modifiers) {
+    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_KEY_Return,
+        TYPIO_MOD_NONE, false));
+    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+        TYPIO_KEY_KP_Enter,
+        TYPIO_MOD_NONE, false));
 }
 
 TEST(resets_carried_modifiers_outside_deactivating) {
@@ -82,6 +98,7 @@ int main(void) {
 
     run_test_cleans_up_orphan_release_for_shortcut_modifiers();
     run_test_cleans_up_orphan_release_after_modifier_was_seen();
+    run_test_cleans_up_orphan_release_for_enter_without_modifiers();
     run_test_resets_carried_modifiers_outside_deactivating();
     run_test_carries_modifiers_only_for_owned_deactivation_with_mask();
 

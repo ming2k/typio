@@ -236,6 +236,19 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
         return;
     }
 
+    if (!typio_wl_repeat_should_run_for_state(repeat_state)) {
+        keyboard_repeat_trace(keyboard, "repeat-stop", keyboard->repeat_key,
+                              repeat_keysym,
+                              keyboard->physical_modifiers |
+                              (keyboard_repeat_xkb_modifiers(keyboard) &
+                               (TYPIO_MOD_CAPSLOCK | TYPIO_MOD_NUMLOCK)),
+                              repeat_unicode,
+                              repeat_state,
+                              "repeat disallowed for key state");
+        typio_wl_keyboard_repeat_stop(keyboard);
+        return;
+    }
+
     {
         TypioKeyEvent event = {
             .type      = TYPIO_EVENT_KEY_PRESS,

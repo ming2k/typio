@@ -22,11 +22,71 @@
 #define TYPIO_TRAY_RIME_MENU_MAX_SCHEMAS 32
 
 static const char *typio_tray_default_icon_theme_path(void) {
+    static char install_theme_path[512];
+    static char source_theme_path[512];
+
+    if (snprintf(install_theme_path, sizeof(install_theme_path),
+                 "%s/hicolor", TYPIO_INSTALL_ICON_DIR) > 0 &&
+        access(install_theme_path, R_OK) == 0) {
+        return install_theme_path;
+    }
+
+    if (access(TYPIO_INSTALL_ICON_DIR, R_OK) == 0) {
+        return TYPIO_INSTALL_ICON_DIR;
+    }
+
+    if (snprintf(source_theme_path, sizeof(source_theme_path),
+                 "%s/hicolor", TYPIO_SOURCE_ICON_DIR) > 0 &&
+        access(source_theme_path, R_OK) == 0) {
+        return source_theme_path;
+    }
+
     if (access(TYPIO_SOURCE_ICON_DIR, R_OK) == 0) {
         return TYPIO_SOURCE_ICON_DIR;
     }
 
-    return TYPIO_INSTALL_ICON_DIR;
+    return "";
+}
+
+static DBusHandlerResult tray_bus_filter(DBusConnection *conn,
+                                         DBusMessage *msg,
+                                         void *user_data) {
+    TypioTray *tray = user_data;
+    const char *name = NULL;
+    const char *old_owner = NULL;
+    const char *new_owner = NULL;
+
+    (void)conn;
+
+    if (!tray || !msg ||
+        dbus_message_get_type(msg) != DBUS_MESSAGE_TYPE_SIGNAL ||
+        !dbus_message_is_signal(msg, DBUS_INTERFACE, "NameOwnerChanged")) {
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
+
+    if (!dbus_message_get_args(msg, NULL,
+                               DBUS_TYPE_STRING, &name,
+                               DBUS_TYPE_STRING, &old_owner,
+                               DBUS_TYPE_STRING, &new_owner,
+                               DBUS_TYPE_INVALID) ||
+        !name || strcmp(name, SNI_WATCHER_SERVICE) != 0) {
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
+
+    if (new_owner && new_owner[0] != '\0') {
+        typio_log(TYPIO_LOG_INFO,
+                  "StatusNotifierWatcher appeared as %s",
+                  new_owner);
+        if (!tray->registered) {
+            typio_tray_sni_register(tray);
+        }
+    } else {
+        typio_log(TYPIO_LOG_INFO,
+                  "StatusNotifierWatcher disappeared");
+        tray->registered = false;
+    }
+
+    return DBUS_HANDLER_RESULT_HANDLED;
 }
 
 typedef struct TypioTrayRimeSchemaInfo {
@@ -968,6 +1028,10 @@ DBusHandlerResult typio_tray_handle_message(DBusConnection *conn,
     const char *path = dbus_message_get_path(msg);
     DBusMessage *reply = NULL;
 
+    if (dbus_message_get_type(msg) == DBUS_MESSAGE_TYPE_SIGNAL) {
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
+
     if (dbus_message_get_type(msg) != DBUS_MESSAGE_TYPE_METHOD_CALL) {
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
     }
@@ -1200,6 +1264,20 @@ TypioTray *typio_tray_new(TypioInstance *instance, const TypioTrayConfig *config
         return NULL;
     }
 
+    dbus_bus_add_match(tray->conn,
+                       "type='signal',sender='org.freedesktop.DBus',"
+                       "interface='org.freedesktop.DBus',member='NameOwnerChanged',"
+                       "arg0='org.kde.StatusNotifierWatcher'",
+                       &err);
+    dbus_connection_add_filter(tray->conn, tray_bus_filter, tray, NULL);
+    dbus_connection_flush(tray->conn);
+    if (dbus_error_is_set(&err)) {
+        typio_log(TYPIO_LOG_WARNING,
+                  "Failed to watch StatusNotifierWatcher ownership: %s",
+                  err.message);
+        dbus_error_free(&err);
+    }
+
     /* Generate unique service name */
     static int instance_counter = 0;
     pid_t pid = getpid();
@@ -1251,8 +1329,6 @@ TypioTray *typio_tray_new(TypioInstance *instance, const TypioTrayConfig *config
     /* Register with watcher */
     typio_tray_sni_register(tray);
 
-    typio_log(TYPIO_LOG_INFO, "System tray initialized");
-
     return tray;
 }
 
@@ -1262,6 +1338,18 @@ void typio_tray_destroy(TypioTray *tray) {
     }
 
     if (tray->conn) {
+        DBusError err;
+
+        dbus_error_init(&err);
+        dbus_bus_remove_match(tray->conn,
+                              "type='signal',sender='org.freedesktop.DBus',"
+                              "interface='org.freedesktop.DBus',member='NameOwnerChanged',"
+                              "arg0='org.kde.StatusNotifierWatcher'",
+                              &err);
+        if (dbus_error_is_set(&err)) {
+            dbus_error_free(&err);
+        }
+        dbus_connection_remove_filter(tray->conn, tray_bus_filter, tray);
         dbus_connection_unregister_object_path(tray->conn, SNI_ITEM_PATH);
         dbus_connection_unregister_object_path(tray->conn, DBUSMENU_PATH);
         dbus_connection_unref(tray->conn);

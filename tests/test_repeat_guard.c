@@ -61,12 +61,29 @@ TEST(ignores_shift_only_transitions) {
         TYPIO_MOD_SHIFT | TYPIO_MOD_CAPSLOCK));
 }
 
+TEST(blocks_repeat_for_suppressed_or_pending_states) {
+    ASSERT(!typio_wl_repeat_should_run_for_state(
+        TYPIO_KEY_SUPPRESSED_STARTUP));
+    ASSERT(!typio_wl_repeat_should_run_for_state(
+        TYPIO_KEY_SUPPRESSED_ENTER));
+    ASSERT(!typio_wl_repeat_should_run_for_state(
+        TYPIO_KEY_RELEASED_PENDING));
+}
+
+TEST(allows_repeat_for_normal_owned_routes) {
+    ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_IDLE));
+    ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_FORWARDED));
+    ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_APP_SHORTCUT));
+}
+
 int main(void) {
     printf("Running repeat guard tests:\n");
 
     run_test_cancels_when_ctrl_changes();
     run_test_cancels_when_alt_or_super_changes();
     run_test_ignores_shift_only_transitions();
+    run_test_blocks_repeat_for_suppressed_or_pending_states();
+    run_test_allows_repeat_for_normal_owned_routes();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
