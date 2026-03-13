@@ -209,7 +209,7 @@ static void update_tray_engine_status(void) {
     TypioEngine *active = typio_engine_manager_get_active(manager);
     const char *engine_name = active ? typio_engine_get_name(active) : NULL;
     const char *icon_name = (active && active->info && active->info->icon) ?
-                            active->info->icon : "input-keyboard";
+                            active->info->icon : "typio-keyboard";
     typio_tray_set_icon(g_tray, icon_name);
     typio_tray_update_engine(g_tray, engine_name, active != NULL);
 }
@@ -379,7 +379,7 @@ int main(int argc, char *argv[]) {
     /* Create system tray */
 #ifdef HAVE_SYSTRAY
     TypioTrayConfig tray_config = {
-        .icon_name = "input-keyboard",
+        .icon_name = "typio-keyboard",
         .tooltip = "Typio Input Method",
         .menu_callback = tray_menu_callback,
         .user_data = NULL,

@@ -88,6 +88,8 @@ Installed artifacts:
 - [Troubleshooting](docs/user_troubleshooting.md)
 - [Developer Building Guide](docs/dev_building.md)
 - [Architecture](docs/dev_architecture.md)
+- [Developer Maintenance Manual](docs/dev_maintenance.md)
+- [Developer Timing Model](docs/dev_timing_model.md)
 - [Creating Engines](docs/dev_creating_engines.md)
 
 ## Notes

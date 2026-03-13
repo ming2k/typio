@@ -83,6 +83,11 @@ Logs go to stderr. To keep a trace:
 typio --verbose 2>&1 | tee typio.log
 ```
 
+Keyboard trace lines include both raw key data and the resolved text
+character when XKB can derive one, for example `unicode=U+0061 char='a'`.
+They also carry `seq=...`, `phase=...`, and `topic=...` so related events can
+be correlated in order.
+
 ## Validate the Binary and Library
 
 ```bash

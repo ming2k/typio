@@ -35,6 +35,71 @@ TEST(ignores_enter_during_startup_window) {
         1000, 1500, TYPIO_KEY_KP_Enter));
 }
 
+TEST(ignores_stale_presses_during_short_window) {
+    ASSERT(typio_wl_startup_guard_should_ignore_stale_press(1000, 1020));
+    ASSERT(typio_wl_startup_guard_should_ignore_stale_press(
+        1000, 1000 + TYPIO_WL_STARTUP_STALE_KEY_GUARD_MS));
+}
+
+TEST(allows_presses_after_stale_window) {
+    ASSERT(!typio_wl_startup_guard_should_ignore_stale_press(
+        1000, 1001 + TYPIO_WL_STARTUP_STALE_KEY_GUARD_MS));
+}
+
+TEST(cleans_up_orphan_releases_during_short_window) {
+    ASSERT(typio_wl_startup_guard_should_cleanup_stale_release(1000, 1020));
+    ASSERT(typio_wl_startup_guard_should_cleanup_stale_release(
+        1000, 1000 + TYPIO_WL_STARTUP_STALE_KEY_GUARD_MS));
+}
+
+TEST(allows_orphan_releases_after_stale_window) {
+    ASSERT(!typio_wl_startup_guard_should_cleanup_stale_release(
+        1000, 1001 + TYPIO_WL_STARTUP_STALE_KEY_GUARD_MS));
+}
+
+TEST(cleans_up_shortcut_orphan_releases_with_blocking_modifiers) {
+    ASSERT(typio_wl_startup_guard_should_cleanup_shortcut_orphan_release(
+        TYPIO_MOD_CTRL));
+    ASSERT(typio_wl_startup_guard_should_cleanup_shortcut_orphan_release(
+        TYPIO_MOD_ALT));
+    ASSERT(typio_wl_startup_guard_should_cleanup_shortcut_orphan_release(
+        TYPIO_MOD_SUPER));
+}
+
+TEST(does_not_treat_plain_releases_as_shortcut_orphan_cleanup) {
+    ASSERT(!typio_wl_startup_guard_should_cleanup_shortcut_orphan_release(
+        TYPIO_MOD_NONE));
+    ASSERT(!typio_wl_startup_guard_should_cleanup_shortcut_orphan_release(
+        TYPIO_MOD_SHIFT));
+}
+
+TEST(classifies_stale_press_before_enter_guard) {
+    ASSERT(typio_wl_startup_guard_classify_press(
+        1000, 1020, TYPIO_KEY_Return, false, true) ==
+        TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY);
+}
+
+TEST(classifies_enter_without_composition) {
+    ASSERT(typio_wl_startup_guard_classify_press(
+        1000, 1200, TYPIO_KEY_Return, false, false) ==
+        TYPIO_WL_STARTUP_SUPPRESS_ENTER);
+    ASSERT(typio_wl_startup_guard_classify_press(
+        1000, 1200, TYPIO_KEY_KP_Enter, false, false) ==
+        TYPIO_WL_STARTUP_SUPPRESS_ENTER);
+}
+
+TEST(allows_enter_when_composition_is_active) {
+    ASSERT(typio_wl_startup_guard_classify_press(
+        1000, 1200, TYPIO_KEY_Return, true, false) ==
+        TYPIO_WL_STARTUP_SUPPRESS_NONE);
+}
+
+TEST(allows_non_enter_after_stale_window) {
+    ASSERT(typio_wl_startup_guard_classify_press(
+        1000, 1200, TYPIO_KEY_space, false, false) ==
+        TYPIO_WL_STARTUP_SUPPRESS_NONE);
+}
+
 TEST(allows_enter_after_startup_window) {
     ASSERT(!typio_wl_startup_guard_should_ignore_enter(
         1000, 2201, TYPIO_KEY_Return));
@@ -45,46 +110,28 @@ TEST(allows_other_keys) {
         1000, 1500, TYPIO_KEY_space));
 }
 
-TEST(tracks_startup_enter_until_release) {
-    bool suppressed[8] = {false};
-    size_t suppressed_count = 0;
-    bool suppress_stale_keys = true;
-
-    ASSERT(typio_wl_startup_guard_track_press(
-        suppressed, 8, &suppressed_count, suppress_stale_keys,
-        1000, 1200, 3, TYPIO_KEY_Return));
-    ASSERT(suppressed[3]);
-    ASSERT(suppressed_count == 1);
-
-    ASSERT(typio_wl_startup_guard_track_press(
-        suppressed, 8, &suppressed_count, suppress_stale_keys,
-        1000, 2500, 3, TYPIO_KEY_Return));
-    ASSERT(suppressed_count == 1);
-
-    ASSERT(typio_wl_startup_guard_track_release(
-        suppressed, 8, &suppressed_count, &suppress_stale_keys, 3));
-    ASSERT(!suppressed[3]);
-    ASSERT(suppressed_count == 0);
-    ASSERT(!suppress_stale_keys);
-}
-
-TEST(release_clears_empty_stale_mode) {
-    bool suppressed[8] = {false};
-    size_t suppressed_count = 0;
-    bool suppress_stale_keys = true;
-
-    ASSERT(typio_wl_startup_guard_track_release(
-        suppressed, 8, &suppressed_count, &suppress_stale_keys, 4));
-    ASSERT(!suppress_stale_keys);
+TEST(handles_time_wraparound) {
+    /* now_ms < started_at_ms should not suppress */
+    ASSERT(!typio_wl_startup_guard_should_ignore_enter(
+        2000, 1000, TYPIO_KEY_Return));
 }
 
 int main(void) {
     printf("Running startup guard tests:\n");
+    run_test_ignores_stale_presses_during_short_window();
+    run_test_allows_presses_after_stale_window();
+    run_test_cleans_up_orphan_releases_during_short_window();
+    run_test_allows_orphan_releases_after_stale_window();
+    run_test_cleans_up_shortcut_orphan_releases_with_blocking_modifiers();
+    run_test_does_not_treat_plain_releases_as_shortcut_orphan_cleanup();
+    run_test_classifies_stale_press_before_enter_guard();
+    run_test_classifies_enter_without_composition();
+    run_test_allows_enter_when_composition_is_active();
+    run_test_allows_non_enter_after_stale_window();
     run_test_ignores_enter_during_startup_window();
     run_test_allows_enter_after_startup_window();
     run_test_allows_other_keys();
-    run_test_tracks_startup_enter_until_release();
-    run_test_release_clears_empty_stale_mode();
+    run_test_handles_time_wraparound();
     printf("\nPassed %d/%d tests\n", tests_passed, tests_run);
     return 0;
 }

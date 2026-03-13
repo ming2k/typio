@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-03-14
+
+### Fixed
+
+- **Activation-boundary orphan release cleanup**: when a non-modifier key press
+  reached the application before a new keyboard grab was established, Typio now
+  forwards the matching startup-window orphan release to the virtual keyboard
+  instead of consuming it silently. This prevents stuck shortcut letters such
+  as repeating `t` after `Ctrl+T` across focus/grab transitions.
+- **Conservative shortcut routing**: Typio no longer intercepts `Ctrl+Shift`
+  inside the keyboard grab for engine switching. Modifier shortcuts are treated
+  as application/compositor-owned behavior unless exposed through another
+  integration surface such as the tray.
+- **Modifier continuity across grab recreation**: held `Ctrl/Alt/Super`
+  modifiers are now resynchronized from XKB modifier updates after keyboard
+  grab recreation, so application shortcuts continue to work without requiring
+  the user to release and re-press the modifier.
+
 ## [1.0.0] - 2026-03-13
 
 ### Added
@@ -27,9 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   librime with proper modifier masks.
 - **Basic engine**: Built-in passthrough engine that commits printable characters
   directly.
-- **Engine switching**: Ctrl+Shift keyboard shortcut to switch engines.
-  Interval > 1 s toggles between the two most recent engines; faster intervals
-  cycle through all available engines.
+- **Engine switching**: Tray/menu-driven engine switching and schema switching.
 - **System tray (StatusNotifierItem)**: D-Bus SNI implementation with engine
   status display, engine switching via click/scroll, and a context menu with
   engine selection. Rime-specific submenu exposes schema switching and reload.
@@ -54,4 +70,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `wayland_generate_protocol()` macro. Supports build-tree testing without
   installation.
 
+[1.0.1]: https://github.com/user/typio/releases/tag/v1.0.1
 [1.0.0]: https://github.com/user/typio/releases/tag/v1.0.0

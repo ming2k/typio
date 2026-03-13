@@ -475,7 +475,7 @@ static DBusMessage *handle_properties_get(TypioTray *tray, DBusMessage *msg) {
             dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &val);
             dbus_message_iter_close_container(&iter, &variant);
         } else if (strcmp(property, "IconName") == 0) {
-            const char *val = tray->icon_name ? tray->icon_name : "input-keyboard";
+            const char *val = tray->icon_name ? tray->icon_name : "typio-keyboard";
             dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "s", &variant);
             dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &val);
             dbus_message_iter_close_container(&iter, &variant);
@@ -499,7 +499,7 @@ static DBusMessage *handle_properties_get(TypioTray *tray, DBusMessage *msg) {
         } else if (strcmp(property, "ToolTip") == 0) {
             /* (sa(iiay)ss) - icon, pixmap, title, description */
             DBusMessageIter st;
-            const char *icon = tray->icon_name ? tray->icon_name : "input-keyboard";
+            const char *icon = tray->icon_name ? tray->icon_name : "typio-keyboard";
             const char *title = tray->tooltip_title ? tray->tooltip_title : "Typio";
             const char *desc = tray->tooltip_description ? tray->tooltip_description : "";
 
@@ -596,7 +596,7 @@ static DBusMessage *handle_properties_getall(TypioTray *tray, DBusMessage *msg) 
         append_dict_entry_string(&dict, "Title", tray->title ? tray->title : "Typio");
         append_dict_entry_string(&dict, "Status", status_str);
         append_dict_entry_string(&dict, "IconName",
-                                 tray->icon_name ? tray->icon_name : "input-keyboard");
+                                 tray->icon_name ? tray->icon_name : "typio-keyboard");
         append_dict_entry_string(&dict, "IconThemePath",
                                  tray->icon_theme_path ? tray->icon_theme_path : "");
         append_dict_entry_icon_pixmap(&dict, "IconPixmap", tray->icon_name);
@@ -1180,7 +1180,7 @@ TypioTray *typio_tray_new(TypioInstance *instance, const TypioTrayConfig *config
     }
 
     if (!tray->icon_name) {
-        tray->icon_name = typio_strdup("input-keyboard");
+        tray->icon_name = typio_strdup("typio-keyboard");
     }
     tray->icon_theme_path = typio_strdup(typio_tray_default_icon_theme_path());
     if (!tray->tooltip_title) {
@@ -1323,7 +1323,7 @@ void typio_tray_set_icon(TypioTray *tray, const char *icon_name) {
     }
 
     free(tray->icon_name);
-    tray->icon_name = icon_name ? typio_strdup(icon_name) : typio_strdup("input-keyboard");
+    tray->icon_name = icon_name ? typio_strdup(icon_name) : typio_strdup("typio-keyboard");
     typio_tray_sni_emit_signal(tray, "NewIcon");
 }
 

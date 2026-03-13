@@ -151,7 +151,7 @@ void typio_input_context_focus_in(TypioInputContext *ctx) {
     /* Notify engine */
     TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
     TypioEngine *engine = typio_engine_manager_get_active(manager);
-    if (engine && engine->ops->focus_in) {
+    if (engine && engine->ops && engine->ops->focus_in) {
         engine->ops->focus_in(engine, ctx);
     }
 }
@@ -164,7 +164,7 @@ void typio_input_context_focus_out(TypioInputContext *ctx) {
     /* Notify engine */
     TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
     TypioEngine *engine = typio_engine_manager_get_active(manager);
-    if (engine && engine->ops->focus_out) {
+    if (engine && engine->ops && engine->ops->focus_out) {
         engine->ops->focus_out(engine, ctx);
     }
 
@@ -190,7 +190,7 @@ void typio_input_context_reset(TypioInputContext *ctx) {
     /* Notify engine */
     TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
     TypioEngine *engine = typio_engine_manager_get_active(manager);
-    if (engine && engine->ops->reset) {
+    if (engine && engine->ops && engine->ops->reset) {
         engine->ops->reset(engine, ctx);
     }
 }
@@ -204,7 +204,7 @@ bool typio_input_context_process_key(TypioInputContext *ctx,
     TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
     TypioEngine *engine = typio_engine_manager_get_active(manager);
 
-    if (!engine || !engine->ops->process_key) {
+    if (!engine || !engine->ops || !engine->ops->process_key) {
         return false;
     }
 
@@ -220,7 +220,7 @@ bool typio_input_context_select_candidate(TypioInputContext *ctx, int index) {
     TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
     TypioEngine *engine = typio_engine_manager_get_active(manager);
 
-    if (!engine || !engine->ops->select_candidate) {
+    if (!engine || !engine->ops || !engine->ops->select_candidate) {
         return false;
     }
 
@@ -235,7 +235,7 @@ bool typio_input_context_page_candidates(TypioInputContext *ctx, bool next) {
     TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
     TypioEngine *engine = typio_engine_manager_get_active(manager);
 
-    if (!engine || !engine->ops->page_candidates) {
+    if (!engine || !engine->ops || !engine->ops->page_candidates) {
         return false;
     }
 

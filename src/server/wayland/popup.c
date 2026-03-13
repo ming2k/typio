@@ -562,8 +562,6 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
     char *preedit_text = NULL;
     int preedit_width = 0;
     int preedit_height = 0;
-    int page_width = 0;
-    int page_height = 0;
     int content_width = 0;
     int content_height = 0;
     int items_height = 0;
@@ -571,7 +569,6 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
     int row_height = 0;
     int width;
     int height;
-    char page_info[64];
     int y;
 
     if (!popup || !popup->surface || !candidates || candidates->count == 0) {
@@ -658,22 +655,6 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
     }
     content_height += items_height;
 
-    if (candidates->count > 0 && candidates->total > 0) {
-        snprintf(page_info, sizeof(page_info), "Page %d  %d/%d",
-                 candidates->page + 1, (int)candidates->count, candidates->total);
-    } else {
-        snprintf(page_info, sizeof(page_info), "Page %d",
-                 candidates->page + 1);
-    }
-
-    if (popup_measure_text(cr, render_config.page_font_desc, page_info,
-                           &page_width, &page_height)) {
-        if (page_width > content_width) {
-            content_width = page_width;
-        }
-        content_height += TYPIO_POPUP_SECTION_GAP + page_height;
-    }
-
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
 
@@ -744,11 +725,6 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
             y += current_row_height;
         }
     }
-
-    y += TYPIO_POPUP_SECTION_GAP;
-    popup_draw_text(cr, render_config.page_font_desc, page_info,
-                    TYPIO_POPUP_PADDING, y,
-                    palette->muted_r, palette->muted_g, palette->muted_b);
 
     cairo_surface_flush(surface);
     cairo_destroy(cr);

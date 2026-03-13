@@ -15,6 +15,8 @@ input depends on the compositor/application `text-input-unstable-v3` path.
 
 - [Building from Source](dev_building.md)
 - [Architecture](dev_architecture.md)
+- [Maintenance Manual](dev_maintenance.md)
+- [Timing Model](dev_timing_model.md)
 - [Creating Engines](dev_creating_engines.md)
 - [Contributing](contributing.md)
 

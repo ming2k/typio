@@ -7,6 +7,11 @@
 #define TYPIO_WL_FRONTEND_INTERNAL_H
 
 #include "wl_frontend.h"
+#include "key_tracking.h"
+#include "lifecycle.h"
+#include "keyboard_repeat.h"
+#include "startup_guard.h"
+#include "vk_bridge.h"
 #include "typio/types.h"
 #include "typio_build_config.h"
 
@@ -33,6 +38,23 @@ typedef struct TypioWlPopup TypioWlPopup;
 #define TYPIO_WL_MAX_TRACKED_KEYS 512
 
 /**
+ * @brief Per-key tracking state.
+ *
+ * Each key can be in exactly one state.  Transitions:
+ *
+ *   IDLE ──press──▶ FORWARDED          (forwarded to app)
+ *   IDLE ──press──▶ APP_SHORTCUT       (application shortcut bypasses engine)
+ *   IDLE ──press──▶ SUPPRESSED_STARTUP (held key from previous grab)
+ *   IDLE ──press──▶ SUPPRESSED_ENTER   (new Enter press inside startup guard)
+ *   APP_SHORTCUT ─physical release──▶ IDLE
+ *   FORWARDED ─force release──▶ RELEASED_PENDING
+ *   FORWARDED ─physical release──▶ IDLE
+ *   RELEASED_PENDING ─physical release──▶ IDLE  (consumed)
+ *   SUPPRESSED_STARTUP ─physical release──▶ IDLE
+ *   SUPPRESSED_ENTER ─physical release──▶ IDLE
+ */
+
+/**
  * @brief Wayland keyboard state (XKB handling)
  */
 struct TypioWlKeyboard {
@@ -50,6 +72,7 @@ struct TypioWlKeyboard {
     xkb_mod_index_t mod_super;
     xkb_mod_index_t mod_caps;
     xkb_mod_index_t mod_num;
+    uint32_t physical_modifiers;
 
     /* Key repeat */
     int32_t repeat_rate;    /* Keys per second */
@@ -59,16 +82,9 @@ struct TypioWlKeyboard {
     uint32_t repeat_time;   /* Timestamp of the original press */
     bool repeating;         /* Whether a key is currently repeating */
 
-    /* Ctrl+Shift engine switching */
-    bool engine_switch_armed;       /* Ctrl+Shift both pressed, no other key yet */
-    uint64_t last_engine_switch_ms; /* Timestamp of last engine switch */
-    char *prev_engine_name;         /* Previous engine name for toggle mode */
-
-    /* Keys that were already held when the grab became active. Ignore
-     * their press/repeat stream until we observe the first release. */
+    /* Startup guard: suppress stale keys held from previous grab */
     bool suppress_stale_keys;
-    bool suppressed_keys[TYPIO_WL_MAX_TRACKED_KEYS];
-    size_t suppressed_key_count;
+    size_t startup_suppressed_count;
     uint64_t created_at_ms;
 
     /* Back reference */
@@ -130,8 +146,12 @@ struct TypioWlFrontend {
     struct zwp_virtual_keyboard_manager_v1 *vk_manager;
     struct zwp_virtual_keyboard_v1 *virtual_keyboard;
     bool virtual_keyboard_has_keymap;
-    bool forwarded_keys[TYPIO_WL_MAX_TRACKED_KEYS];
-    bool suppressed_forwarded_releases[TYPIO_WL_MAX_TRACKED_KEYS];
+    TypioKeyTrackState key_states[TYPIO_WL_MAX_TRACKED_KEYS];
+    uint32_t key_generations[TYPIO_WL_MAX_TRACKED_KEYS];
+    uint32_t active_key_generation;
+    uint64_t trace_sequence;
+    bool active_generation_owned_keys;
+    bool active_generation_vk_dirty;
 
     /* Session and keyboard state */
     TypioWlSession *session;
@@ -149,6 +169,7 @@ struct TypioWlFrontend {
 
     /* Event loop state */
     volatile bool running;
+    TypioWlLifecyclePhase lifecycle_phase;
 
     /* Error message buffer */
     char error_msg[256];
@@ -168,7 +189,6 @@ TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend);
 void typio_wl_keyboard_destroy(TypioWlKeyboard *keyboard);
 void typio_wl_keyboard_release_grab(TypioWlKeyboard *keyboard);
 void typio_wl_keyboard_cancel_repeat(TypioWlKeyboard *keyboard);
-void typio_wl_keyboard_release_forwarded_keys(TypioWlFrontend *frontend);
 int typio_wl_keyboard_get_repeat_fd(TypioWlKeyboard *keyboard);
 void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard);
 

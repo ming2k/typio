@@ -117,6 +117,25 @@ Each engine instance receives a config path such as:
 6. Commit and preedit callbacks are translated into `zwp_input_method_v2` requests.
 7. Candidate lists are rendered through `zwp_input_popup_surface_v2` when the session exposes the necessary Wayland globals. If popup rendering is unavailable, Typio keeps candidate state visible inline in preedit.
 
+## Keyboard Safety Model
+
+The Wayland keyboard grab path uses an explicit per-key state machine to track:
+
+- keys forwarded to applications
+- synthetic releases issued by Typio
+- stale held keys from a previous activation
+- Enter presses blocked by the startup guard
+
+The intended forwarding model is conservative: if the IME does not consume a
+key, Typio forwards the original press/release sequence and separately keeps
+the virtual keyboard modifier state in sync. Modifier changes must not trigger
+synthetic releases for unrelated non-modifier keys in the main key path.
+
+The maintenance rules for this state machine live in
+[Developer Maintenance Manual](dev_maintenance.md). Any change to keyboard
+grab lifecycle or suppression behavior should update that document and the
+[Timing Model](dev_timing_model.md) alongside the code.
+
 ## Current Scope
 
 Implemented:

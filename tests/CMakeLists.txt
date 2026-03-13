@@ -54,6 +54,36 @@ target_include_directories(test_repeat_guard PRIVATE
 )
 add_test(NAME test_repeat_guard COMMAND test_repeat_guard)
 
+add_executable(test_modifier_policy
+    test_modifier_policy.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/modifier_policy.c
+)
+target_include_directories(test_modifier_policy PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+    ${WAYLAND_CLIENT_INCLUDE_DIRS}
+    ${XKBCOMMON_INCLUDE_DIRS}
+)
+add_test(NAME test_modifier_policy COMMAND test_modifier_policy)
+
+add_executable(test_key_tracking
+    test_key_tracking.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/key_tracking.c
+)
+target_include_directories(test_key_tracking PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+)
+add_test(NAME test_key_tracking COMMAND test_key_tracking)
+
+add_executable(test_lifecycle
+    test_lifecycle.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/lifecycle_model.c
+)
+target_include_directories(test_lifecycle PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+)
+add_test(NAME test_lifecycle COMMAND test_lifecycle)
+
 if(BUILD_RIME_ENGINE)
     add_executable(test_rime_path_expand
         test_rime_path_expand.c

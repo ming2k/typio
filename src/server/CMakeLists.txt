@@ -21,13 +21,22 @@ if(HAVE_WAYLAND)
     )
 
     list(APPEND TYPIO_SERVER_SOURCES
+        wayland/key_debug.c
+        wayland/key_tracking.c
+        wayland/key_route.c
+        wayland/keyboard_repeat.c
+        wayland/lifecycle.c
+        wayland/lifecycle_model.c
+        wayland/modifier_policy.c
         wayland/popup.c
         wayland/repeat_guard.c
         wayland/startup_guard.c
+        wayland/vk_bridge.c
         wayland/wl_frontend.c
         wayland/inline_ui.c
         wayland/wl_input_method.c
         wayland/wl_keyboard.c
+        wayland/wl_trace.c
         ${INPUT_METHOD_PROTOCOL_SOURCES}
         ${VIRTUAL_KEYBOARD_PROTOCOL_SOURCES}
     )

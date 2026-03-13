@@ -364,9 +364,6 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
     TypioWlFrontend *frontend = data;
     (void)version;
 
-    typio_log(TYPIO_LOG_DEBUG, "Registry global: %s (name=%u, version=%u)",
-              interface, name, version);
-
     if (strcmp(interface, zwp_input_method_manager_v2_interface.name) == 0) {
         frontend->im_manager = wl_registry_bind(registry, name,
                                                 &zwp_input_method_manager_v2_interface, 1);
