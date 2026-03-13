@@ -63,6 +63,11 @@ Installed paths (with `/usr/local` prefix):
 - `/usr/local/share/typio/typio.conf.example`
 - `/usr/local/share/typio/engines/rime.conf.example`
 
+When `BUILD_SERVER=ON`, install also places a desktop autostart entry at
+`/etc/xdg/autostart/typio.desktop` by default so Typio starts with the desktop
+session. Override that location with `-DTYPIO_AUTOSTART_DIR=/some/path` if you
+need a different autostart target for packaging or testing.
+
 ## Useful Build Options
 
 | Option | Default | Purpose |

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Typio
+Comment=Start the Typio input method daemon
+Exec=typio
+TryExec=typio
+Icon=typio-keyboard
+Terminal=false
+StartupNotify=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+Categories=System;Utility;
+Keywords=input;ime;keyboard;typio;

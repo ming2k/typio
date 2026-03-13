@@ -26,6 +26,8 @@ option(BUILD_RIME_ENGINE "Build the Rime engine" ON)
 option(ENABLE_WAYLAND "Enable Wayland input-method frontend support" ON)
 option(ENABLE_STATUS_BUS "Enable D-Bus runtime status/control interface" ON)
 option(ENABLE_SYSTRAY "Enable StatusNotifierItem tray support" ON)
+set(TYPIO_AUTOSTART_DIR "/etc/xdg/autostart" CACHE PATH
+    "Directory where the Typio desktop autostart entry is installed")
 
 set(TYPIO_INSTALL_BINDIR "${CMAKE_INSTALL_BINDIR}")
 set(TYPIO_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}")
@@ -117,6 +119,13 @@ if(BUILD_CONTROL_PANEL)
     install(
         FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/applications/typio-control.desktop"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/applications"
+    )
+endif()
+
+if(BUILD_SERVER)
+    install(
+        FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/autostart/typio.desktop"
+        DESTINATION "${TYPIO_AUTOSTART_DIR}"
     )
 endif()
 
