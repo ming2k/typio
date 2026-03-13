@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(typio VERSION 1.0.2 LANGUAGES C)
+project(typio VERSION 1.0.3 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
