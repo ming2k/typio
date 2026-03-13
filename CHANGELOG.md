@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-03-14
+
+### Added
+
+- **Desktop entry for `typio-control`**: added a minimal
+  `typio-control.desktop` launcher and install rule so the GTK4 control panel
+  integrates with standard desktop menus.
+
+### Changed
+
+- **Dead-path cleanup**: removed redundant keyboard/tray compatibility code and
+  other no-op state that was no longer part of the active runtime model.
+
 ## [1.1.0] - 2026-03-14
 
 ### Added
@@ -149,6 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `wayland_generate_protocol()` macro. Supports build-tree testing without
   installation.
 
+[1.1.1]: https://github.com/user/typio/releases/tag/v1.1.1
 [1.1.0]: https://github.com/user/typio/releases/tag/v1.1.0
 [1.0.3]: https://github.com/user/typio/releases/tag/v1.0.3
 [1.0.2]: https://github.com/user/typio/releases/tag/v1.0.2
