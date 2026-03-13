@@ -59,22 +59,22 @@ TEST(allows_orphan_releases_after_stale_window) {
 }
 
 TEST(cleans_up_shortcut_orphan_releases_with_blocking_modifiers) {
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_space,
         TYPIO_MOD_CTRL, false));
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_space,
         TYPIO_MOD_ALT, false));
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_space,
         TYPIO_MOD_SUPER, false));
 }
 
 TEST(does_not_treat_plain_releases_as_shortcut_orphan_cleanup) {
-    ASSERT(!typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(!typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_space,
         TYPIO_MOD_NONE, false));
-    ASSERT(!typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(!typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_space,
         TYPIO_MOD_SHIFT, false));
 }

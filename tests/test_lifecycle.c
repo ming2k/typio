@@ -77,6 +77,18 @@ TEST(activating_and_active_phases_allow_modifier_events) {
         TYPIO_WL_PHASE_DEACTIVATING));
 }
 
+TEST(defers_activate_only_for_already_focused_session) {
+    ASSERT(typio_wl_lifecycle_should_defer_activate(true));
+    ASSERT(!typio_wl_lifecycle_should_defer_activate(false));
+}
+
+TEST(commits_reactivation_only_for_active_to_active_done_boundary) {
+    ASSERT(typio_wl_lifecycle_should_commit_reactivation(true, true, true));
+    ASSERT(!typio_wl_lifecycle_should_commit_reactivation(false, true, true));
+    ASSERT(!typio_wl_lifecycle_should_commit_reactivation(true, false, true));
+    ASSERT(!typio_wl_lifecycle_should_commit_reactivation(true, true, false));
+}
+
 int main(void) {
     printf("Running lifecycle tests:\n");
 
@@ -85,6 +97,8 @@ int main(void) {
     run_test_rejects_unexpected_shortcuts_between_phases();
     run_test_only_active_phase_allows_key_events();
     run_test_activating_and_active_phases_allow_modifier_events();
+    run_test_defers_activate_only_for_already_focused_session();
+    run_test_commits_reactivation_only_for_active_to_active_done_boundary();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

@@ -32,6 +32,17 @@ The current lifecycle is:
 5. old keyboard grab destroyed if present
 6. new keyboard grab created
 
+If `activate` arrives while the current session is already focused, treat it as
+a deferred reactivation request:
+
+1. keep the current grab active long enough to finish any in-flight key cycle
+2. record pending reactivation state only
+3. wait for the matching `done`
+4. recreate the keyboard grab at that commit point
+
+Rule: do not move the frontend out of `active` just because a repeated
+`activate` arrived for an already focused session.
+
 On deactivation:
 
 1. forwarded keys are force-released to the virtual keyboard
@@ -122,6 +133,10 @@ reported modifier mask to the virtual keyboard so a held Ctrl/Alt/Super can
 still affect the newly focused client. That carried VK modifier state is a
 short-lived bridge only and must be cleared before the next activation starts.
 
+Exception: an orphan `Enter` release may be forwarded as activation-boundary
+cleanup even without shortcut modifiers, because the application must not be
+left with a stuck app-facing `Enter` press.
+
 ## Modifier Truth
 
 Effective event modifiers are centralized in `modifier_policy.*`.
@@ -155,6 +170,8 @@ Rule:
 Before merging keyboard-path changes, verify:
 
 - activation and deactivation do not leave per-key state behind
+- repeated `activate` during an already focused session does not interrupt an
+  in-flight key press/release pair
 - key repeat cancellation still works when modifiers change
 - forwarded modifier shortcuts still reach applications
 - engine-only handled keys do not leak releases to applications
@@ -171,6 +188,7 @@ At minimum, keyboard-path changes should keep these areas covered:
 - activation-boundary reset of key tracking state
 - stale key suppression and release cleanup
 - Enter guard symmetry
+- deferred reactivation commit rules
 
 If a change touches `wl_keyboard.c` and cannot be covered by an existing helper
 test, add a new helper or state-policy test rather than relying only on manual

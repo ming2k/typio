@@ -1264,11 +1264,7 @@ TypioTray *typio_tray_new(TypioInstance *instance, const TypioTrayConfig *config
         return NULL;
     }
 
-    dbus_bus_add_match(tray->conn,
-                       "type='signal',sender='org.freedesktop.DBus',"
-                       "interface='org.freedesktop.DBus',member='NameOwnerChanged',"
-                       "arg0='org.kde.StatusNotifierWatcher'",
-                       &err);
+    dbus_bus_add_match(tray->conn, DBUS_NAME_OWNER_CHANGED_WATCHER_MATCH, &err);
     dbus_connection_add_filter(tray->conn, tray_bus_filter, tray, NULL);
     dbus_connection_flush(tray->conn);
     if (dbus_error_is_set(&err)) {
@@ -1341,11 +1337,7 @@ void typio_tray_destroy(TypioTray *tray) {
         DBusError err;
 
         dbus_error_init(&err);
-        dbus_bus_remove_match(tray->conn,
-                              "type='signal',sender='org.freedesktop.DBus',"
-                              "interface='org.freedesktop.DBus',member='NameOwnerChanged',"
-                              "arg0='org.kde.StatusNotifierWatcher'",
-                              &err);
+        dbus_bus_remove_match(tray->conn, DBUS_NAME_OWNER_CHANGED_WATCHER_MATCH, &err);
         if (dbus_error_is_set(&err)) {
             dbus_error_free(&err);
         }

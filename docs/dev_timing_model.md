@@ -23,8 +23,14 @@ Rules:
 - `activating` may process modifier events for the newly created keyboard grab
   so held Ctrl/Alt/Super state survives grab recreation before the first new
   key press
-- `activate` moves the frontend to `activating`
+- `activate` moves the frontend to `activating` only when the current session
+  is not already focused
+- an `activate` received while the current session is still focused is treated
+  as a deferred reactivation request and does not interrupt the in-flight key
+  sequence
 - `deactivate` moves the frontend to `deactivating`
+- `done` is the reactivation commit point: deferred reactivation, if any, is
+  applied there after the current key sequence has had a chance to finish
 - successful focus-in plus keyboard-grab setup moves the frontend to `active`
 - focus-out cleanup moves the frontend back to `inactive`
 
@@ -103,6 +109,8 @@ Rules:
 - no key press/release events are processed outside the `active` phase
 - modifier-mask updates may be processed in `activating` to resynchronize held
   modifiers before the lifecycle reaches `active`
+- repeated `activate` events during an already focused session must not cut off
+  a press/release pair that is already in flight
 - no key tracking state survives a hard reset boundary
 - bulk key-state rewrites happen only in lifecycle cleanup code
 - application shortcut press/release must remain symmetric

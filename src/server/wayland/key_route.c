@@ -371,7 +371,7 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                 !is_modifier &&
                 (typio_wl_startup_guard_should_cleanup_stale_release(
                  keyboard->created_at_ms, now_ms) ||
-                 typio_wl_boundary_bridge_should_cleanup_orphan_release(
+                 typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
                      keysym,
                      modifiers,
                      keyboard->saw_blocking_modifier));

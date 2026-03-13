@@ -23,6 +23,12 @@ static void on_candidate_callback(TypioInputContext *ctx,
                                   void *user_data);
 static void update_inline_ui(TypioWlSession *session, TypioInputContext *ctx);
 static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *ctx);
+static bool session_is_focused(TypioWlFrontend *frontend);
+static void set_pending_reactivation(TypioWlFrontend *frontend, bool pending);
+static TypioEngine *active_engine(TypioWlFrontend *frontend);
+static bool rebuild_keyboard_grab(TypioWlFrontend *frontend,
+                                  const char *reset_reason,
+                                  const char *failure_reason);
 
 /* Input method event handlers */
 static void im_handle_activate(void *data, struct zwp_input_method_v2 *im);
@@ -53,6 +59,47 @@ void typio_wl_input_method_setup(TypioWlFrontend *frontend) {
     }
     zwp_input_method_v2_add_listener(frontend->input_method,
                                      &input_method_listener, frontend);
+}
+
+static bool session_is_focused(TypioWlFrontend *frontend) {
+    return frontend && frontend->session && frontend->session->ctx &&
+           typio_input_context_is_focused(frontend->session->ctx);
+}
+
+static void set_pending_reactivation(TypioWlFrontend *frontend, bool pending) {
+    if (frontend) {
+        frontend->pending_reactivation = pending;
+    }
+}
+
+static TypioEngine *active_engine(TypioWlFrontend *frontend) {
+    TypioEngineManager *manager;
+
+    if (!frontend || !frontend->instance) {
+        return NULL;
+    }
+
+    manager = typio_instance_get_engine_manager(frontend->instance);
+    return manager ? typio_engine_manager_get_active(manager) : NULL;
+}
+
+static bool rebuild_keyboard_grab(TypioWlFrontend *frontend,
+                                  const char *reset_reason,
+                                  const char *failure_reason) {
+    if (!frontend) {
+        return false;
+    }
+
+    typio_wl_lifecycle_hard_reset_keyboard(frontend,
+                                           reset_reason ? reset_reason : "keyboard rebuild");
+    frontend->keyboard = typio_wl_keyboard_create(frontend);
+    if (!frontend->keyboard) {
+        typio_log(TYPIO_LOG_ERROR,
+                  "%s", failure_reason ? failure_reason : "Failed to rebuild keyboard grab");
+        return false;
+    }
+
+    return true;
 }
 
 /* Session management */
@@ -168,7 +215,6 @@ void typio_wl_commit(TypioWlFrontend *frontend) {
 /* Input method event handlers */
 static void im_handle_activate(void *data, struct zwp_input_method_v2 *im) {
     TypioWlFrontend *frontend = data;
-    bool already_focused = false;
     (void)im;
 
     typio_wl_trace(frontend, "im", "event=activate");
@@ -182,15 +228,12 @@ static void im_handle_activate(void *data, struct zwp_input_method_v2 *im) {
         }
     }
 
-    already_focused = frontend->session->ctx &&
-                      typio_input_context_is_focused(frontend->session->ctx);
-
-    if (!already_focused) {
-        frontend->pending_reactivation = false;
+    if (!typio_wl_lifecycle_should_defer_activate(session_is_focused(frontend))) {
+        set_pending_reactivation(frontend, false);
         typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_ACTIVATING,
                                      "activate event");
     } else {
-        frontend->pending_reactivation = true;
+        set_pending_reactivation(frontend, true);
         typio_wl_trace(frontend,
                        "lifecycle",
                        "action=defer_reactivation phase=%s reason=%s",
@@ -208,7 +251,7 @@ static void im_handle_deactivate(void *data, struct zwp_input_method_v2 *im) {
     (void)im;
 
     typio_wl_trace(frontend, "im", "event=deactivate");
-    frontend->pending_reactivation = false;
+    set_pending_reactivation(frontend, false);
     typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_DEACTIVATING, "deactivate event");
     typio_wl_lifecycle_hard_reset_keyboard(frontend, "deactivate event");
 
@@ -275,68 +318,64 @@ static void im_handle_done(void *data, struct zwp_input_method_v2 *im) {
         return;
     }
 
-    bool was_active = frontend->session->ctx &&
-                      typio_input_context_is_focused(frontend->session->ctx);
+    bool was_active = session_is_focused(frontend);
     bool now_active = frontend->session->pending.active;
-    needs_reactivation = frontend->pending_reactivation && was_active && now_active;
+    needs_reactivation = typio_wl_lifecycle_should_commit_reactivation(
+        frontend->pending_reactivation, was_active, now_active);
 
     /* Apply pending state */
     typio_wl_session_apply_pending(frontend->session);
 
     /* Handle focus changes */
     if (now_active && !was_active) {
-        TypioEngineManager *manager = typio_instance_get_engine_manager(frontend->instance);
-        TypioEngine *active_engine = manager ? typio_engine_manager_get_active(manager) : NULL;
+        TypioEngine *engine = active_engine(frontend);
 
         typio_log(TYPIO_LOG_INFO, "Input context focused");
         typio_input_context_focus_in(frontend->session->ctx);
 
-        if (!active_engine) {
+        if (!engine) {
             typio_log(TYPIO_LOG_WARNING, "No active engine, skipping keyboard grab");
             typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_ACTIVE,
                                          "focus in without active engine");
+            set_pending_reactivation(frontend, false);
             return;
         }
 
-        typio_wl_lifecycle_hard_reset_keyboard(frontend, "focus in before new grab");
-
-        frontend->keyboard = typio_wl_keyboard_create(frontend);
-        if (!frontend->keyboard) {
-            typio_log(TYPIO_LOG_ERROR, "Failed to create keyboard grab on activation");
+        if (!rebuild_keyboard_grab(frontend,
+                                   "focus in before new grab",
+                                   "Failed to create keyboard grab on activation")) {
             typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_INACTIVE,
                                          "focus in keyboard create failed");
+            set_pending_reactivation(frontend, false);
             return;
         }
 
         typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_ACTIVE, "focus in complete");
-        frontend->pending_reactivation = false;
+        set_pending_reactivation(frontend, false);
     } else if (needs_reactivation) {
-        TypioEngineManager *manager = typio_instance_get_engine_manager(frontend->instance);
-        TypioEngine *active_engine = manager ? typio_engine_manager_get_active(manager) : NULL;
+        TypioEngine *engine = active_engine(frontend);
 
         typio_wl_trace(frontend,
                        "lifecycle",
                        "action=commit_reactivation reason=done event");
 
-        if (!active_engine) {
+        if (!engine) {
             typio_log(TYPIO_LOG_WARNING,
                       "No active engine, skipping keyboard reactivation");
-            frontend->pending_reactivation = false;
+            set_pending_reactivation(frontend, false);
             return;
         }
 
-        typio_wl_lifecycle_hard_reset_keyboard(frontend, "reactivation done");
-        frontend->keyboard = typio_wl_keyboard_create(frontend);
-        if (!frontend->keyboard) {
-            typio_log(TYPIO_LOG_ERROR,
-                      "Failed to recreate keyboard grab on reactivation");
+        if (!rebuild_keyboard_grab(frontend,
+                                   "reactivation done",
+                                   "Failed to recreate keyboard grab on reactivation")) {
             typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_INACTIVE,
                                          "reactivation keyboard create failed");
-            frontend->pending_reactivation = false;
+            set_pending_reactivation(frontend, false);
             return;
         }
 
-        frontend->pending_reactivation = false;
+        set_pending_reactivation(frontend, false);
     } else if (!now_active && was_active) {
         typio_log(TYPIO_LOG_INFO, "Input context unfocused");
         typio_input_context_focus_out(frontend->session->ctx);
@@ -345,7 +384,7 @@ static void im_handle_done(void *data, struct zwp_input_method_v2 *im) {
 
         typio_wl_lifecycle_hard_reset_keyboard(frontend, "focus out");
         typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_INACTIVE, "focus out complete");
-        frontend->pending_reactivation = false;
+        set_pending_reactivation(frontend, false);
     }
 }
 

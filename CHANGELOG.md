@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Late tray-host registration recovery**: when `StatusNotifierWatcher` was
+  not running at Typio startup and a tray host appeared later, Typio now
+  re-registers its StatusNotifierItem from a D-Bus ownership-change filter so
+  the tray icon becomes visible without restarting Typio.
+- **Activation-boundary stuck Enter cleanup**: when a tray-host startup or
+  similar focus churn split an `Enter` press/release pair across keyboard-grab
+  generations, Typio now forwards the orphan `Enter` release as boundary
+  cleanup instead of consuming it and leaving the application with a stuck
+  app-facing `Enter` press.
+- **Deferred reactivation during focused sessions**: repeated
+  `zwp_input_method_v2.activate` events no longer move the frontend out of the
+  `active` phase while the current session is still focused, preventing
+  in-flight press/release pairs from being cut off before `done` commits the
+  reactivation boundary.
+
+### Changed
+
+- **Lifecycle reactivation rules centralized**: deferred activate and
+  reactivation-commit decisions are now expressed through lifecycle helper
+  rules and covered by dedicated tests, instead of being implicit in
+  `wl_input_method.c` branches.
+- **Tray watcher handling simplified**: watcher ownership tracking now uses a
+  single D-Bus match/filter path and removes redundant polling-style fallback
+  logic.
+
 ## [1.0.3] - 2026-03-14
 
 ### Fixed

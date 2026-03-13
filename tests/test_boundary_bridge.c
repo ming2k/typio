@@ -35,34 +35,34 @@ static int tests_passed = 0;
     } while (0)
 
 TEST(cleans_up_orphan_release_for_shortcut_modifiers) {
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_space,
         TYPIO_MOD_CTRL, false));
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_space,
         TYPIO_MOD_ALT, false));
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_space,
         TYPIO_MOD_SUPER, false));
-    ASSERT(!typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(!typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_space,
         TYPIO_MOD_SHIFT, false));
-    ASSERT(!typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(!typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_space,
         TYPIO_MOD_NONE, false));
 }
 
 TEST(cleans_up_orphan_release_after_modifier_was_seen) {
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_space,
         TYPIO_MOD_NONE, true));
 }
 
 TEST(cleans_up_orphan_release_for_enter_without_modifiers) {
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_Return,
         TYPIO_MOD_NONE, false));
-    ASSERT(typio_wl_boundary_bridge_should_cleanup_orphan_release(
+    ASSERT(typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
         TYPIO_KEY_KP_Enter,
         TYPIO_MOD_NONE, false));
 }

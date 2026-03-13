@@ -25,6 +25,10 @@ extern "C" {
 #define DBUS_PATH "/org/freedesktop/DBus"
 #define DBUS_INTERFACE "org.freedesktop.DBus"
 #define DBUS_PROPERTIES_INTERFACE "org.freedesktop.DBus.Properties"
+#define DBUS_NAME_OWNER_CHANGED_WATCHER_MATCH \
+    "type='signal',sender='org.freedesktop.DBus'," \
+    "interface='org.freedesktop.DBus',member='NameOwnerChanged'," \
+    "arg0='org.kde.StatusNotifierWatcher'"
 
 /* Menu interface */
 #define DBUSMENU_INTERFACE "com.canonical.dbusmenu"

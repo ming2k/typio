@@ -48,3 +48,13 @@ bool typio_wl_lifecycle_phase_allows_modifier_events(
     return phase == TYPIO_WL_PHASE_ACTIVATING ||
            phase == TYPIO_WL_PHASE_ACTIVE;
 }
+
+bool typio_wl_lifecycle_should_defer_activate(bool session_focused) {
+    return session_focused;
+}
+
+bool typio_wl_lifecycle_should_commit_reactivation(bool pending_reactivation,
+                                                   bool was_active,
+                                                   bool now_active) {
+    return pending_reactivation && was_active && now_active;
+}
