@@ -1,4 +1,3 @@
-#define _POSIX_C_SOURCE 200809L
 
 #include "path_expand.h"
 
@@ -37,7 +36,7 @@ TEST(expands_home_prefix) {
 
     ASSERT(setenv("HOME", "/tmp/rime-home", 1) == 0);
     expanded = typio_rime_expand_path("~/data");
-    ASSERT(expanded != NULL);
+    ASSERT(expanded != nullptr);
     ASSERT_STR_EQ(expanded, "/tmp/rime-home/data");
     free(expanded);
 }
@@ -47,7 +46,7 @@ TEST(expands_environment_variables) {
 
     ASSERT(setenv("XDG_DATA_HOME", "/tmp/xdg-data", 1) == 0);
     expanded = typio_rime_expand_path("${XDG_DATA_HOME}/typio/rime");
-    ASSERT(expanded != NULL);
+    ASSERT(expanded != nullptr);
     ASSERT_STR_EQ(expanded, "/tmp/xdg-data/typio/rime");
     free(expanded);
 }
@@ -57,7 +56,7 @@ TEST(expands_plain_dollar_variables) {
 
     ASSERT(setenv("HOME", "/tmp/plain-home", 1) == 0);
     expanded = typio_rime_expand_path("$HOME/rime");
-    ASSERT(expanded != NULL);
+    ASSERT(expanded != nullptr);
     ASSERT_STR_EQ(expanded, "/tmp/plain-home/rime");
     free(expanded);
 }
@@ -67,7 +66,7 @@ TEST(preserves_unknown_variables) {
 
     ASSERT(unsetenv("TYPO_UNKNOWN_PATH") == 0);
     expanded = typio_rime_expand_path("$TYPO_UNKNOWN_PATH/rime");
-    ASSERT(expanded != NULL);
+    ASSERT(expanded != nullptr);
     ASSERT_STR_EQ(expanded, "$TYPO_UNKNOWN_PATH/rime");
     free(expanded);
 }

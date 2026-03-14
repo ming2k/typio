@@ -6,13 +6,12 @@
 #include "string.h"
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <ctype.h>
 #include <stdint.h>
 
 char *typio_strdup(const char *str) {
     if (!str) {
-        return NULL;
+        return nullptr;
     }
     size_t len = strlen(str);
     char *copy = malloc(len + 1);
@@ -24,7 +23,7 @@ char *typio_strdup(const char *str) {
 
 char *typio_strndup(const char *str, size_t n) {
     if (!str) {
-        return NULL;
+        return nullptr;
     }
     size_t len = strlen(str);
     if (len > n) {
@@ -39,7 +38,7 @@ char *typio_strndup(const char *str, size_t n) {
 }
 
 char *typio_strjoin(const char *a, const char *b) {
-    if (!a && !b) return NULL;
+    if (!a && !b) return nullptr;
     if (!a) return typio_strdup(b);
     if (!b) return typio_strdup(a);
 
@@ -55,7 +54,7 @@ char *typio_strjoin(const char *a, const char *b) {
 
 char *typio_strjoin3(const char *a, const char *b, const char *c) {
     char *ab = typio_strjoin(a, b);
-    if (!ab) return NULL;
+    if (!ab) return nullptr;
     char *result = typio_strjoin(ab, c);
     free(ab);
     return result;
@@ -84,11 +83,15 @@ bool typio_str_equals(const char *a, const char *b) {
 bool typio_str_equals_nocase(const char *a, const char *b) {
     if (a == b) return true;
     if (!a || !b) return false;
-    return strcasecmp(a, b) == 0;
+    for (; *a && *b; a++, b++) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
+            return false;
+    }
+    return *a == *b;
 }
 
 const char *typio_str_find(const char *haystack, const char *needle) {
-    if (!haystack || !needle) return NULL;
+    if (!haystack || !needle) return nullptr;
     return strstr(haystack, needle);
 }
 

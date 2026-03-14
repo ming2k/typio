@@ -21,11 +21,7 @@ bool typio_wl_startup_guard_should_cleanup_stale_release(uint64_t started_at_ms,
 TypioWlStartupSuppressReason typio_wl_startup_guard_classify_press(
     uint64_t started_at_ms,
     uint64_t now_ms,
-    uint32_t keysym,
-    bool has_composition,
     bool suppress_stale_keys) {
-    (void)keysym;
-    (void)has_composition;
 
     if (suppress_stale_keys &&
         typio_wl_startup_guard_should_ignore_stale_press(started_at_ms, now_ms)) {

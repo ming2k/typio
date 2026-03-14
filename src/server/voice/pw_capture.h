@@ -6,7 +6,6 @@
 #ifndef TYPIO_PW_CAPTURE_H
 #define TYPIO_PW_CAPTURE_H
 
-#include <stdbool.h>
 #include <stddef.h>
 
 #ifdef __cplusplus

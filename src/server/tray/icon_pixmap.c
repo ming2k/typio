@@ -11,13 +11,12 @@
 
 #include <cairo.h>
 
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 static bool icon_is_rime(const char *icon_name) {
-    return icon_name && strstr(icon_name, "rime") != NULL;
+    return icon_name && strstr(icon_name, "rime") != nullptr;
 }
 
 /**
@@ -132,7 +131,7 @@ bool typio_tray_icon_pixmap_build(const char *icon_name, int preferred_size,
 
     *width_out = 0;
     *height_out = 0;
-    *data_out = NULL;
+    *data_out = nullptr;
     *data_len_out = 0;
 
     size = preferred_size > 0 ? preferred_size : 64;

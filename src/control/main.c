@@ -104,7 +104,7 @@ static void control_set_engine_model(TypioControl *control,
 
     control->updating_ui = TRUE;
     count = (guint)g_list_model_get_n_items(G_LIST_MODEL(control->engine_model));
-    gtk_string_list_splice(control->engine_model, 0, count, NULL);
+    gtk_string_list_splice(control->engine_model, 0, count, nullptr);
 
     if (engines && g_variant_is_of_type(engines, G_VARIANT_TYPE("as"))) {
         GVariantIter iter;
@@ -142,8 +142,8 @@ static void control_refresh_from_proxy(TypioControl *control) {
     if (!control->proxy || !g_dbus_proxy_get_name_owner(control->proxy)) {
         gtk_label_set_text(control->availability_label, "Typio service unavailable");
         gtk_label_set_text(control->engine_label, "Current engine: unavailable");
-        control_set_engine_model(control, NULL, NULL);
-        control_set_state_text(control, NULL);
+        control_set_engine_model(control, nullptr, nullptr);
+        control_set_state_text(control, nullptr);
         gtk_widget_set_sensitive(GTK_WIDGET(control->engine_dropdown), FALSE);
         gtk_widget_set_sensitive(GTK_WIDGET(control->reload_button), FALSE);
         gtk_widget_set_sensitive(GTK_WIDGET(control->refresh_button), FALSE);
@@ -160,7 +160,7 @@ static void control_refresh_from_proxy(TypioControl *control) {
     engine_state = g_dbus_proxy_get_cached_property(control->proxy, "ActiveEngineState");
 
     if (active_engine) {
-        active_name = g_variant_get_string(active_engine, NULL);
+        active_name = g_variant_get_string(active_engine, nullptr);
     }
 
     {
@@ -185,7 +185,7 @@ static void control_refresh_from_proxy(TypioControl *control) {
 }
 
 static void control_call_noarg_method(TypioControl *control, const char *method) {
-    GError *error = NULL;
+    GError *error = nullptr;
     GVariant *reply;
 
     if (!control || !control->proxy) {
@@ -194,10 +194,10 @@ static void control_call_noarg_method(TypioControl *control, const char *method)
 
     reply = g_dbus_proxy_call_sync(control->proxy,
                                    method,
-                                   NULL,
+                                   nullptr,
                                    G_DBUS_CALL_FLAGS_NONE,
                                    -1,
-                                   NULL,
+                                   nullptr,
                                    &error);
     if (!reply) {
         gtk_label_set_text(control->availability_label,
@@ -210,7 +210,7 @@ static void control_call_noarg_method(TypioControl *control, const char *method)
 }
 
 static void control_activate_engine(TypioControl *control, const char *engine_name) {
-    GError *error = NULL;
+    GError *error = nullptr;
     GVariant *reply;
 
     if (!control || !control->proxy || !engine_name || !*engine_name) {
@@ -222,7 +222,7 @@ static void control_activate_engine(TypioControl *control, const char *engine_na
                                    g_variant_new("(s)", engine_name),
                                    G_DBUS_CALL_FLAGS_NONE,
                                    -1,
-                                   NULL,
+                                   nullptr,
                                    &error);
     if (!reply) {
         gtk_label_set_text(control->availability_label,
@@ -234,24 +234,20 @@ static void control_activate_engine(TypioControl *control, const char *engine_na
     g_variant_unref(reply);
 }
 
-static void on_reload_clicked(GtkButton *button, gpointer user_data) {
-    (void)button;
+static void on_reload_clicked([[maybe_unused]] GtkButton *button, gpointer user_data) {
     control_call_noarg_method((TypioControl *)user_data, "ReloadConfig");
 }
 
-static void on_refresh_clicked(GtkButton *button, gpointer user_data) {
-    (void)button;
+static void on_refresh_clicked([[maybe_unused]] GtkButton *button, gpointer user_data) {
     control_refresh_from_proxy((TypioControl *)user_data);
 }
 
 static void on_engine_selected(GObject *object,
-                               GParamSpec *pspec,
+                               [[maybe_unused]] GParamSpec *pspec,
                                gpointer user_data) {
     TypioControl *control = user_data;
     guint selected;
     const char *engine_name;
-
-    (void)pspec;
 
     if (!control || control->updating_ui) {
         return;
@@ -266,13 +262,10 @@ static void on_engine_selected(GObject *object,
     control_activate_engine(control, engine_name);
 }
 
-static void on_proxy_properties_changed(GDBusProxy *proxy,
-                                        GVariant *changed_properties,
-                                        const gchar *const *invalidated_properties,
+static void on_proxy_properties_changed([[maybe_unused]] GDBusProxy *proxy,
+                                        [[maybe_unused]] GVariant *changed_properties,
+                                        [[maybe_unused]] const gchar *const *invalidated_properties,
                                         gpointer user_data) {
-    (void)proxy;
-    (void)changed_properties;
-    (void)invalidated_properties;
     control_refresh_from_proxy((TypioControl *)user_data);
 }
 
@@ -286,28 +279,25 @@ static void control_clear_proxy(TypioControl *control) {
                                              G_CALLBACK(on_proxy_properties_changed),
                                              control);
         g_object_unref(control->proxy);
-        control->proxy = NULL;
+        control->proxy = nullptr;
     }
 }
 
 static void on_name_appeared(GDBusConnection *connection,
-                             const gchar *name,
-                             const gchar *name_owner,
+                             [[maybe_unused]] const gchar *name,
+                             [[maybe_unused]] const gchar *name_owner,
                              gpointer user_data) {
     TypioControl *control = user_data;
-    GError *error = NULL;
-
-    (void)name;
-    (void)name_owner;
+    GError *error = nullptr;
 
     control_clear_proxy(control);
     control->proxy = g_dbus_proxy_new_sync(connection,
                                            G_DBUS_PROXY_FLAGS_NONE,
-                                           NULL,
+                                           nullptr,
                                            TYPIO_STATUS_DBUS_SERVICE,
                                            TYPIO_STATUS_DBUS_PATH,
                                            TYPIO_STATUS_DBUS_INTERFACE,
-                                           NULL,
+                                           nullptr,
                                            &error);
     if (!control->proxy) {
         gtk_label_set_text(control->availability_label,
@@ -324,11 +314,9 @@ static void on_name_appeared(GDBusConnection *connection,
     control_refresh_from_proxy(control);
 }
 
-static void on_name_vanished(GDBusConnection *connection,
-                             const gchar *name,
+static void on_name_vanished([[maybe_unused]] GDBusConnection *connection,
+                             [[maybe_unused]] const gchar *name,
                              gpointer user_data) {
-    (void)connection;
-    (void)name;
     control_clear_proxy((TypioControl *)user_data);
     control_refresh_from_proxy((TypioControl *)user_data);
 }
@@ -337,12 +325,12 @@ static void on_name_vanished(GDBusConnection *connection,
 
 static char *whisper_get_data_dir(void) {
     const char *data_home = g_get_user_data_dir();
-    return g_build_filename(data_home, "typio", "whisper", NULL);
+    return g_build_filename(data_home, "typio", "whisper", nullptr);
 }
 
 static char *whisper_model_path(const char *dir, const char *model_name) {
     char *filename = g_strdup_printf("ggml-%s.bin", model_name);
-    char *path = g_build_filename(dir, filename, NULL);
+    char *path = g_build_filename(dir, filename, nullptr);
     g_free(filename);
     return path;
 }
@@ -406,7 +394,7 @@ static void whisper_download_finished(GObject *source,
                                        GAsyncResult *result,
                                        gpointer user_data) {
     WhisperModelRow *row = user_data;
-    GError *error = NULL;
+    GError *error = nullptr;
 
     gboolean ok = g_subprocess_wait_check_finish(G_SUBPROCESS(source),
                                                   result, &error);
@@ -428,14 +416,14 @@ static void whisper_download_finished(GObject *source,
 
     g_clear_error(&error);
     g_free(row->tmp_path);
-    row->tmp_path = NULL;
+    row->tmp_path = nullptr;
 
     whisper_update_row_state(row);
 }
 
 static void whisper_start_download(WhisperModelRow *row, const char *dir) {
     char *url;
-    GError *error = NULL;
+    GError *error = nullptr;
 
     if (row->download_proc) {
         return;
@@ -453,7 +441,7 @@ static void whisper_start_download(WhisperModelRow *row, const char *dir) {
         G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE,
         &error,
         "curl", "-fSL", "--connect-timeout", "10",
-        "-o", row->tmp_path, url, NULL);
+        "-o", row->tmp_path, url, nullptr);
 
     g_free(url);
 
@@ -462,14 +450,14 @@ static void whisper_start_download(WhisperModelRow *row, const char *dir) {
                            error ? error->message : "Failed to start curl");
         g_clear_error(&error);
         g_free(row->tmp_path);
-        row->tmp_path = NULL;
+        row->tmp_path = nullptr;
         return;
     }
 
     whisper_update_row_state(row);
     row->progress_timer = g_timeout_add(500, whisper_progress_tick, row);
 
-    g_subprocess_wait_check_async(row->download_proc, NULL,
+    g_subprocess_wait_check_async(row->download_proc, nullptr,
                                    whisper_download_finished, row);
 }
 
@@ -482,9 +470,8 @@ static void whisper_cancel_download(WhisperModelRow *row) {
     /* The async callback will handle cleanup */
 }
 
-static void on_whisper_action_clicked(GtkButton *button, gpointer user_data) {
+static void on_whisper_action_clicked([[maybe_unused]] GtkButton *button, gpointer user_data) {
     WhisperModelRow *row = user_data;
-    (void)button;
 
     if (row->download_proc) {
         whisper_cancel_download(row);
@@ -581,10 +568,8 @@ static void whisper_cleanup(TypioControl *control) {
     g_free(control->whisper_dir);
 }
 
-static void on_window_destroy(GtkWidget *widget, gpointer user_data) {
+static void on_window_destroy([[maybe_unused]] GtkWidget *widget, gpointer user_data) {
     TypioControl *control = user_data;
-
-    (void)widget;
 
     if (!control) {
         return;
@@ -630,9 +615,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
     row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_box_append(GTK_BOX(content), row);
 
-    control->engine_model = gtk_string_list_new(NULL);
+    control->engine_model = gtk_string_list_new(nullptr);
     control->engine_dropdown = GTK_DROP_DOWN(
-        gtk_drop_down_new(G_LIST_MODEL(control->engine_model), NULL));
+        gtk_drop_down_new(G_LIST_MODEL(control->engine_model), nullptr));
     gtk_widget_set_hexpand(GTK_WIDGET(control->engine_dropdown), TRUE);
     g_signal_connect(control->engine_dropdown,
                      "notify::selected",
@@ -677,7 +662,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
                                               on_name_appeared,
                                               on_name_vanished,
                                               control,
-                                              NULL);
+                                              nullptr);
     control_refresh_from_proxy(control);
     gtk_window_present(GTK_WINDOW(window));
 }

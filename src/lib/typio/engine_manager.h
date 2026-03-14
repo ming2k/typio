@@ -16,7 +16,7 @@ extern "C" {
 /**
  * @brief Create a new engine manager
  * @param instance Parent Typio instance
- * @return New engine manager or NULL on failure
+ * @return New engine manager or nullptr on failure
  */
 TypioEngineManager *typio_engine_manager_new(TypioInstance *instance);
 
@@ -76,7 +76,7 @@ const char **typio_engine_manager_list(TypioEngineManager *manager,
  * @brief Get engine info by name
  * @param manager Engine manager
  * @param name Engine name
- * @return Engine info or NULL if not found
+ * @return Engine info or nullptr if not found
  */
 const TypioEngineInfo *typio_engine_manager_get_info(TypioEngineManager *manager,
                                                       const char *name);
@@ -85,7 +85,7 @@ const TypioEngineInfo *typio_engine_manager_get_info(TypioEngineManager *manager
  * @brief Get or create an engine instance by name
  * @param manager Engine manager
  * @param name Engine name
- * @return Engine instance or NULL if not found/failed
+ * @return Engine instance or nullptr if not found/failed
  */
 TypioEngine *typio_engine_manager_get_engine(TypioEngineManager *manager,
                                               const char *name);
@@ -102,7 +102,7 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
 /**
  * @brief Get the currently active engine
  * @param manager Engine manager
- * @return Active engine or NULL if none
+ * @return Active engine or nullptr if none
  */
 TypioEngine *typio_engine_manager_get_active(TypioEngineManager *manager);
 

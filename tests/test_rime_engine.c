@@ -1,10 +1,8 @@
-#define _POSIX_C_SOURCE 200809L
 
 #include "typio/typio.h"
 
 #include <assert.h>
 #include <errno.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,7 +39,7 @@ static int tests_passed = 0;
     } while (0)
 
 #define ASSERT_EQ(a, b) ASSERT((a) == (b))
-#define ASSERT_NOT_NULL(a) ASSERT((a) != NULL)
+#define ASSERT_NOT_NULL(a) ASSERT((a) != nullptr)
 #define ASSERT_STR_EQ(a, b) ASSERT(strcmp((a), (b)) == 0)
 
 typedef struct CaptureState {
@@ -73,24 +71,22 @@ static bool write_file(const char *path, const char *content) {
     return true;
 }
 
-static void capture_commit(TypioInputContext *ctx, const char *text, void *user_data) {
+static void capture_commit([[maybe_unused]] TypioInputContext *ctx, const char *text, void *user_data) {
     CaptureState *capture = user_data;
-    (void)ctx;
 
     free(capture->commit_text);
-    capture->commit_text = text ? strdup(text) : NULL;
+    capture->commit_text = text ? strdup(text) : nullptr;
 }
 
-static void capture_preedit(TypioInputContext *ctx,
+static void capture_preedit([[maybe_unused]] TypioInputContext *ctx,
                             const TypioPreedit *preedit,
                             void *user_data) {
     CaptureState *capture = user_data;
     size_t total = 0;
     char *buffer;
-    (void)ctx;
 
     free(capture->preedit_text);
-    capture->preedit_text = NULL;
+    capture->preedit_text = nullptr;
 
     if (!preedit || preedit->segment_count == 0) {
         return;
@@ -110,11 +106,10 @@ static void capture_preedit(TypioInputContext *ctx,
     capture->preedit_text = buffer;
 }
 
-static void capture_candidates(TypioInputContext *ctx,
+static void capture_candidates([[maybe_unused]] TypioInputContext *ctx,
                                const TypioCandidateList *candidates,
                                void *user_data) {
     CaptureState *capture = user_data;
-    (void)ctx;
 
     capture->candidate_count = candidates ? candidates->count : 0;
 }
@@ -132,8 +127,8 @@ TEST(load_and_compose) {
     char data_dir[1024];
     char engine_config_dir[1024];
     char engine_config_path[1024];
-    TypioInstanceConfig config = {0};
-    CaptureState capture = {0};
+    TypioInstanceConfig config = {};
+    CaptureState capture = {};
 
     ASSERT_NOT_NULL(mkdtemp(temp_root));
 

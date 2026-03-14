@@ -74,13 +74,13 @@ TEST(does_not_treat_plain_releases_as_shortcut_orphan_cleanup) {
 
 TEST(classifies_stale_press_before_enter_guard) {
     ASSERT(typio_wl_startup_guard_classify_press(
-        1000, 1020, TYPIO_KEY_Return, false, true) ==
+        1000, 1020, true) ==
         TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY);
 }
 
 TEST(allows_non_enter_after_stale_window) {
     ASSERT(typio_wl_startup_guard_classify_press(
-        1000, 1200, TYPIO_KEY_space, false, false) ==
+        1000, 1200, false) ==
         TYPIO_WL_STARTUP_SUPPRESS_NONE);
 }
 

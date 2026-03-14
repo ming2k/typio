@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Rime Latin mode — symbolic, panel will recolor -->
+  <g fill="#2e3436">
+    <!-- "A" letter -->
+    <text x="8" y="13" font-family="Sans" font-weight="bold" font-size="13"
+          fill="#2e3436" text-anchor="middle">A</text>
+  </g>
+</svg>

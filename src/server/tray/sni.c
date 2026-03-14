@@ -52,7 +52,7 @@ static char *dup_trimmed_value(const char *text) {
     char *copy;
 
     if (!text) {
-        return NULL;
+        return nullptr;
     }
 
     start = text;
@@ -69,7 +69,7 @@ static char *dup_trimmed_value(const char *text) {
 
     copy = calloc((size_t)(end - start) + 1U, sizeof(char));
     if (!copy) {
-        return NULL;
+        return nullptr;
     }
 
     memcpy(copy, start, (size_t)(end - start));
@@ -83,7 +83,7 @@ static char *tray_path_join(const char *base, const char *suffix) {
     char *path;
 
     if (!base || !suffix) {
-        return NULL;
+        return nullptr;
     }
 
     base_len = strlen(base);
@@ -91,7 +91,7 @@ static char *tray_path_join(const char *base, const char *suffix) {
     need_slash = base_len > 0 && base[base_len - 1] != '/';
     path = calloc(base_len + suffix_len + (need_slash ? 2U : 1U), sizeof(char));
     if (!path) {
-        return NULL;
+        return nullptr;
     }
 
     snprintf(path, base_len + suffix_len + (need_slash ? 2U : 1U),
@@ -101,7 +101,7 @@ static char *tray_path_join(const char *base, const char *suffix) {
 
 static char *tray_default_rime_user_dir(TypioTray *tray) {
     const char *data_dir = typio_instance_get_data_dir(tray->instance);
-    return data_dir ? tray_path_join(data_dir, "rime") : NULL;
+    return data_dir ? tray_path_join(data_dir, "rime") : nullptr;
 }
 
 static bool tray_parse_rime_schema_list(const char *path, TypioTrayRimeMenuInfo *info) {
@@ -143,12 +143,12 @@ static char *tray_parse_rime_schema_name(const char *path) {
     bool in_schema = false;
 
     if (!path) {
-        return NULL;
+        return nullptr;
     }
 
     file = fopen(path, "r");
     if (!file) {
-        return NULL;
+        return nullptr;
     }
 
     while (fgets(line, sizeof(line), file)) {
@@ -164,7 +164,7 @@ static char *tray_parse_rime_schema_name(const char *path) {
     }
 
     fclose(file);
-    return NULL;
+    return nullptr;
 }
 
 static void tray_fill_rime_schema_names(TypioTrayRimeMenuInfo *info) {
@@ -205,16 +205,16 @@ static bool tray_load_rime_menu_info(TypioTray *tray, TypioTrayRimeMenuInfo *inf
 
     memset(info, 0, sizeof(*info));
     manager = typio_instance_get_engine_manager(tray->instance);
-    engine = manager ? typio_engine_manager_get_active(manager) : NULL;
+    engine = manager ? typio_engine_manager_get_active(manager) : nullptr;
     if (!engine || strcmp(typio_engine_get_name(engine), "rime") != 0) {
         return false;
     }
 
     config_path = typio_engine_get_config_path(engine);
-    config = config_path ? typio_config_load_file(config_path) : NULL;
+    config = config_path ? typio_config_load_file(config_path) : nullptr;
     if (config) {
-        const char *schema = typio_config_get_string(config, "schema", NULL);
-        const char *user_data_dir = typio_config_get_string(config, "user_data_dir", NULL);
+        const char *schema = typio_config_get_string(config, "schema", nullptr);
+        const char *user_data_dir = typio_config_get_string(config, "user_data_dir", nullptr);
         info->page_size = typio_config_get_int(config, "page_size", 10);
         if (schema && *schema) {
             info->current_schema = typio_strdup(schema);
@@ -246,7 +246,7 @@ static bool tray_load_rime_menu_info(TypioTray *tray, TypioTrayRimeMenuInfo *inf
     }
 
     tray_fill_rime_schema_names(info);
-    info->available = info->current_schema != NULL || info->schema_count > 0;
+    info->available = info->current_schema != nullptr || info->schema_count > 0;
     return info->available;
 }
 
@@ -255,7 +255,7 @@ static dbus_bool_t append_icon_pixmap_array(DBusMessageIter *iter,
     DBusMessageIter array_iter;
     DBusMessageIter struct_iter;
     DBusMessageIter bytes_iter;
-    unsigned char *data = NULL;
+    unsigned char *data = nullptr;
     int width = 0;
     int height = 0;
     int data_len = 0;
@@ -272,7 +272,7 @@ static dbus_bool_t append_icon_pixmap_array(DBusMessageIter *iter,
         return FALSE;
     }
 
-    if (!dbus_message_iter_open_container(&array_iter, DBUS_TYPE_STRUCT, NULL, &struct_iter)) {
+    if (!dbus_message_iter_open_container(&array_iter, DBUS_TYPE_STRUCT, nullptr, &struct_iter)) {
         typio_tray_icon_pixmap_free(data);
         return FALSE;
     }
@@ -310,7 +310,7 @@ static dbus_bool_t append_dict_entry_string(DBusMessageIter *dict,
                                             const char *value) {
     DBusMessageIter entry, variant;
 
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, NULL, &entry))
+    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry))
         return FALSE;
 
     if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key))
@@ -337,7 +337,7 @@ static dbus_bool_t append_dict_entry_bool(DBusMessageIter *dict,
                                           dbus_bool_t value) {
     DBusMessageIter entry, variant;
 
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, NULL, &entry))
+    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry))
         return FALSE;
 
     if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key))
@@ -364,7 +364,7 @@ static dbus_bool_t append_dict_entry_object_path(DBusMessageIter *dict,
                                                  const char *value) {
     DBusMessageIter entry, variant;
 
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, NULL, &entry))
+    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry))
         return FALSE;
 
     if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key))
@@ -390,7 +390,7 @@ static dbus_bool_t append_dict_entry_icon_pixmap(DBusMessageIter *dict,
                                                  const char *icon_name) {
     DBusMessageIter entry, variant;
 
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, NULL, &entry)) {
+    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
         return FALSE;
     }
 
@@ -423,7 +423,7 @@ static DBusMessage *handle_properties_get(TypioTray *tray, DBusMessage *msg) {
     DBusMessage *reply;
     DBusMessageIter iter, variant;
 
-    if (!dbus_message_get_args(msg, NULL,
+    if (!dbus_message_get_args(msg, nullptr,
                                DBUS_TYPE_STRING, &interface,
                                DBUS_TYPE_STRING, &property,
                                DBUS_TYPE_INVALID)) {
@@ -432,7 +432,7 @@ static DBusMessage *handle_properties_get(TypioTray *tray, DBusMessage *msg) {
     }
 
     reply = dbus_message_new_method_return(msg);
-    if (!reply) return NULL;
+    if (!reply) return nullptr;
 
     dbus_message_iter_init_append(reply, &iter);
 
@@ -493,7 +493,7 @@ static DBusMessage *handle_properties_get(TypioTray *tray, DBusMessage *msg) {
             const char *desc = tray->tooltip_description ? tray->tooltip_description : "";
 
             dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "(sa(iiay)ss)", &variant);
-            dbus_message_iter_open_container(&variant, DBUS_TYPE_STRUCT, NULL, &st);
+            dbus_message_iter_open_container(&variant, DBUS_TYPE_STRUCT, nullptr, &st);
             dbus_message_iter_append_basic(&st, DBUS_TYPE_STRING, &icon);
             append_icon_pixmap_array(&st, tray->icon_name);
             dbus_message_iter_append_basic(&st, DBUS_TYPE_STRING, &title);
@@ -559,7 +559,7 @@ static DBusMessage *handle_properties_getall(TypioTray *tray, DBusMessage *msg) 
     DBusMessage *reply;
     DBusMessageIter iter, dict;
 
-    if (!dbus_message_get_args(msg, NULL,
+    if (!dbus_message_get_args(msg, nullptr,
                                DBUS_TYPE_STRING, &interface,
                                DBUS_TYPE_INVALID)) {
         return dbus_message_new_error(msg, DBUS_ERROR_INVALID_ARGS,
@@ -567,7 +567,7 @@ static DBusMessage *handle_properties_getall(TypioTray *tray, DBusMessage *msg) 
     }
 
     reply = dbus_message_new_method_return(msg);
-    if (!reply) return NULL;
+    if (!reply) return nullptr;
 
     dbus_message_iter_init_append(reply, &iter);
     dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "{sv}", &dict);
@@ -611,14 +611,14 @@ static DBusMessage *handle_sni_method(TypioTray *tray, DBusMessage *msg) {
         bool parsed = false;
 
         /* Try standard signature (ii) */
-        if (dbus_message_get_args(msg, NULL,
+        if (dbus_message_get_args(msg, nullptr,
                                   DBUS_TYPE_INT32, &x,
                                   DBUS_TYPE_INT32, &y,
                                   DBUS_TYPE_INVALID)) {
             parsed = true;
         }
         /* Fallback: accept empty arguments (treat as 0,0) */
-        else if (dbus_message_get_args(msg, NULL, DBUS_TYPE_INVALID)) {
+        else if (dbus_message_get_args(msg, nullptr, DBUS_TYPE_INVALID)) {
             parsed = true;
             x = 0;
             y = 0;
@@ -644,7 +644,7 @@ static DBusMessage *handle_sni_method(TypioTray *tray, DBusMessage *msg) {
     } else if (strcmp(method, "Scroll") == 0) {
         dbus_int32_t delta;
         const char *orientation;
-        if (!dbus_message_get_args(msg, NULL,
+        if (!dbus_message_get_args(msg, nullptr,
                                    DBUS_TYPE_INT32, &delta,
                                    DBUS_TYPE_STRING, &orientation,
                                    DBUS_TYPE_INVALID)) {
@@ -674,7 +674,7 @@ static void build_menu_item(DBusMessageIter *parent, int32_t id,
     DBusMessageIter var, st, dict, children;
 
     dbus_message_iter_open_container(parent, DBUS_TYPE_VARIANT, "(ia{sv}av)", &var);
-    dbus_message_iter_open_container(&var, DBUS_TYPE_STRUCT, NULL, &st);
+    dbus_message_iter_open_container(&var, DBUS_TYPE_STRUCT, nullptr, &st);
 
     dbus_message_iter_append_basic(&st, DBUS_TYPE_INT32, &id);
 
@@ -701,7 +701,7 @@ static void begin_menu_item(DBusMessageIter *parent, DBusMessageIter *var,
                             const char *label, dbus_bool_t enabled,
                             dbus_bool_t submenu) {
     dbus_message_iter_open_container(parent, DBUS_TYPE_VARIANT, "(ia{sv}av)", var);
-    dbus_message_iter_open_container(var, DBUS_TYPE_STRUCT, NULL, st);
+    dbus_message_iter_open_container(var, DBUS_TYPE_STRUCT, nullptr, st);
     dbus_message_iter_append_basic(st, DBUS_TYPE_INT32, &id);
     dbus_message_iter_open_container(st, DBUS_TYPE_ARRAY, "{sv}", dict);
     if (label) {
@@ -738,13 +738,13 @@ static void build_rime_submenu(DBusMessageIter *parent, TypioTray *tray) {
     } else {
         snprintf(label, sizeof(label), "Schema: (default)");
     }
-    build_menu_item(&children, 21, label, NULL, FALSE);
+    build_menu_item(&children, 21, label, nullptr, FALSE);
 
     snprintf(label, sizeof(label), "Page size: %d", info.page_size);
-    build_menu_item(&children, 22, label, NULL, FALSE);
+    build_menu_item(&children, 22, label, nullptr, FALSE);
 
     if (info.schema_count > 0) {
-        build_menu_item(&children, 23, NULL, "separator", TRUE);
+        build_menu_item(&children, 23, nullptr, "separator", TRUE);
     }
 
     for (size_t i = 0; i < info.schema_count; ++i) {
@@ -760,11 +760,11 @@ static void build_rime_submenu(DBusMessageIter *parent, TypioTray *tray) {
         }
 
         build_menu_item(&children, TYPIO_TRAY_RIME_MENU_BASE_ID + (int32_t)i,
-                        label, NULL, TRUE);
+                        label, nullptr, TRUE);
     }
 
     build_menu_item(&children, TYPIO_TRAY_RIME_MENU_RELOAD_ID, "Reload Rime Config",
-                    NULL, TRUE);
+                    nullptr, TRUE);
     end_menu_item(parent, &var, &st, &children);
     free_rime_menu_info(&info);
 }
@@ -806,7 +806,7 @@ static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
 
     reply = dbus_message_new_method_return(msg);
     if (!reply) {
-        return NULL;
+        return nullptr;
     }
 
     dbus_message_iter_init_append(reply, &iter);
@@ -815,7 +815,7 @@ static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
     dbus_message_iter_append_basic(&iter, DBUS_TYPE_UINT32, &tray->menu_revision);
 
     /* Root item: (ia{sv}av) */
-    dbus_message_iter_open_container(&iter, DBUS_TYPE_STRUCT, NULL, &root_st);
+    dbus_message_iter_open_container(&iter, DBUS_TYPE_STRUCT, nullptr, &root_st);
 
     dbus_int32_t root_id = 0;
     dbus_message_iter_append_basic(&root_st, DBUS_TYPE_INT32, &root_id);
@@ -828,19 +828,7 @@ static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
     dbus_message_iter_open_container(&root_st, DBUS_TYPE_ARRAY, "v", &children);
 
     int32_t item_id = 1;
-
-    /* Engine status header (disabled, just for display) */
     char label[256];
-    if (tray->engine_name) {
-        snprintf(label, sizeof(label), "Current: %s%s",
-                 tray->engine_name, tray->engine_active ? " (active)" : "");
-    } else {
-        snprintf(label, sizeof(label), "No engine selected");
-    }
-    build_menu_item(&children, item_id++, label, NULL, FALSE);
-
-    /* Separator */
-    build_menu_item(&children, item_id++, NULL, "separator", TRUE);
 
     /* Get available engines from instance */
     TypioEngineManager *manager = typio_instance_get_engine_manager(tray->instance);
@@ -860,23 +848,23 @@ static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
                     snprintf(label, sizeof(label), "  %s", info->display_name);
                 }
                 /* Store engine index: IDs 100+ are engine selections */
-                build_menu_item(&children, 100 + (int32_t)i, label, NULL, TRUE);
+                build_menu_item(&children, 100 + (int32_t)i, label, nullptr, TRUE);
             }
         }
 
         /* Separator before quit */
         if (engine_count > 0) {
-            build_menu_item(&children, item_id++, NULL, "separator", TRUE);
+            build_menu_item(&children, item_id++, nullptr, "separator", TRUE);
         }
     }
 
     if (tray->engine_name && strcmp(tray->engine_name, "rime") == 0) {
         build_rime_submenu(&children, tray);
-        build_menu_item(&children, item_id++, NULL, "separator", TRUE);
+        build_menu_item(&children, item_id++, nullptr, "separator", TRUE);
     }
 
     /* Quit */
-    build_menu_item(&children, 99, "Quit", NULL, TRUE);
+    build_menu_item(&children, 99, "Quit", nullptr, TRUE);
 
     dbus_message_iter_close_container(&root_st, &children);
     dbus_message_iter_close_container(&iter, &root_st);
@@ -953,7 +941,7 @@ DBusHandlerResult typio_tray_handle_message(DBusConnection *conn,
     const char *interface = dbus_message_get_interface(msg);
     const char *member = dbus_message_get_member(msg);
     const char *path = dbus_message_get_path(msg);
-    DBusMessage *reply = NULL;
+    DBusMessage *reply = nullptr;
 
     if (dbus_message_get_type(msg) == DBUS_MESSAGE_TYPE_SIGNAL) {
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
@@ -963,7 +951,7 @@ DBusHandlerResult typio_tray_handle_message(DBusConnection *conn,
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
     }
 
-    /* Handle NULL interface (some panels don't set it) */
+    /* Handle nullptr interface (some panels don't set it) */
     if (!interface) {
         interface = "";
     }
@@ -1062,7 +1050,7 @@ DBusHandlerResult typio_tray_handle_message(DBusConnection *conn,
     }
 
     if (reply) {
-        dbus_connection_send(conn, reply, NULL);
+        dbus_connection_send(conn, reply, nullptr);
         dbus_message_unref(reply);
         return DBUS_HANDLER_RESULT_HANDLED;
     }
@@ -1137,7 +1125,7 @@ void typio_tray_sni_emit_signal(TypioTray *tray, const char *signal_name) {
         dbus_message_append_args(sig, DBUS_TYPE_STRING, &status_str, DBUS_TYPE_INVALID);
     }
 
-    dbus_connection_send(tray->conn, sig, NULL);
+    dbus_connection_send(tray->conn, sig, nullptr);
     dbus_message_unref(sig);
 }
 
@@ -1168,8 +1156,8 @@ void typio_tray_set_tooltip(TypioTray *tray, const char *title,
 
     free(tray->tooltip_title);
     free(tray->tooltip_description);
-    tray->tooltip_title = title ? typio_strdup(title) : NULL;
-    tray->tooltip_description = description ? typio_strdup(description) : NULL;
+    tray->tooltip_title = title ? typio_strdup(title) : nullptr;
+    tray->tooltip_description = description ? typio_strdup(description) : nullptr;
     typio_tray_sni_emit_signal(tray, "NewToolTip");
 }
 
@@ -1180,7 +1168,7 @@ void typio_tray_update_engine(TypioTray *tray, const char *engine_name,
     }
 
     free(tray->engine_name);
-    tray->engine_name = engine_name ? typio_strdup(engine_name) : NULL;
+    tray->engine_name = engine_name ? typio_strdup(engine_name) : nullptr;
     tray->engine_active = is_active;
 
     /* Update menu revision */
@@ -1198,7 +1186,7 @@ void typio_tray_update_engine(TypioTray *tray, const char *engine_name,
                                      DBUS_TYPE_UINT32, &rev,
                                      DBUS_TYPE_INT32, &parent,
                                      DBUS_TYPE_INVALID);
-            dbus_connection_send(tray->conn, sig, NULL);
+            dbus_connection_send(tray->conn, sig, nullptr);
             dbus_message_unref(sig);
         }
     }
@@ -1211,7 +1199,7 @@ void typio_tray_update_engine(TypioTray *tray, const char *engine_name,
     } else {
         snprintf(tooltip, sizeof(tooltip), "Typio - No engine");
     }
-    typio_tray_set_tooltip(tray, tooltip, NULL);
+    typio_tray_set_tooltip(tray, tooltip, nullptr);
 
     /* Update status */
     typio_tray_set_status(tray, is_active ? TYPIO_TRAY_STATUS_ACTIVE

@@ -14,7 +14,6 @@
 #include "utils/string.h"
 
 #include <dbus/dbus.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,7 +33,7 @@ static dbus_bool_t append_dict_entry_string(DBusMessageIter *dict,
     DBusMessageIter variant;
     const char *text = value ? value : "";
 
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, NULL, &entry)) {
+    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
         return FALSE;
     }
     if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key)) {
@@ -58,7 +57,7 @@ static dbus_bool_t append_dict_entry_bool(DBusMessageIter *dict,
     DBusMessageIter entry;
     DBusMessageIter variant;
 
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, NULL, &entry)) {
+    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
         return FALSE;
     }
     if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key)) {
@@ -82,7 +81,7 @@ static dbus_bool_t append_dict_entry_int32(DBusMessageIter *dict,
     DBusMessageIter entry;
     DBusMessageIter variant;
 
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, NULL, &entry)) {
+    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
         return FALSE;
     }
     if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key)) {
@@ -106,7 +105,7 @@ static dbus_bool_t append_dict_entry_uint32(DBusMessageIter *dict,
     DBusMessageIter entry;
     DBusMessageIter variant;
 
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, NULL, &entry)) {
+    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
         return FALSE;
     }
     if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key)) {
@@ -130,7 +129,7 @@ static dbus_bool_t append_dict_entry_double(DBusMessageIter *dict,
     DBusMessageIter entry;
     DBusMessageIter variant;
 
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, NULL, &entry)) {
+    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
         return FALSE;
     }
     if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key)) {
@@ -156,11 +155,11 @@ static TypioEngine *status_active_engine(TypioStatusBus *bus) {
     TypioEngineManager *manager;
 
     if (!bus || !bus->instance) {
-        return NULL;
+        return nullptr;
     }
 
     manager = typio_instance_get_engine_manager(bus->instance);
-    return manager ? typio_engine_manager_get_active(manager) : NULL;
+    return manager ? typio_engine_manager_get_active(manager) : nullptr;
 }
 
 static dbus_bool_t append_config_entries(DBusMessageIter *dict,
@@ -224,7 +223,7 @@ static dbus_bool_t append_active_engine_state_dict(DBusMessageIter *iter,
                                                    TypioStatusBus *bus) {
     DBusMessageIter dict;
     TypioEngine *engine;
-    TypioConfig *config = NULL;
+    TypioConfig *config = nullptr;
     const TypioEngineInfo *info;
     const char *config_path;
     dbus_bool_t ok = TRUE;
@@ -234,8 +233,8 @@ static dbus_bool_t append_active_engine_state_dict(DBusMessageIter *iter,
     }
 
     engine = status_active_engine(bus);
-    info = engine ? engine->info : NULL;
-    config_path = engine ? typio_engine_get_config_path(engine) : NULL;
+    info = engine ? engine->info : nullptr;
+    config_path = engine ? typio_engine_get_config_path(engine) : nullptr;
 
     if (info) {
         ok = append_dict_entry_string(&dict, "name", info->name) &&
@@ -281,8 +280,8 @@ static dbus_bool_t append_available_engines_array(DBusMessageIter *iter,
         return FALSE;
     }
 
-    manager = bus ? typio_instance_get_engine_manager(bus->instance) : NULL;
-    engines = manager ? typio_engine_manager_list(manager, &count) : NULL;
+    manager = bus ? typio_instance_get_engine_manager(bus->instance) : nullptr;
+    engines = manager ? typio_engine_manager_list(manager, &count) : nullptr;
     for (size_t i = 0; i < count; ++i) {
         const char *name = engines[i];
         if (!dbus_message_iter_append_basic(&array, DBUS_TYPE_STRING, &name)) {
@@ -351,7 +350,7 @@ static DBusMessage *status_handle_properties_get(TypioStatusBus *bus,
     DBusMessage *reply;
     DBusMessageIter iter;
 
-    if (!dbus_message_get_args(msg, NULL,
+    if (!dbus_message_get_args(msg, nullptr,
                                DBUS_TYPE_STRING, &interface,
                                DBUS_TYPE_STRING, &property,
                                DBUS_TYPE_INVALID)) {
@@ -364,7 +363,7 @@ static DBusMessage *status_handle_properties_get(TypioStatusBus *bus,
 
     reply = dbus_message_new_method_return(msg);
     if (!reply) {
-        return NULL;
+        return nullptr;
     }
 
     dbus_message_iter_init_append(reply, &iter);
@@ -389,7 +388,7 @@ static DBusMessage *status_handle_properties_getall(TypioStatusBus *bus,
         "ActiveEngineState",
     };
 
-    if (!dbus_message_get_args(msg, NULL,
+    if (!dbus_message_get_args(msg, nullptr,
                                DBUS_TYPE_STRING, &interface,
                                DBUS_TYPE_INVALID)) {
         return dbus_message_new_error(msg, DBUS_ERROR_INVALID_ARGS, "Invalid arguments");
@@ -401,32 +400,32 @@ static DBusMessage *status_handle_properties_getall(TypioStatusBus *bus,
 
     reply = dbus_message_new_method_return(msg);
     if (!reply) {
-        return NULL;
+        return nullptr;
     }
 
     dbus_message_iter_init_append(reply, &iter);
     if (!dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "{sv}", &dict)) {
         dbus_message_unref(reply);
-        return NULL;
+        return nullptr;
     }
 
     for (size_t i = 0; i < sizeof(properties) / sizeof(properties[0]); ++i) {
         DBusMessageIter entry;
-        if (!dbus_message_iter_open_container(&dict, DBUS_TYPE_DICT_ENTRY, NULL, &entry)) {
+        if (!dbus_message_iter_open_container(&dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
             dbus_message_unref(reply);
-            return NULL;
+            return nullptr;
         }
         if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &properties[i]) ||
             !append_property_variant(&entry, bus, properties[i]) ||
             !dbus_message_iter_close_container(&dict, &entry)) {
             dbus_message_unref(reply);
-            return NULL;
+            return nullptr;
         }
     }
 
     if (!dbus_message_iter_close_container(&iter, &dict)) {
         dbus_message_unref(reply);
-        return NULL;
+        return nullptr;
     }
 
     return reply;
@@ -434,11 +433,11 @@ static DBusMessage *status_handle_properties_getall(TypioStatusBus *bus,
 
 static DBusMessage *status_handle_activate_engine(TypioStatusBus *bus,
                                                   DBusMessage *msg) {
-    const char *engine_name = NULL;
+    const char *engine_name = nullptr;
     TypioEngineManager *manager;
     TypioResult result;
 
-    if (!dbus_message_get_args(msg, NULL,
+    if (!dbus_message_get_args(msg, nullptr,
                                DBUS_TYPE_STRING, &engine_name,
                                DBUS_TYPE_INVALID) ||
         !engine_name || !*engine_name) {
@@ -446,7 +445,7 @@ static DBusMessage *status_handle_activate_engine(TypioStatusBus *bus,
                                       "ActivateEngine expects a non-empty engine name");
     }
 
-    manager = bus ? typio_instance_get_engine_manager(bus->instance) : NULL;
+    manager = bus ? typio_instance_get_engine_manager(bus->instance) : nullptr;
     if (!manager) {
         return dbus_message_new_error(msg, DBUS_ERROR_FAILED,
                                       "Engine manager not available");
@@ -476,16 +475,14 @@ static DBusMessage *status_handle_reload_config(TypioStatusBus *bus,
     return dbus_message_new_method_return(msg);
 }
 
-static DBusHandlerResult status_message_handler(DBusConnection *conn,
+static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection *conn,
                                                 DBusMessage *msg,
                                                 void *user_data) {
     TypioStatusBus *bus = user_data;
     const char *member = dbus_message_get_member(msg);
     const char *interface = dbus_message_get_interface(msg);
     const char *path = dbus_message_get_path(msg);
-    DBusMessage *reply = NULL;
-
-    (void)conn;
+    DBusMessage *reply = nullptr;
 
     if (!bus || !msg || dbus_message_get_type(msg) != DBUS_MESSAGE_TYPE_METHOD_CALL) {
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
@@ -542,7 +539,7 @@ static DBusHandlerResult status_message_handler(DBusConnection *conn,
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
     }
 
-    dbus_connection_send(bus->conn, reply, NULL);
+    dbus_connection_send(bus->conn, reply, nullptr);
     dbus_message_unref(reply);
     return DBUS_HANDLER_RESULT_HANDLED;
 }
@@ -557,12 +554,12 @@ TypioStatusBus *typio_status_bus_new(TypioInstance *instance) {
     int ret;
 
     if (!instance) {
-        return NULL;
+        return nullptr;
     }
 
     bus = calloc(1, sizeof(TypioStatusBus));
     if (!bus) {
-        return NULL;
+        return nullptr;
     }
 
     bus->instance = instance;
@@ -575,7 +572,7 @@ TypioStatusBus *typio_status_bus_new(TypioInstance *instance) {
                   err.message);
         dbus_error_free(&err);
         typio_status_bus_destroy(bus);
-        return NULL;
+        return nullptr;
     }
 
     ret = dbus_bus_request_name(bus->conn, TYPIO_STATUS_DBUS_SERVICE,
@@ -588,7 +585,7 @@ TypioStatusBus *typio_status_bus_new(TypioInstance *instance) {
             dbus_error_free(&err);
         }
         typio_status_bus_destroy(bus);
-        return NULL;
+        return nullptr;
     }
 
     if (!dbus_connection_register_object_path(bus->conn, TYPIO_STATUS_DBUS_PATH,
@@ -596,7 +593,7 @@ TypioStatusBus *typio_status_bus_new(TypioInstance *instance) {
         typio_log(TYPIO_LOG_WARNING,
                   "Failed to register status D-Bus object path");
         typio_status_bus_destroy(bus);
-        return NULL;
+        return nullptr;
     }
 
     typio_log(TYPIO_LOG_INFO,
@@ -680,7 +677,7 @@ void typio_status_bus_emit_properties_changed(TypioStatusBus *bus) {
 
     for (size_t i = 0; i < sizeof(properties) / sizeof(properties[0]); ++i) {
         DBusMessageIter entry;
-        if (!dbus_message_iter_open_container(&changed, DBUS_TYPE_DICT_ENTRY, NULL, &entry) ||
+        if (!dbus_message_iter_open_container(&changed, DBUS_TYPE_DICT_ENTRY, nullptr, &entry) ||
             !dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &properties[i]) ||
             !append_property_variant(&entry, bus, properties[i]) ||
             !dbus_message_iter_close_container(&changed, &entry)) {
@@ -696,6 +693,6 @@ void typio_status_bus_emit_properties_changed(TypioStatusBus *bus) {
         return;
     }
 
-    dbus_connection_send(bus->conn, sig, NULL);
+    dbus_connection_send(bus->conn, sig, nullptr);
     dbus_message_unref(sig);
 }

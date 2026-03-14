@@ -41,15 +41,13 @@ static const char *typio_tray_default_icon_theme_path(void) {
     return "";
 }
 
-static DBusHandlerResult tray_bus_filter(DBusConnection *conn,
+static DBusHandlerResult tray_bus_filter([[maybe_unused]] DBusConnection *conn,
                                          DBusMessage *msg,
                                          void *user_data) {
     TypioTray *tray = user_data;
-    const char *name = NULL;
-    const char *old_owner = NULL;
-    const char *new_owner = NULL;
-
-    (void)conn;
+    const char *name = nullptr;
+    const char *old_owner = nullptr;
+    const char *new_owner = nullptr;
 
     if (!tray || !msg ||
         dbus_message_get_type(msg) != DBUS_MESSAGE_TYPE_SIGNAL ||
@@ -57,7 +55,7 @@ static DBusHandlerResult tray_bus_filter(DBusConnection *conn,
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
     }
 
-    if (!dbus_message_get_args(msg, NULL,
+    if (!dbus_message_get_args(msg, nullptr,
                                DBUS_TYPE_STRING, &name,
                                DBUS_TYPE_STRING, &old_owner,
                                DBUS_TYPE_STRING, &new_owner,
@@ -94,12 +92,12 @@ TypioTray *typio_tray_new(TypioInstance *instance, const TypioTrayConfig *config
     int service_name_len;
 
     if (!instance) {
-        return NULL;
+        return nullptr;
     }
 
     tray = calloc(1, sizeof(TypioTray));
     if (!tray) {
-        return NULL;
+        return nullptr;
     }
 
     tray->instance = instance;
@@ -132,11 +130,11 @@ TypioTray *typio_tray_new(TypioInstance *instance, const TypioTrayConfig *config
                   err.message);
         dbus_error_free(&err);
         typio_tray_destroy(tray);
-        return NULL;
+        return nullptr;
     }
 
     dbus_bus_add_match(tray->conn, DBUS_NAME_OWNER_CHANGED_WATCHER_MATCH, &err);
-    dbus_connection_add_filter(tray->conn, tray_bus_filter, tray, NULL);
+    dbus_connection_add_filter(tray->conn, tray_bus_filter, tray, nullptr);
     dbus_connection_flush(tray->conn);
     if (dbus_error_is_set(&err)) {
         typio_log(TYPIO_LOG_WARNING,
@@ -146,24 +144,24 @@ TypioTray *typio_tray_new(TypioInstance *instance, const TypioTrayConfig *config
     }
 
     pid = getpid();
-    service_name_len = snprintf(NULL, 0, "org.kde.StatusNotifierItem-%d-%d",
+    service_name_len = snprintf(nullptr, 0, "org.kde.StatusNotifierItem-%d-%d",
                                 (int)pid, instance_counter++);
     if (service_name_len < 0) {
         typio_tray_destroy(tray);
-        return NULL;
+        return nullptr;
     }
 
     tray->service_name = malloc((size_t)service_name_len + 1);
     if (!tray->service_name) {
         typio_tray_destroy(tray);
-        return NULL;
+        return nullptr;
     }
 
     if (snprintf(tray->service_name, (size_t)service_name_len + 1,
                  "org.kde.StatusNotifierItem-%d-%d", (int)pid,
                  instance_counter - 1) < 0) {
         typio_tray_destroy(tray);
-        return NULL;
+        return nullptr;
     }
 
     ret = dbus_bus_request_name(tray->conn, tray->service_name,
@@ -176,21 +174,21 @@ TypioTray *typio_tray_new(TypioInstance *instance, const TypioTrayConfig *config
             dbus_error_free(&err);
         }
         typio_tray_destroy(tray);
-        return NULL;
+        return nullptr;
     }
 
     if (!dbus_connection_register_object_path(tray->conn, SNI_ITEM_PATH,
                                               &tray_object_vtable, tray)) {
         typio_log(TYPIO_LOG_ERROR, "Failed to register SNI object path");
         typio_tray_destroy(tray);
-        return NULL;
+        return nullptr;
     }
 
     if (!dbus_connection_register_object_path(tray->conn, DBUSMENU_PATH,
                                               &tray_object_vtable, tray)) {
         typio_log(TYPIO_LOG_ERROR, "Failed to register menu object path");
         typio_tray_destroy(tray);
-        return NULL;
+        return nullptr;
     }
 
     typio_tray_sni_register(tray);

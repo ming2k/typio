@@ -3,7 +3,6 @@
  * @brief Wayland input-popup candidate UI
  */
 
-#define _POSIX_C_SOURCE 200809L
 
 #include "wl_frontend_internal.h"
 #include "preedit_format.h"
@@ -17,7 +16,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -124,9 +122,8 @@ static const struct zwp_input_popup_surface_v2_listener popup_listener = {
     .text_input_rectangle = popup_handle_text_input_rectangle,
 };
 
-static void popup_buffer_release(void *data, struct wl_buffer *buffer) {
+static void popup_buffer_release(void *data, [[maybe_unused]] struct wl_buffer *buffer) {
     TypioWlPopupBuffer *popup_buffer = data;
-    (void)buffer;
     popup_buffer->busy = false;
 }
 
@@ -192,7 +189,7 @@ static bool popup_buffer_create(TypioWlPopup *popup, TypioWlPopupBuffer *buffer,
         return false;
     }
 
-    data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    data = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (data == MAP_FAILED) {
         typio_log(TYPIO_LOG_ERROR, "Failed to mmap popup buffer: %s",
                   strerror(errno));
@@ -244,7 +241,7 @@ static TypioWlPopupBuffer *popup_acquire_buffer(TypioWlPopup *popup, int width, 
     }
 
     typio_log(TYPIO_LOG_WARNING, "No free popup buffer available");
-    return NULL;
+    return nullptr;
 }
 
 static char *popup_format_candidate(const TypioCandidate *candidate, size_t index) {
@@ -268,7 +265,7 @@ static char *popup_format_candidate(const TypioCandidate *candidate, size_t inde
     needed = strlen(label) + strlen(text) + strlen(comment) + 6;
     formatted = calloc(needed, sizeof(char));
     if (!formatted) {
-        return NULL;
+        return nullptr;
     }
 
     if (comment[0]) {
@@ -296,7 +293,7 @@ static bool popup_line_is_dark_env(const char *value) {
         return false;
     }
 
-    return strstr(value, "dark") != NULL || strstr(value, "Dark") != NULL;
+    return strstr(value, "dark") != nullptr || strstr(value, "Dark") != nullptr;
 }
 
 static bool popup_config_file_prefers_dark(const char *path, const char *needle) {
@@ -313,7 +310,7 @@ static bool popup_config_file_prefers_dark(const char *path, const char *needle)
     }
 
     while (fgets(line, sizeof(line), file)) {
-        if (strstr(line, needle) != NULL) {
+        if (strstr(line, needle) != nullptr) {
             fclose(file);
             return true;
         }
@@ -342,7 +339,7 @@ static bool popup_kde_prefers_dark(void) {
 
     while (fgets(line, sizeof(line), file)) {
         if (line[0] == '[') {
-            in_general = strstr(line, "[General]") != NULL;
+            in_general = strstr(line, "[General]") != nullptr;
             continue;
         }
 
@@ -415,7 +412,7 @@ static void popup_load_render_config(TypioWlPopup *popup, TypioPopupRenderConfig
     config->font_size = TYPIO_POPUP_DEFAULT_FONT_SIZE;
 
     manager = typio_instance_get_engine_manager(popup->frontend->instance);
-    engine = manager ? typio_engine_manager_get_active(manager) : NULL;
+    engine = manager ? typio_engine_manager_get_active(manager) : nullptr;
     if (!engine || strcmp(typio_engine_get_name(engine), "rime") != 0) {
         goto finalize;
     }
@@ -430,8 +427,8 @@ static void popup_load_render_config(TypioWlPopup *popup, TypioPopupRenderConfig
         goto finalize;
     }
 
-    theme = typio_config_get_string(file_config, "popup_theme", NULL);
-    layout = typio_config_get_string(file_config, "candidate_layout", NULL);
+    theme = typio_config_get_string(file_config, "popup_theme", nullptr);
+    layout = typio_config_get_string(file_config, "candidate_layout", nullptr);
 
     if (theme && strcmp(theme, "dark") == 0) {
         config->theme_mode = TYPIO_POPUP_THEME_DARK;
@@ -521,7 +518,7 @@ static void popup_hide_surface(TypioWlPopup *popup) {
         return;
     }
 
-    wl_surface_attach(popup->surface, NULL, 0, 0);
+    wl_surface_attach(popup->surface, nullptr, 0, 0);
     wl_surface_commit(popup->surface);
     popup->visible = false;
 }
@@ -557,9 +554,9 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
     TypioWlPopupBuffer *buffer;
     TypioPopupRenderConfig render_config;
     const TypioPopupPalette *palette;
-    TypioPopupLine *lines = NULL;
+    TypioPopupLine *lines = nullptr;
     size_t line_count;
-    char *preedit_text = NULL;
+    char *preedit_text = nullptr;
     int preedit_width = 0;
     int preedit_height = 0;
     int content_width = 0;
@@ -576,7 +573,7 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
     }
 
     if (preedit && preedit->segment_count > 0) {
-        preedit_text = typio_wl_build_plain_preedit(preedit, NULL);
+        preedit_text = typio_wl_build_plain_preedit(preedit, nullptr);
     }
 
     popup_load_render_config(popup, &render_config);
@@ -742,11 +739,10 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
 }
 
 static void popup_handle_text_input_rectangle(void *data,
-                                              struct zwp_input_popup_surface_v2 *popup_surface,
+                                              [[maybe_unused]] struct zwp_input_popup_surface_v2 *popup_surface,
                                               int32_t x, int32_t y,
                                               int32_t width, int32_t height) {
     TypioWlPopup *popup = data;
-    (void)popup_surface;
 
     popup->text_input_x = x;
     popup->text_input_y = y;
@@ -758,19 +754,19 @@ TypioWlPopup *typio_wl_popup_create(TypioWlFrontend *frontend) {
     TypioWlPopup *popup;
 
     if (!frontend || !frontend->compositor || !frontend->shm || !frontend->input_method) {
-        return NULL;
+        return nullptr;
     }
 
     popup = calloc(1, sizeof(*popup));
     if (!popup) {
-        return NULL;
+        return nullptr;
     }
 
     popup->frontend = frontend;
     popup->surface = wl_compositor_create_surface(frontend->compositor);
     if (!popup->surface) {
         free(popup);
-        return NULL;
+        return nullptr;
     }
 
     popup->popup_surface = zwp_input_method_v2_get_input_popup_surface(
@@ -778,7 +774,7 @@ TypioWlPopup *typio_wl_popup_create(TypioWlFrontend *frontend) {
     if (!popup->popup_surface) {
         wl_surface_destroy(popup->surface);
         free(popup);
-        return NULL;
+        return nullptr;
     }
 
     zwp_input_popup_surface_v2_add_listener(popup->popup_surface,
@@ -826,8 +822,8 @@ bool typio_wl_popup_update(TypioWlFrontend *frontend, TypioInputContext *ctx) {
     }
 
     /* Preedit is already shown inline via set_preedit_string;
-     * pass NULL to avoid duplicating it inside the popup. */
-    if (!popup_render(frontend->popup, NULL, candidates)) {
+     * pass nullptr to avoid duplicating it inside the popup. */
+    if (!popup_render(frontend->popup, nullptr, candidates)) {
         typio_log(TYPIO_LOG_WARNING,
                   "Popup render failed; falling back to inline candidate UI");
         popup_hide_surface(frontend->popup);

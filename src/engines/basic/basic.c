@@ -1,14 +1,11 @@
 #include "typio/typio.h"
 #include "typio_build_config.h"
 
-static TypioResult basic_init(TypioEngine *engine, TypioInstance *instance) {
-    (void)engine;
-    (void)instance;
+static TypioResult basic_init([[maybe_unused]] TypioEngine *engine, [[maybe_unused]] TypioInstance *instance) {
     return TYPIO_OK;
 }
 
-static void basic_destroy(TypioEngine *engine) {
-    (void)engine;
+static void basic_destroy([[maybe_unused]] TypioEngine *engine) {
 }
 
 static bool basic_has_blocking_modifiers(const TypioKeyEvent *event) {
@@ -50,11 +47,9 @@ static size_t basic_encode_utf8(uint32_t codepoint, char out[5]) {
     return 0;
 }
 
-static TypioKeyProcessResult basic_process_key(TypioEngine *engine,
+static TypioKeyProcessResult basic_process_key([[maybe_unused]] TypioEngine *engine,
                                                TypioInputContext *ctx,
                                                const TypioKeyEvent *event) {
-    (void)engine;
-
     if (!ctx || !event || event->type != TYPIO_EVENT_KEY_PRESS) {
         return TYPIO_KEY_NOT_HANDLED;
     }

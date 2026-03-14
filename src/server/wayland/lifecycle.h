@@ -6,7 +6,6 @@
 #ifndef TYPIO_WL_LIFECYCLE_H
 #define TYPIO_WL_LIFECYCLE_H
 
-#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus

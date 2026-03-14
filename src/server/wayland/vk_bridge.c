@@ -3,7 +3,6 @@
  * @brief Virtual keyboard forwarding helpers
  */
 
-#define _POSIX_C_SOURCE 200809L
 
 #include "vk_bridge.h"
 #include "key_debug.h"
@@ -111,7 +110,7 @@ void typio_wl_vk_release_forwarded_keys(TypioWlFrontend *frontend,
         return;
 
     time = (uint32_t)vk_bridge_monotonic_ms();
-    use_generic_name = key_state_name == NULL;
+    use_generic_name = key_state_name == nullptr;
 
     for (size_t key = 0; key < TYPIO_WL_MAX_TRACKED_KEYS; key++) {
         if (frontend->key_states[key] != TYPIO_KEY_FORWARDED &&

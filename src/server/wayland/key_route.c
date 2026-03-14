@@ -3,7 +3,6 @@
  * @brief Key press/release routing for Wayland keyboard events
  */
 
-#define _POSIX_C_SOURCE 200809L
 
 #include "key_route.h"
 
@@ -253,8 +252,6 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
     suppress_reason = typio_wl_startup_guard_classify_press(
         keyboard->created_at_ms,
         now_ms,
-        keysym,
-        has_composition,
         keyboard->suppress_stale_keys);
 
     if (keyboard->suppress_stale_keys &&

@@ -3,7 +3,6 @@
  * @brief Typio instance implementation
  */
 
-#define _POSIX_C_SOURCE 200809L
 
 #include "typio/instance.h"
 #include "typio/engine_manager.h"
@@ -34,6 +33,10 @@ struct TypioInstance {
 
     TypioEngineChangedCallback engine_changed_callback;
     void *engine_changed_user_data;
+
+    TypioStatusIconChangedCallback status_icon_changed_callback;
+    void *status_icon_changed_user_data;
+    char *last_status_icon;
 
     TypioLogCallback log_callback;
     void *log_user_data;
@@ -102,13 +105,13 @@ static void register_builtin_engines(TypioInstance *instance) {
 }
 
 TypioInstance *typio_instance_new(void) {
-    return typio_instance_new_with_config(NULL);
+    return typio_instance_new_with_config(nullptr);
 }
 
 TypioInstance *typio_instance_new_with_config(const TypioInstanceConfig *config) {
     TypioInstance *instance = calloc(1, sizeof(TypioInstance));
     if (!instance) {
-        return NULL;
+        return nullptr;
     }
 
     /* Set directories */
@@ -154,7 +157,7 @@ TypioInstance *typio_instance_new_with_config(const TypioInstanceConfig *config)
                                 sizeof(TypioInputContext *));
     if (!instance->contexts) {
         typio_instance_free(instance);
-        return NULL;
+        return nullptr;
     }
 
     return instance;
@@ -189,6 +192,7 @@ void typio_instance_free(TypioInstance *instance) {
     free(instance->data_dir);
     free(instance->engine_dir);
     free(instance->default_engine);
+    free(instance->last_status_icon);
     free(instance);
 }
 
@@ -236,7 +240,7 @@ TypioResult typio_instance_init(TypioInstance *instance) {
     const char *default_engine = instance->default_engine;
     if (!default_engine) {
         default_engine = typio_config_get_string(instance->config,
-                                                  "default_engine", NULL);
+                                                  "default_engine", nullptr);
     }
 
     if (default_engine) {
@@ -281,17 +285,17 @@ void typio_instance_shutdown(TypioInstance *instance) {
 }
 
 TypioEngineManager *typio_instance_get_engine_manager(TypioInstance *instance) {
-    return instance ? instance->engine_manager : NULL;
+    return instance ? instance->engine_manager : nullptr;
 }
 
 TypioInputContext *typio_instance_create_context(TypioInstance *instance) {
     if (!instance) {
-        return NULL;
+        return nullptr;
     }
 
     TypioInputContext *ctx = typio_input_context_new(instance);
     if (!ctx) {
-        return NULL;
+        return nullptr;
     }
 
     /* Grow array if needed */
@@ -302,7 +306,7 @@ TypioInputContext *typio_instance_create_context(TypioInstance *instance) {
             new_capacity * sizeof(TypioInputContext *));
         if (!new_contexts) {
             typio_input_context_free(ctx);
-            return NULL;
+            return nullptr;
         }
         instance->contexts = new_contexts;
         instance->context_capacity = new_capacity;
@@ -332,14 +336,14 @@ void typio_instance_destroy_context(TypioInstance *instance,
 
     /* Clear focused if this was focused */
     if (instance->focused_context == ctx) {
-        instance->focused_context = NULL;
+        instance->focused_context = nullptr;
     }
 
     typio_input_context_free(ctx);
 }
 
 TypioInputContext *typio_instance_get_focused_context(TypioInstance *instance) {
-    return instance ? instance->focused_context : NULL;
+    return instance ? instance->focused_context : nullptr;
 }
 
 void typio_instance_set_engine_changed_callback(TypioInstance *instance,
@@ -352,12 +356,39 @@ void typio_instance_set_engine_changed_callback(TypioInstance *instance,
     instance->engine_changed_user_data = user_data;
 }
 
+void typio_instance_set_status_icon_changed_callback(TypioInstance *instance,
+                                                      TypioStatusIconChangedCallback callback,
+                                                      void *user_data) {
+    if (!instance) {
+        return;
+    }
+    instance->status_icon_changed_callback = callback;
+    instance->status_icon_changed_user_data = user_data;
+}
+
+void typio_instance_notify_status_icon(TypioInstance *instance,
+                                        const char *icon_name) {
+    if (!instance || !icon_name) {
+        return;
+    }
+    if (instance->last_status_icon &&
+        strcmp(instance->last_status_icon, icon_name) == 0) {
+        return;
+    }
+    free(instance->last_status_icon);
+    instance->last_status_icon = strdup(icon_name);
+    if (instance->status_icon_changed_callback) {
+        instance->status_icon_changed_callback(instance, icon_name,
+                                                instance->status_icon_changed_user_data);
+    }
+}
+
 const char *typio_instance_get_config_dir(TypioInstance *instance) {
-    return instance ? instance->config_dir : NULL;
+    return instance ? instance->config_dir : nullptr;
 }
 
 const char *typio_instance_get_data_dir(TypioInstance *instance) {
-    return instance ? instance->data_dir : NULL;
+    return instance ? instance->data_dir : nullptr;
 }
 
 TypioResult typio_instance_reload_config(TypioInstance *instance) {

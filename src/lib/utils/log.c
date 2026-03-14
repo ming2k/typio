@@ -9,8 +9,8 @@
 #include <time.h>
 
 static TypioLogLevel g_log_level = TYPIO_LOG_INFO;
-static TypioLogCallback g_log_callback = NULL;
-static void *g_log_user_data = NULL;
+static TypioLogCallback g_log_callback = nullptr;
+static void *g_log_user_data = nullptr;
 
 void typio_log_set_level(TypioLogLevel level) {
     g_log_level = level;
@@ -50,7 +50,7 @@ void typio_log(TypioLogLevel level, const char *format, ...) {
         g_log_callback(level, message, g_log_user_data);
     } else {
         /* Default: print to stderr */
-        time_t now = time(NULL);
+        time_t now = time(nullptr);
         struct tm *tm_info = localtime(&now);
         char time_buf[32];
         strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm_info);

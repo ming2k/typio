@@ -6,7 +6,6 @@
 #ifndef TYPIO_TRAY_ICON_PIXMAP_H
 #define TYPIO_TRAY_ICON_PIXMAP_H
 
-#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {

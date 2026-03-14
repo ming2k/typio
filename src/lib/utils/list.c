@@ -108,7 +108,7 @@ void typio_list_insert_at(TypioList *list, size_t index, void *data) {
 
 void *typio_list_get(TypioList *list, size_t index) {
     if (!list || index >= list->count) {
-        return NULL;
+        return nullptr;
     }
 
     TypioListNode *node = list->head;
@@ -121,7 +121,7 @@ void *typio_list_get(TypioList *list, size_t index) {
 
 void *typio_list_remove(TypioList *list, size_t index) {
     if (!list || index >= list->count) {
-        return NULL;
+        return nullptr;
     }
 
     TypioListNode *node = list->head;
@@ -150,7 +150,7 @@ void *typio_list_remove(TypioList *list, size_t index) {
 
 void *typio_list_remove_data(TypioList *list, void *data) {
     if (!list) {
-        return NULL;
+        return nullptr;
     }
 
     TypioListNode *node = list->head;
@@ -164,7 +164,7 @@ void *typio_list_remove_data(TypioList *list, void *data) {
         index++;
     }
 
-    return NULL;
+    return nullptr;
 }
 
 void typio_list_clear(TypioList *list) {
@@ -182,7 +182,7 @@ void typio_list_clear(TypioList *list) {
         node = next;
     }
 
-    list->head = list->tail = NULL;
+    list->head = list->tail = nullptr;
     list->count = 0;
 }
 

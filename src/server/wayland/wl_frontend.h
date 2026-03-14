@@ -11,7 +11,6 @@
 #define TYPIO_WL_FRONTEND_H
 
 #include "typio/types.h"
-#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,14 +25,14 @@ typedef struct TypioWlFrontend TypioWlFrontend;
  * @brief Wayland frontend configuration
  */
 typedef struct TypioWlFrontendConfig {
-    const char *display_name;   /* Wayland display name (NULL for default) */
+    const char *display_name;   /* Wayland display name (nullptr for default) */
 } TypioWlFrontendConfig;
 
 /**
  * @brief Create a new Wayland frontend
  * @param instance Typio instance to connect to
- * @param config Optional configuration (NULL for defaults)
- * @return New frontend or NULL on failure
+ * @param config Optional configuration (nullptr for defaults)
+ * @return New frontend or nullptr on failure
  */
 TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
                                         const TypioWlFrontendConfig *config);
@@ -72,14 +71,14 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend);
 /**
  * @brief Get the last error message
  * @param frontend Wayland frontend
- * @return Error message or NULL if no error
+ * @return Error message or nullptr if no error
  */
 const char *typio_wl_frontend_get_error(TypioWlFrontend *frontend);
 
 /**
  * @brief Set the system tray to integrate with the event loop
  * @param frontend Wayland frontend
- * @param tray System tray (can be NULL to disable)
+ * @param tray System tray (can be nullptr to disable)
  *
  * The tray's D-Bus events will be processed alongside Wayland events.
  */

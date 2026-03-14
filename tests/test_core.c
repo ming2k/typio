@@ -35,13 +35,11 @@ static int tests_passed = 0;
 
 #define ASSERT_EQ(a, b) ASSERT((a) == (b))
 #define ASSERT_NE(a, b) ASSERT((a) != (b))
-#define ASSERT_NULL(a) ASSERT((a) == NULL)
-#define ASSERT_NOT_NULL(a) ASSERT((a) != NULL)
+#define ASSERT_NULL(a) ASSERT((a) == nullptr)
+#define ASSERT_NOT_NULL(a) ASSERT((a) != nullptr)
 #define ASSERT_STR_EQ(a, b) ASSERT(strcmp((a), (b)) == 0)
 
-static void capture_commit(TypioInputContext *ctx, const char *text, void *user_data) {
-    (void)ctx;
-
+static void capture_commit([[maybe_unused]] TypioInputContext *ctx, const char *text, void *user_data) {
     char **slot = user_data;
     size_t len = strlen(text);
     char *copy = malloc(len + 1);
@@ -170,7 +168,7 @@ TEST(basic_engine_commit) {
     TypioInputContext *ctx = typio_instance_create_context(instance);
     ASSERT_NOT_NULL(ctx);
 
-    char *committed = NULL;
+    char *committed = nullptr;
     typio_input_context_set_commit_callback(ctx, capture_commit, &committed);
     typio_input_context_focus_in(ctx);
 
@@ -200,7 +198,7 @@ TEST(basic_engine_skips_ctrl_shortcuts) {
     TypioInputContext *ctx = typio_instance_create_context(instance);
     ASSERT_NOT_NULL(ctx);
 
-    char *committed = NULL;
+    char *committed = nullptr;
     typio_input_context_set_commit_callback(ctx, capture_commit, &committed);
     typio_input_context_focus_in(ctx);
 

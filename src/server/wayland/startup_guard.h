@@ -9,7 +9,6 @@
 #ifndef TYPIO_WL_STARTUP_GUARD_H
 #define TYPIO_WL_STARTUP_GUARD_H
 
-#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -31,8 +30,6 @@ bool typio_wl_startup_guard_should_cleanup_stale_release(uint64_t started_at_ms,
 TypioWlStartupSuppressReason typio_wl_startup_guard_classify_press(
     uint64_t started_at_ms,
     uint64_t now_ms,
-    uint32_t keysym,
-    bool has_composition,
     bool suppress_stale_keys);
 
 #ifdef __cplusplus

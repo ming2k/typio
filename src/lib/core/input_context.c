@@ -69,7 +69,7 @@ extern void typio_instance_set_focused_context(TypioInstance *instance,
 TypioInputContext *typio_input_context_new(TypioInstance *instance) {
     TypioInputContext *ctx = calloc(1, sizeof(TypioInputContext));
     if (!ctx) {
-        return NULL;
+        return nullptr;
     }
 
     ctx->instance = instance;
@@ -89,7 +89,7 @@ TypioInputContext *typio_input_context_new(TypioInstance *instance) {
     if (!ctx->preedit || !ctx->preedit_segments ||
         !ctx->candidates || !ctx->candidate_items) {
         typio_input_context_free(ctx);
-        return NULL;
+        return nullptr;
     }
 
     ctx->preedit->segments = ctx->preedit_segments;
@@ -169,7 +169,7 @@ void typio_input_context_focus_out(TypioInputContext *ctx) {
     }
 
     ctx->focused = false;
-    typio_instance_set_focused_context(ctx->instance, NULL);
+    typio_instance_set_focused_context(ctx->instance, nullptr);
 }
 
 bool typio_input_context_is_focused(TypioInputContext *ctx) {
@@ -209,6 +209,14 @@ bool typio_input_context_process_key(TypioInputContext *ctx,
     }
 
     TypioKeyProcessResult result = engine->ops->process_key(engine, ctx, event);
+
+    if (engine->ops->get_status_icon) {
+        const char *icon = engine->ops->get_status_icon(engine, ctx);
+        if (icon) {
+            typio_instance_notify_status_icon(ctx->instance, icon);
+        }
+    }
+
     return (result != TYPIO_KEY_NOT_HANDLED);
 }
 
@@ -264,7 +272,7 @@ static void input_context_clear_preedit_silent(TypioInputContext *ctx) {
     }
     for (size_t i = 0; i < ctx->preedit->segment_count; i++) {
         free((void *)ctx->preedit_segments[i].text);
-        ctx->preedit_segments[i].text = NULL;
+        ctx->preedit_segments[i].text = nullptr;
     }
     ctx->preedit->segment_count = 0;
     ctx->preedit->cursor_pos = 0;
@@ -279,9 +287,9 @@ static void input_context_clear_candidates_silent(TypioInputContext *ctx) {
         free((void *)ctx->candidate_items[i].text);
         free((void *)ctx->candidate_items[i].comment);
         free((void *)ctx->candidate_items[i].label);
-        ctx->candidate_items[i].text = NULL;
-        ctx->candidate_items[i].comment = NULL;
-        ctx->candidate_items[i].label = NULL;
+        ctx->candidate_items[i].text = nullptr;
+        ctx->candidate_items[i].comment = nullptr;
+        ctx->candidate_items[i].label = nullptr;
     }
     ctx->candidates->count = 0;
     ctx->candidates->page = 0;
@@ -328,7 +336,7 @@ void typio_input_context_set_preedit(TypioInputContext *ctx,
 }
 
 const TypioPreedit *typio_input_context_get_preedit(TypioInputContext *ctx) {
-    return ctx ? ctx->preedit : NULL;
+    return ctx ? ctx->preedit : nullptr;
 }
 
 void typio_input_context_clear_preedit(TypioInputContext *ctx) {
@@ -339,7 +347,7 @@ void typio_input_context_clear_preedit(TypioInputContext *ctx) {
     /* Free segment text */
     for (size_t i = 0; i < ctx->preedit->segment_count; i++) {
         free((void *)ctx->preedit_segments[i].text);
-        ctx->preedit_segments[i].text = NULL;
+        ctx->preedit_segments[i].text = nullptr;
     }
     ctx->preedit->segment_count = 0;
     ctx->preedit->cursor_pos = 0;
@@ -394,7 +402,7 @@ void typio_input_context_set_candidates(TypioInputContext *ctx,
 }
 
 const TypioCandidateList *typio_input_context_get_candidates(TypioInputContext *ctx) {
-    return ctx ? ctx->candidates : NULL;
+    return ctx ? ctx->candidates : nullptr;
 }
 
 void typio_input_context_clear_candidates(TypioInputContext *ctx) {
@@ -407,9 +415,9 @@ void typio_input_context_clear_candidates(TypioInputContext *ctx) {
         free((void *)ctx->candidate_items[i].text);
         free((void *)ctx->candidate_items[i].comment);
         free((void *)ctx->candidate_items[i].label);
-        ctx->candidate_items[i].text = NULL;
-        ctx->candidate_items[i].comment = NULL;
-        ctx->candidate_items[i].label = NULL;
+        ctx->candidate_items[i].text = nullptr;
+        ctx->candidate_items[i].comment = nullptr;
+        ctx->candidate_items[i].label = nullptr;
     }
 
     ctx->candidates->count = 0;
@@ -434,7 +442,7 @@ void typio_input_context_set_surrounding(TypioInputContext *ctx,
     }
 
     free(ctx->surrounding_text);
-    ctx->surrounding_text = text ? typio_strdup(text) : NULL;
+    ctx->surrounding_text = text ? typio_strdup(text) : nullptr;
     ctx->surrounding_cursor = cursor_pos;
     ctx->surrounding_anchor = anchor_pos;
 }
@@ -454,13 +462,10 @@ bool typio_input_context_get_surrounding(TypioInputContext *ctx,
     return true;
 }
 
-void typio_input_context_delete_surrounding(TypioInputContext *ctx,
-                                             int offset, int length) {
+void typio_input_context_delete_surrounding([[maybe_unused]] TypioInputContext *ctx,
+                                             [[maybe_unused]] int offset, [[maybe_unused]] int length) {
     /* This would typically communicate with the client */
     /* For now, just a placeholder */
-    (void)ctx;
-    (void)offset;
-    (void)length;
 }
 
 void typio_input_context_set_capabilities(TypioInputContext *ctx, uint32_t caps) {
@@ -507,7 +512,7 @@ void typio_input_context_set_user_data(TypioInputContext *ctx, void *data) {
 }
 
 void *typio_input_context_get_user_data(TypioInputContext *ctx) {
-    return ctx ? ctx->user_data : NULL;
+    return ctx ? ctx->user_data : nullptr;
 }
 
 void typio_input_context_set_property(TypioInputContext *ctx,
@@ -547,7 +552,7 @@ void typio_input_context_set_property(TypioInputContext *ctx,
 
 void *typio_input_context_get_property(TypioInputContext *ctx, const char *key) {
     if (!ctx || !key) {
-        return NULL;
+        return nullptr;
     }
 
     PropertyEntry *prop = ctx->properties;
@@ -558,5 +563,5 @@ void *typio_input_context_get_property(TypioInputContext *ctx, const char *key) 
         prop = prop->next;
     }
 
-    return NULL;
+    return nullptr;
 }

@@ -35,8 +35,8 @@ static int tests_passed = 0;
 
 #define ASSERT_EQ(a, b) ASSERT((a) == (b))
 #define ASSERT_NE(a, b) ASSERT((a) != (b))
-#define ASSERT_NULL(a) ASSERT((a) == NULL)
-#define ASSERT_NOT_NULL(a) ASSERT((a) != NULL)
+#define ASSERT_NULL(a) ASSERT((a) == nullptr)
+#define ASSERT_NOT_NULL(a) ASSERT((a) != nullptr)
 #define ASSERT_STR_EQ(a, b) ASSERT(strcmp((a), (b)) == 0)
 
 static size_t engine_count(TypioEngineManager *manager) {
@@ -47,21 +47,16 @@ static size_t engine_count(TypioEngineManager *manager) {
 }
 
 /* Mock engine for testing */
-static TypioResult mock_init(TypioEngine *engine, TypioInstance *instance) {
-    (void)instance;
+static TypioResult mock_init(TypioEngine *engine, [[maybe_unused]] TypioInstance *instance) {
     engine->active = true;
     return TYPIO_OK;
 }
 
-static void mock_destroy(TypioEngine *engine) {
-    (void)engine;
+static void mock_destroy([[maybe_unused]] TypioEngine *engine) {
 }
 
-static TypioKeyProcessResult mock_process_key(TypioEngine *engine, TypioInputContext *ctx,
-                              const TypioKeyEvent *event) {
-    (void)engine;
-    (void)ctx;
-    (void)event;
+static TypioKeyProcessResult mock_process_key([[maybe_unused]] TypioEngine *engine, [[maybe_unused]] TypioInputContext *ctx,
+                              [[maybe_unused]] const TypioKeyEvent *event) {
     return TYPIO_KEY_NOT_HANDLED;
 }
 

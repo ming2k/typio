@@ -7,7 +7,6 @@
 #define TYPIO_TYPES_H
 
 #include <stdint.h>
-#include <stdbool.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -101,6 +100,7 @@ typedef void (*TypioCommitCallback)(TypioInputContext *ctx, const char *text, vo
 typedef void (*TypioPreeditCallback)(TypioInputContext *ctx, const TypioPreedit *preedit, void *user_data);
 typedef void (*TypioCandidateCallback)(TypioInputContext *ctx, const TypioCandidateList *candidates, void *user_data);
 typedef void (*TypioEngineChangedCallback)(TypioInstance *instance, const TypioEngineInfo *engine, void *user_data);
+typedef void (*TypioStatusIconChangedCallback)(TypioInstance *instance, const char *icon_name, void *user_data);
 
 /* Log levels */
 typedef enum {

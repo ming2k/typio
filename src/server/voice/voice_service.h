@@ -7,7 +7,6 @@
 #define TYPIO_VOICE_SERVICE_H
 
 #include "typio/types.h"
-#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {

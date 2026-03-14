@@ -40,18 +40,18 @@ static const struct wl_seat_listener seat_listener = {
 TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
                                         const TypioWlFrontendConfig *config) {
     if (!instance) {
-        return NULL;
+        return nullptr;
     }
 
     TypioWlFrontend *frontend = calloc(1, sizeof(TypioWlFrontend));
     if (!frontend) {
-        return NULL;
+        return nullptr;
     }
 
     frontend->instance = instance;
 
     /* Connect to Wayland display */
-    const char *display_name = config ? config->display_name : NULL;
+    const char *display_name = config ? config->display_name : nullptr;
     frontend->display = wl_display_connect(display_name);
     if (!frontend->display) {
         typio_log(TYPIO_LOG_ERROR, "Failed to connect to Wayland display");
@@ -59,7 +59,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
                  "Failed to connect to Wayland display: %s",
                  display_name ? display_name : "(default)");
         free(frontend);
-        return NULL;
+        return nullptr;
     }
 
     typio_log(TYPIO_LOG_INFO, "Connected to Wayland display");
@@ -72,7 +72,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
                  "Failed to get Wayland registry");
         wl_display_disconnect(frontend->display);
         free(frontend);
-        return NULL;
+        return nullptr;
     }
 
     wl_registry_add_listener(frontend->registry, &registry_listener, frontend);
@@ -85,7 +85,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
         wl_registry_destroy(frontend->registry);
         wl_display_disconnect(frontend->display);
         free(frontend);
-        return NULL;
+        return nullptr;
     }
 
     /* Verify we have required interfaces */
@@ -100,7 +100,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
         wl_registry_destroy(frontend->registry);
         wl_display_disconnect(frontend->display);
         free(frontend);
-        return NULL;
+        return nullptr;
     }
 
     if (!frontend->seat) {
@@ -111,7 +111,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
         wl_registry_destroy(frontend->registry);
         wl_display_disconnect(frontend->display);
         free(frontend);
-        return NULL;
+        return nullptr;
     }
 
     if (!frontend->compositor || !frontend->shm) {
@@ -131,7 +131,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
         wl_registry_destroy(frontend->registry);
         wl_display_disconnect(frontend->display);
         free(frontend);
-        return NULL;
+        return nullptr;
     }
 
     /* Set up input method listener */
@@ -320,7 +320,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
         /* Handle voice inference completion */
         if (idx_voice >= 0 && (fds[idx_voice].revents & POLLIN)) {
             TypioInputContext *ctx = frontend->session ?
-                frontend->session->ctx : NULL;
+                frontend->session->ctx : nullptr;
             typio_voice_service_dispatch(frontend->voice, ctx);
             /* Clear the "Processing..." preedit */
             typio_wl_set_preedit(frontend, "", 0, 0);
@@ -357,24 +357,24 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
     /* Clean up session */
     if (frontend->session) {
         typio_wl_session_destroy(frontend->session);
-        frontend->session = NULL;
+        frontend->session = nullptr;
     }
 
     /* Clean up keyboard */
     if (frontend->keyboard) {
         typio_wl_keyboard_destroy(frontend->keyboard);
-        frontend->keyboard = NULL;
+        frontend->keyboard = nullptr;
     }
 
     if (frontend->popup) {
         typio_wl_popup_destroy(frontend->popup);
-        frontend->popup = NULL;
+        frontend->popup = nullptr;
     }
 
 #ifdef HAVE_WHISPER
     if (frontend->voice) {
         typio_voice_service_free(frontend->voice);
-        frontend->voice = NULL;
+        frontend->voice = nullptr;
     }
 #endif
 
@@ -413,7 +413,7 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
 
 const char *typio_wl_frontend_get_error(TypioWlFrontend *frontend) {
     if (!frontend || frontend->error_msg[0] == '\0') {
-        return NULL;
+        return nullptr;
     }
     return frontend->error_msg;
 }
@@ -421,9 +421,8 @@ const char *typio_wl_frontend_get_error(TypioWlFrontend *frontend) {
 /* Registry handlers */
 static void registry_handle_global(void *data, struct wl_registry *registry,
                                    uint32_t name, const char *interface,
-                                   uint32_t version) {
+                                   [[maybe_unused]] uint32_t version) {
     TypioWlFrontend *frontend = data;
-    (void)version;
 
     if (strcmp(interface, zwp_input_method_manager_v2_interface.name) == 0) {
         frontend->im_manager = wl_registry_bind(registry, name,
@@ -451,46 +450,39 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
     }
 }
 
-static void registry_handle_global_remove(void *data, struct wl_registry *registry,
-                                          uint32_t name) {
-    (void)data;
-    (void)registry;
-    (void)name;
+static void registry_handle_global_remove([[maybe_unused]] void *data,
+                                          [[maybe_unused]] struct wl_registry *registry,
+                                          [[maybe_unused]] uint32_t name) {
     /* Handle global removal if needed */
 }
 
 /* Seat handlers */
-static void seat_handle_capabilities(void *data, struct wl_seat *seat,
+static void seat_handle_capabilities([[maybe_unused]] void *data,
+                                     [[maybe_unused]] struct wl_seat *seat,
                                      uint32_t capabilities) {
-    (void)data;
-    (void)seat;
     typio_log(TYPIO_LOG_DEBUG, "Seat capabilities: 0x%x", capabilities);
 }
 
-static void seat_handle_name(void *data, struct wl_seat *seat, const char *name) {
-    (void)data;
-    (void)seat;
+static void seat_handle_name([[maybe_unused]] void *data,
+                             [[maybe_unused]] struct wl_seat *seat,
+                             const char *name) {
     typio_log(TYPIO_LOG_DEBUG, "Seat name: %s", name);
 }
 
-void typio_wl_frontend_set_tray(TypioWlFrontend *frontend, void *tray) {
+void typio_wl_frontend_set_tray([[maybe_unused]] TypioWlFrontend *frontend,
+                                [[maybe_unused]] void *tray) {
 #ifdef HAVE_SYSTRAY
     if (frontend) {
         frontend->tray = (TypioTray *)tray;
     }
-#else
-    (void)frontend;
-    (void)tray;
 #endif
 }
 
-void typio_wl_frontend_set_status_bus(TypioWlFrontend *frontend, void *status_bus) {
+void typio_wl_frontend_set_status_bus([[maybe_unused]] TypioWlFrontend *frontend,
+                                      [[maybe_unused]] void *status_bus) {
 #ifdef HAVE_STATUS_BUS
     if (frontend) {
         frontend->status_bus = (TypioStatusBus *)status_bus;
     }
-#else
-    (void)frontend;
-    (void)status_bus;
 #endif
 }

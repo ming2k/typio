@@ -7,7 +7,6 @@
 #include "utils/string.h"
 
 #include <ctype.h>
-#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -56,13 +55,13 @@ static bool is_var_char(char ch) {
 }
 
 char *typio_rime_expand_path(const char *path) {
-    char *expanded = NULL;
+    char *expanded = nullptr;
     size_t length = 0;
     size_t capacity = 0;
     size_t i = 0;
 
     if (!path) {
-        return NULL;
+        return nullptr;
     }
 
     if (path[0] == '~' && (path[1] == '/' || path[1] == '\0')) {
@@ -70,7 +69,7 @@ char *typio_rime_expand_path(const char *path) {
         if (home && *home) {
             if (!append_cstr(&expanded, &length, &capacity, home)) {
                 free(expanded);
-                return NULL;
+                return nullptr;
             }
             i = 1;
         }
@@ -80,14 +79,14 @@ char *typio_rime_expand_path(const char *path) {
         if (path[i] != '$') {
             if (!append_bytes(&expanded, &length, &capacity, &path[i], 1)) {
                 free(expanded);
-                return NULL;
+                return nullptr;
             }
             ++i;
             continue;
         }
 
         size_t token_start = i;
-        const char *env_value = NULL;
+        const char *env_value = nullptr;
         size_t name_start = 0;
         size_t name_len = 0;
 
@@ -101,7 +100,7 @@ char *typio_rime_expand_path(const char *path) {
                 char *name = typio_strndup(path + name_start, name_len);
                 if (!name) {
                     free(expanded);
-                    return NULL;
+                    return nullptr;
                 }
                 env_value = getenv(name);
                 free(name);
@@ -109,13 +108,13 @@ char *typio_rime_expand_path(const char *path) {
                 if (env_value && *env_value) {
                     if (!append_cstr(&expanded, &length, &capacity, env_value)) {
                         free(expanded);
-                        return NULL;
+                        return nullptr;
                     }
                 } else if (!append_bytes(&expanded, &length, &capacity,
                                          path + token_start,
                                          (name_start + name_len + 1) - token_start)) {
                     free(expanded);
-                    return NULL;
+                    return nullptr;
                 }
 
                 i = name_start + name_len + 1;
@@ -130,7 +129,7 @@ char *typio_rime_expand_path(const char *path) {
             char *name = typio_strndup(path + name_start, name_len);
             if (!name) {
                 free(expanded);
-                return NULL;
+                return nullptr;
             }
             env_value = getenv(name);
             free(name);
@@ -138,13 +137,13 @@ char *typio_rime_expand_path(const char *path) {
             if (env_value && *env_value) {
                 if (!append_cstr(&expanded, &length, &capacity, env_value)) {
                     free(expanded);
-                    return NULL;
+                    return nullptr;
                 }
             } else if (!append_bytes(&expanded, &length, &capacity,
                                      path + token_start,
                                      (name_start + name_len) - token_start)) {
                 free(expanded);
-                return NULL;
+                return nullptr;
             }
 
             i = name_start + name_len;
@@ -153,7 +152,7 @@ char *typio_rime_expand_path(const char *path) {
 
         if (!append_bytes(&expanded, &length, &capacity, &path[i], 1)) {
             free(expanded);
-            return NULL;
+            return nullptr;
         }
         ++i;
     }

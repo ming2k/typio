@@ -3,7 +3,6 @@
  * @brief Configuration management implementation (INI format)
  */
 
-#define _POSIX_C_SOURCE 200809L
 
 #include "typio/config.h"
 #include "../utils/string.h"
@@ -78,13 +77,13 @@ static char *trim_whitespace(char *str) {
 TypioConfig *typio_config_load_file(const char *path) {
     FILE *file = fopen(path, "r");
     if (!file) {
-        return NULL;
+        return nullptr;
     }
 
     TypioConfig *config = typio_config_new();
     if (!config) {
         fclose(file);
-        return NULL;
+        return nullptr;
     }
 
     char line[1024];
@@ -166,23 +165,23 @@ TypioConfig *typio_config_load_file(const char *path) {
 
 TypioConfig *typio_config_load_string(const char *content) {
     if (!content) {
-        return NULL;
+        return nullptr;
     }
 
     TypioConfig *config = typio_config_new();
     if (!config) {
-        return NULL;
+        return nullptr;
     }
 
     /* Work on a mutable copy so we can tokenize in-place */
     char *buf = typio_strdup(content);
     if (!buf) {
         typio_config_free(config);
-        return NULL;
+        return nullptr;
     }
 
     char current_section[256] = "";
-    char *saveptr = NULL;
+    char *saveptr = nullptr;
     char *line = strtok_r(buf, "\n", &saveptr);
 
     while (line) {
@@ -199,7 +198,7 @@ TypioConfig *typio_config_load_string(const char *content) {
 
         /* Skip empty lines and comments */
         if (*trimmed == '\0' || *trimmed == '#' || *trimmed == ';') {
-            line = strtok_r(NULL, "\n", &saveptr);
+            line = strtok_r(nullptr, "\n", &saveptr);
             continue;
         }
 
@@ -211,7 +210,7 @@ TypioConfig *typio_config_load_string(const char *content) {
                 strncpy(current_section, trimmed + 1, sizeof(current_section) - 1);
                 current_section[sizeof(current_section) - 1] = '\0';
             }
-            line = strtok_r(NULL, "\n", &saveptr);
+            line = strtok_r(nullptr, "\n", &saveptr);
             continue;
         }
 
@@ -271,7 +270,7 @@ TypioConfig *typio_config_load_string(const char *content) {
             }
         }
 
-        line = strtok_r(NULL, "\n", &saveptr);
+        line = strtok_r(nullptr, "\n", &saveptr);
     }
 
     free(buf);
@@ -383,16 +382,16 @@ TypioResult typio_config_save_file(const TypioConfig *config, const char *path) 
 }
 
 char *typio_config_to_string(const TypioConfig *config) {
-    char *content = NULL;
+    char *content = nullptr;
     size_t content_len = 0;
 
     if (!config) {
-        return NULL;
+        return nullptr;
     }
 
     FILE *stream = open_memstream(&content, &content_len);
     if (!stream) {
-        return NULL;
+        return nullptr;
     }
 
     fprintf(stream, "# Typio configuration file\n\n");
@@ -458,7 +457,7 @@ static ConfigEntry *find_entry(const TypioConfig *config, const char *key) {
         }
         entry = entry->next;
     }
-    return NULL;
+    return nullptr;
 }
 
 const char *typio_config_get_string(const TypioConfig *config, const char *key,
@@ -520,11 +519,11 @@ double typio_config_get_float(const TypioConfig *config, const char *key,
 const TypioConfigValue *typio_config_get(const TypioConfig *config,
                                           const char *key) {
     if (!config || !key) {
-        return NULL;
+        return nullptr;
     }
 
     ConfigEntry *entry = find_entry(config, key);
-    return entry ? &entry->value : NULL;
+    return entry ? &entry->value : nullptr;
 }
 
 static TypioResult set_value(TypioConfig *config, const char *key,
@@ -596,12 +595,12 @@ TypioResult typio_config_set_float(TypioConfig *config, const char *key,
 TypioConfig *typio_config_get_section(const TypioConfig *config,
                                        const char *section) {
     if (!config || !section) {
-        return NULL;
+        return nullptr;
     }
 
     TypioConfig *sub = typio_config_new();
     if (!sub) {
-        return NULL;
+        return nullptr;
     }
 
     char prefix[256];
@@ -693,7 +692,7 @@ size_t typio_config_get_array_size(const TypioConfig *config, const char *key) {
 const char *typio_config_get_array_string(const TypioConfig *config,
                                            const char *key, size_t index) {
     if (!config || !key) {
-        return NULL;
+        return nullptr;
     }
 
     ConfigEntry *entry = find_entry(config, key);
@@ -705,7 +704,7 @@ const char *typio_config_get_array_string(const TypioConfig *config,
         }
     }
 
-    return NULL;
+    return nullptr;
 }
 
 int typio_config_get_array_int(const TypioConfig *config,
@@ -732,7 +731,7 @@ size_t typio_config_key_count(const TypioConfig *config) {
 
 const char *typio_config_key_at(const TypioConfig *config, size_t index) {
     if (!config || index >= config->count) {
-        return NULL;
+        return nullptr;
     }
 
     ConfigEntry *entry = config->entries;
@@ -740,11 +739,11 @@ const char *typio_config_key_at(const TypioConfig *config, size_t index) {
         entry = entry->next;
     }
 
-    return entry ? entry->key : NULL;
+    return entry ? entry->key : nullptr;
 }
 
 bool typio_config_has_key(const TypioConfig *config, const char *key) {
-    return find_entry(config, key) != NULL;
+    return find_entry(config, key) != nullptr;
 }
 
 TypioResult typio_config_remove(TypioConfig *config, const char *key) {

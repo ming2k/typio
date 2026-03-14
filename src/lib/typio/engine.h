@@ -69,6 +69,9 @@ typedef struct TypioEngineOps {
     /* State query */
     const char *(*get_preedit)(TypioEngine *engine, TypioInputContext *ctx);
     TypioCandidateList *(*get_candidates)(TypioEngine *engine, TypioInputContext *ctx);
+
+    /* Dynamic icon (optional) — returns current icon name based on engine state */
+    const char *(*get_status_icon)(TypioEngine *engine, TypioInputContext *ctx);
 } TypioEngineOps;
 
 /**

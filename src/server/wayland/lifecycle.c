@@ -60,7 +60,7 @@ void typio_wl_lifecycle_hard_reset_keyboard(TypioWlFrontend *frontend,
     }
 
     if (own_current_generation) {
-        typio_wl_vk_release_forwarded_keys(frontend, NULL);
+        typio_wl_vk_release_forwarded_keys(frontend, nullptr);
         if (frontend->keyboard &&
             typio_wl_boundary_bridge_should_carry_modifiers(
                 frontend->lifecycle_phase,
@@ -87,7 +87,7 @@ void typio_wl_lifecycle_hard_reset_keyboard(TypioWlFrontend *frontend,
     if (frontend->keyboard) {
         typio_wl_keyboard_cancel_repeat(frontend->keyboard);
         typio_wl_keyboard_destroy(frontend->keyboard);
-        frontend->keyboard = NULL;
+        frontend->keyboard = nullptr;
     }
 
     frontend->active_generation_owned_keys = false;

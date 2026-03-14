@@ -3,7 +3,6 @@
  * @brief Keyboard repeat helpers for Wayland keyboard grabs
  */
 
-#define _POSIX_C_SOURCE 200809L
 
 #include "keyboard_repeat.h"
 
@@ -135,17 +134,17 @@ void typio_wl_keyboard_repeat_maybe_start(TypioWlKeyboard *keyboard,
         .it_value = { delay_ms / 1000, (delay_ms % 1000) * 1000000L },
         .it_interval = { interval_ms / 1000, (interval_ms % 1000) * 1000000L },
     };
-    timerfd_settime(keyboard->repeat_timer_fd, 0, &its, NULL);
+    timerfd_settime(keyboard->repeat_timer_fd, 0, &its, nullptr);
 }
 
 void typio_wl_keyboard_repeat_stop(TypioWlKeyboard *keyboard) {
-    struct itimerspec its = {0};
+    struct itimerspec its = {};
 
     if (!keyboard)
         return;
 
     if (keyboard->repeat_timer_fd >= 0)
-        timerfd_settime(keyboard->repeat_timer_fd, 0, &its, NULL);
+        timerfd_settime(keyboard->repeat_timer_fd, 0, &its, nullptr);
     keyboard->repeating = false;
 }
 

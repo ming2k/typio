@@ -5,7 +5,6 @@
 
 #include "preedit_format.h"
 
-#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -43,7 +42,7 @@ static bool append_text(char **buffer, size_t *length, size_t *capacity,
 }
 
 char *typio_wl_build_plain_preedit(const TypioPreedit *preedit, int *cursor_pos) {
-    char *buffer = NULL;
+    char *buffer = nullptr;
     size_t length = 0;
     size_t capacity = 0;
 
@@ -52,14 +51,14 @@ char *typio_wl_build_plain_preedit(const TypioPreedit *preedit, int *cursor_pos)
     }
 
     if (!preedit || preedit->segment_count == 0) {
-        return NULL;
+        return nullptr;
     }
 
     for (size_t i = 0; i < preedit->segment_count; ++i) {
         if (preedit->segments[i].text &&
             !append_text(&buffer, &length, &capacity, preedit->segments[i].text)) {
             free(buffer);
-            return NULL;
+            return nullptr;
         }
     }
 

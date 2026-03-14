@@ -90,12 +90,12 @@ static void *inference_thread(void *arg) {
     pthread_mutex_lock(&svc->buffer_mutex);
     float *audio = svc->audio_buffer;
     size_t audio_len = svc->audio_len;
-    svc->audio_buffer = NULL;
+    svc->audio_buffer = nullptr;
     svc->audio_len = 0;
     svc->audio_cap = 0;
     pthread_mutex_unlock(&svc->buffer_mutex);
 
-    char *result_text = NULL;
+    char *result_text = nullptr;
 
     if (audio && audio_len > 0) {
         struct whisper_full_params params =
@@ -152,17 +152,17 @@ static void *inference_thread(void *arg) {
         typio_log(TYPIO_LOG_ERROR, "Failed to signal eventfd");
     }
 
-    return NULL;
+    return nullptr;
 }
 
 TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
     if (!instance) {
-        return NULL;
+        return nullptr;
     }
 
     TypioVoiceService *svc = calloc(1, sizeof(TypioVoiceService));
     if (!svc) {
-        return NULL;
+        return nullptr;
     }
 
     svc->instance = instance;
@@ -170,8 +170,8 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
     svc->event_fd = -1;
     strncpy(svc->language, "zh", sizeof(svc->language) - 1);
 
-    pthread_mutex_init(&svc->buffer_mutex, NULL);
-    pthread_mutex_init(&svc->result_mutex, NULL);
+    pthread_mutex_init(&svc->buffer_mutex, nullptr);
+    pthread_mutex_init(&svc->result_mutex, nullptr);
 
     /* Read config */
     const char *config_dir = typio_instance_get_config_dir(instance);
@@ -193,7 +193,7 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
             /* Build model path before freeing config (model_name points
              * into config's internal storage). */
             const char *data_dir = typio_instance_get_data_dir(instance);
-            char model_path[512] = {0};
+            char model_path[512] = {};
             if (data_dir) {
                 snprintf(model_path, sizeof(model_path),
                          "%s/whisper/ggml-%s.bin", data_dir, model_name);
@@ -251,7 +251,7 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
         pthread_mutex_destroy(&svc->buffer_mutex);
         pthread_mutex_destroy(&svc->result_mutex);
         free(svc);
-        return NULL;
+        return nullptr;
     }
 
     /* Create PipeWire capture */
@@ -263,7 +263,7 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
         pthread_mutex_destroy(&svc->buffer_mutex);
         pthread_mutex_destroy(&svc->result_mutex);
         free(svc);
-        return NULL;
+        return nullptr;
     }
 
     typio_log(TYPIO_LOG_INFO, "Voice service initialized (language=%s)",
@@ -283,7 +283,7 @@ void typio_voice_service_free(TypioVoiceService *svc) {
 
     /* Wait for inference thread if running */
     if (svc->state == TYPIO_VOICE_PROCESSING) {
-        pthread_join(svc->infer_thread, NULL);
+        pthread_join(svc->infer_thread, nullptr);
     }
 
     if (svc->capture) {
@@ -324,7 +324,7 @@ bool typio_voice_service_start(TypioVoiceService *svc) {
 
     if (!typio_pw_capture_start(svc->capture)) {
         free(svc->audio_buffer);
-        svc->audio_buffer = NULL;
+        svc->audio_buffer = nullptr;
         return false;
     }
 
@@ -345,12 +345,12 @@ void typio_voice_service_stop(TypioVoiceService *svc) {
               "(%zu samples)", svc->audio_len);
 
     /* Launch inference thread */
-    if (pthread_create(&svc->infer_thread, NULL, inference_thread, svc) != 0) {
+    if (pthread_create(&svc->infer_thread, nullptr, inference_thread, svc) != 0) {
         typio_log(TYPIO_LOG_ERROR, "Failed to create inference thread");
         svc->state = TYPIO_VOICE_IDLE;
         pthread_mutex_lock(&svc->buffer_mutex);
         free(svc->audio_buffer);
-        svc->audio_buffer = NULL;
+        svc->audio_buffer = nullptr;
         svc->audio_len = 0;
         svc->audio_cap = 0;
         pthread_mutex_unlock(&svc->buffer_mutex);
@@ -378,12 +378,12 @@ void typio_voice_service_dispatch(TypioVoiceService *svc,
     }
 
     /* Join the inference thread */
-    pthread_join(svc->infer_thread, NULL);
+    pthread_join(svc->infer_thread, nullptr);
 
     /* Retrieve result */
     pthread_mutex_lock(&svc->result_mutex);
     char *text = svc->result;
-    svc->result = NULL;
+    svc->result = nullptr;
     pthread_mutex_unlock(&svc->result_mutex);
 
     svc->state = TYPIO_VOICE_IDLE;

@@ -12,7 +12,7 @@ TypioKeyEvent *typio_key_event_new(TypioEventType type, uint32_t keycode,
                                     uint32_t keysym, uint32_t modifiers) {
     TypioKeyEvent *event = calloc(1, sizeof(TypioKeyEvent));
     if (!event) {
-        return NULL;
+        return nullptr;
     }
 
     event->type = type;
@@ -130,7 +130,7 @@ bool typio_key_event_is_page(const TypioKeyEvent *event) {
 TypioVoiceEvent *typio_voice_event_new(TypioEventType type) {
     TypioVoiceEvent *event = calloc(1, sizeof(TypioVoiceEvent));
     if (!event) {
-        return NULL;
+        return nullptr;
     }
 
     event->type = type;

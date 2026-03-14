@@ -13,12 +13,12 @@
 TypioEngine *typio_engine_new(const TypioEngineInfo *info,
                                const TypioEngineOps *ops) {
     if (!info || !ops) {
-        return NULL;
+        return nullptr;
     }
 
     TypioEngine *engine = calloc(1, sizeof(TypioEngine));
     if (!engine) {
-        return NULL;
+        return nullptr;
     }
 
     engine->info = info;
@@ -43,7 +43,7 @@ void typio_engine_free(TypioEngine *engine) {
 }
 
 const char *typio_engine_get_name(const TypioEngine *engine) {
-    return (engine && engine->info) ? engine->info->name : NULL;
+    return (engine && engine->info) ? engine->info->name : nullptr;
 }
 
 TypioEngineType typio_engine_get_type(const TypioEngine *engine) {
@@ -73,11 +73,11 @@ void typio_engine_set_user_data(TypioEngine *engine, void *data) {
 }
 
 void *typio_engine_get_user_data(const TypioEngine *engine) {
-    return engine ? engine->user_data : NULL;
+    return engine ? engine->user_data : nullptr;
 }
 
 const char *typio_engine_get_config_path(const TypioEngine *engine) {
-    return engine ? engine->config_path : NULL;
+    return engine ? engine->config_path : nullptr;
 }
 
 void typio_engine_set_config_path(TypioEngine *engine, const char *path) {
@@ -85,7 +85,7 @@ void typio_engine_set_config_path(TypioEngine *engine, const char *path) {
         return;
     }
     free(engine->config_path);
-    engine->config_path = path ? typio_strdup(path) : NULL;
+    engine->config_path = path ? typio_strdup(path) : nullptr;
 }
 
 /* Internal function to activate engine */

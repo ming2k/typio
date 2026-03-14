@@ -10,7 +10,6 @@
 #define TYPIO_TRAY_H
 
 #include "typio/types.h"
-#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,8 +48,8 @@ typedef struct TypioTrayConfig {
 /**
  * @brief Create a new system tray
  * @param instance Typio instance
- * @param config Optional configuration (NULL for defaults)
- * @return New tray or NULL on failure
+ * @param config Optional configuration (nullptr for defaults)
+ * @return New tray or nullptr on failure
  */
 TypioTray *typio_tray_new(TypioInstance *instance, const TypioTrayConfig *config);
 
@@ -94,7 +93,7 @@ void typio_tray_set_icon(TypioTray *tray, const char *icon_name);
  * @brief Set the tray tooltip
  * @param tray System tray
  * @param title Tooltip title
- * @param description Tooltip description (can be NULL)
+ * @param description Tooltip description (can be nullptr)
  */
 void typio_tray_set_tooltip(TypioTray *tray, const char *title,
                             const char *description);
@@ -102,7 +101,7 @@ void typio_tray_set_tooltip(TypioTray *tray, const char *title,
 /**
  * @brief Update the engine display in the tray
  * @param tray System tray
- * @param engine_name Current engine name (or NULL if none)
+ * @param engine_name Current engine name (or nullptr if none)
  * @param is_active Whether input method is active
  */
 void typio_tray_update_engine(TypioTray *tray, const char *engine_name,

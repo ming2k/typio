@@ -76,11 +76,11 @@ static TypioEngine *active_engine(TypioWlFrontend *frontend) {
     TypioEngineManager *manager;
 
     if (!frontend || !frontend->instance) {
-        return NULL;
+        return nullptr;
     }
 
     manager = typio_instance_get_engine_manager(frontend->instance);
-    return manager ? typio_engine_manager_get_active(manager) : NULL;
+    return manager ? typio_engine_manager_get_active(manager) : nullptr;
 }
 
 static void trace_session_state(TypioWlFrontend *frontend, const char *event) {
@@ -151,7 +151,7 @@ static bool rebuild_keyboard_grab(TypioWlFrontend *frontend,
 TypioWlSession *typio_wl_session_create(TypioWlFrontend *frontend) {
     TypioWlSession *session = calloc(1, sizeof(TypioWlSession));
     if (!session) {
-        return NULL;
+        return nullptr;
     }
 
     session->frontend = frontend;
@@ -161,7 +161,7 @@ TypioWlSession *typio_wl_session_create(TypioWlFrontend *frontend) {
     if (!session->ctx) {
         typio_log(TYPIO_LOG_ERROR, "Failed to create input context");
         free(session);
-        return NULL;
+        return nullptr;
     }
 
     /* Set up callbacks */
@@ -195,7 +195,7 @@ void typio_wl_session_reset(TypioWlSession *session) {
 
     /* Reset pending state */
     free(session->pending.surrounding_text);
-    session->pending.surrounding_text = NULL;
+    session->pending.surrounding_text = nullptr;
     session->pending.cursor = 0;
     session->pending.anchor = 0;
     session->pending.content_hint = 0;
@@ -214,7 +214,7 @@ void typio_wl_session_apply_pending(TypioWlSession *session) {
     session->current.surrounding_text = session->pending.surrounding_text;
     session->current.cursor = session->pending.cursor;
     session->current.anchor = session->pending.anchor;
-    session->pending.surrounding_text = NULL;
+    session->pending.surrounding_text = nullptr;
 
     /* Apply content type */
     session->current.content_hint = session->pending.content_hint;
@@ -255,9 +255,8 @@ void typio_wl_commit(TypioWlFrontend *frontend) {
 }
 
 /* Input method event handlers */
-static void im_handle_activate(void *data, struct zwp_input_method_v2 *im) {
+static void im_handle_activate(void *data, [[maybe_unused]] struct zwp_input_method_v2 *im) {
     TypioWlFrontend *frontend = data;
-    (void)im;
 
     typio_wl_trace(frontend, "im", "event=activate");
     trace_session_state(frontend, "activate_begin");
@@ -290,9 +289,8 @@ static void im_handle_activate(void *data, struct zwp_input_method_v2 *im) {
     trace_session_state(frontend, "activate_end");
 }
 
-static void im_handle_deactivate(void *data, struct zwp_input_method_v2 *im) {
+static void im_handle_deactivate(void *data, [[maybe_unused]] struct zwp_input_method_v2 *im) {
     TypioWlFrontend *frontend = data;
-    (void)im;
 
     typio_wl_trace(frontend, "im", "event=deactivate");
     trace_session_state(frontend, "deactivate_begin");
@@ -306,11 +304,10 @@ static void im_handle_deactivate(void *data, struct zwp_input_method_v2 *im) {
     trace_session_state(frontend, "deactivate_end");
 }
 
-static void im_handle_surrounding_text(void *data, struct zwp_input_method_v2 *im,
+static void im_handle_surrounding_text(void *data, [[maybe_unused]] struct zwp_input_method_v2 *im,
                                        const char *text, uint32_t cursor,
                                        uint32_t anchor) {
     TypioWlFrontend *frontend = data;
-    (void)im;
 
     typio_wl_trace(frontend,
                    "im",
@@ -322,15 +319,14 @@ static void im_handle_surrounding_text(void *data, struct zwp_input_method_v2 *i
     }
 
     free(frontend->session->pending.surrounding_text);
-    frontend->session->pending.surrounding_text = text ? typio_strdup(text) : NULL;
+    frontend->session->pending.surrounding_text = text ? typio_strdup(text) : nullptr;
     frontend->session->pending.cursor = cursor;
     frontend->session->pending.anchor = anchor;
 }
 
-static void im_handle_text_change_cause(void *data, struct zwp_input_method_v2 *im,
+static void im_handle_text_change_cause(void *data, [[maybe_unused]] struct zwp_input_method_v2 *im,
                                         uint32_t cause) {
     TypioWlFrontend *frontend = data;
-    (void)im;
 
     typio_wl_trace(frontend, "im", "event=text_change_cause cause=%u", cause);
 
@@ -339,10 +335,9 @@ static void im_handle_text_change_cause(void *data, struct zwp_input_method_v2 *
     }
 }
 
-static void im_handle_content_type(void *data, struct zwp_input_method_v2 *im,
+static void im_handle_content_type(void *data, [[maybe_unused]] struct zwp_input_method_v2 *im,
                                    uint32_t hint, uint32_t purpose) {
     TypioWlFrontend *frontend = data;
-    (void)im;
 
     typio_wl_trace(frontend,
                    "im",
@@ -355,10 +350,9 @@ static void im_handle_content_type(void *data, struct zwp_input_method_v2 *im,
     }
 }
 
-static void im_handle_done(void *data, struct zwp_input_method_v2 *im) {
+static void im_handle_done(void *data, [[maybe_unused]] struct zwp_input_method_v2 *im) {
     TypioWlFrontend *frontend = data;
     bool needs_reactivation;
-    (void)im;
 
     frontend->im_serial++;
 
@@ -453,9 +447,8 @@ static void im_handle_done(void *data, struct zwp_input_method_v2 *im) {
     }
 }
 
-static void im_handle_unavailable(void *data, struct zwp_input_method_v2 *im) {
+static void im_handle_unavailable(void *data, [[maybe_unused]] struct zwp_input_method_v2 *im) {
     TypioWlFrontend *frontend = data;
-    (void)im;
 
     typio_log(TYPIO_LOG_WARNING, "Input method unavailable - another IM may be active");
 
@@ -466,9 +459,8 @@ static void im_handle_unavailable(void *data, struct zwp_input_method_v2 *im) {
 }
 
 /* Typio callbacks */
-static void on_commit_callback(TypioInputContext *ctx, const char *text,
+static void on_commit_callback([[maybe_unused]] TypioInputContext *ctx, const char *text,
                                void *user_data) {
-    (void)ctx;
     TypioWlSession *session = user_data;
 
     if (!session || !text || !text[0]) {
@@ -488,11 +480,9 @@ static void on_commit_callback(TypioInputContext *ctx, const char *text,
     typio_wl_commit(session->frontend);
 }
 
-static void on_preedit_callback(TypioInputContext *ctx,
-                                const TypioPreedit *preedit, void *user_data) {
-    (void)ctx;
-    (void)preedit;
-    (void)user_data;
+static void on_preedit_callback([[maybe_unused]] TypioInputContext *ctx,
+                                [[maybe_unused]] const TypioPreedit *preedit,
+                                [[maybe_unused]] void *user_data) {
     /* Preedit changes are rendered together with candidates in
      * on_candidate_callback.  Rendering here would consume a popup
      * buffer with stale candidate data before the candidate callback
@@ -500,9 +490,8 @@ static void on_preedit_callback(TypioInputContext *ctx,
 }
 
 static void on_candidate_callback(TypioInputContext *ctx,
-                                  const TypioCandidateList *candidates,
+                                  [[maybe_unused]] const TypioCandidateList *candidates,
                                   void *user_data) {
-    (void)candidates;
     TypioWlSession *session = user_data;
 
     if (!session) {

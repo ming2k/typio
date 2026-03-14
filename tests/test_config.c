@@ -35,8 +35,8 @@ static int tests_passed = 0;
 
 #define ASSERT_EQ(a, b) ASSERT((a) == (b))
 #define ASSERT_NE(a, b) ASSERT((a) != (b))
-#define ASSERT_NULL(a) ASSERT((a) == NULL)
-#define ASSERT_NOT_NULL(a) ASSERT((a) != NULL)
+#define ASSERT_NULL(a) ASSERT((a) == nullptr)
+#define ASSERT_NOT_NULL(a) ASSERT((a) != nullptr)
 #define ASSERT_STR_EQ(a, b) ASSERT(strcmp((a), (b)) == 0)
 #define ASSERT_FLOAT_EQ(a, b) ASSERT(((a) - (b)) < 0.001 && ((b) - (a)) < 0.001)
 

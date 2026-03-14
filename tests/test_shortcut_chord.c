@@ -6,7 +6,6 @@
 #include "shortcut_chord.h"
 #include "typio/event.h"
 
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

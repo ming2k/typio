@@ -8,7 +8,6 @@
  * into a single enum per keycode.
  */
 
-#define _POSIX_C_SOURCE 200809L
 
 #include "key_debug.h"
 #include "wl_frontend_internal.h"
@@ -281,11 +280,11 @@ static const struct zwp_input_method_keyboard_grab_v2_listener keyboard_grab_lis
 
 TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend) {
     if (!frontend || !frontend->input_method)
-        return NULL;
+        return nullptr;
 
     TypioWlKeyboard *keyboard = calloc(1, sizeof(TypioWlKeyboard));
     if (!keyboard)
-        return NULL;
+        return nullptr;
 
     frontend->active_key_generation++;
     if (frontend->active_key_generation == 0)
@@ -308,7 +307,7 @@ TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend) {
         if (keyboard->repeat_timer_fd >= 0)
             close(keyboard->repeat_timer_fd);
         free(keyboard);
-        return NULL;
+        return nullptr;
     }
 
     keyboard->grab = zwp_input_method_v2_grab_keyboard(frontend->input_method);
@@ -318,7 +317,7 @@ TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend) {
         if (keyboard->repeat_timer_fd >= 0)
             close(keyboard->repeat_timer_fd);
         free(keyboard);
-        return NULL;
+        return nullptr;
     }
 
     zwp_input_method_keyboard_grab_v2_add_listener(keyboard->grab,
@@ -356,7 +355,7 @@ void typio_wl_keyboard_destroy(TypioWlKeyboard *keyboard) {
 void typio_wl_keyboard_release_grab(TypioWlKeyboard *keyboard) {
     if (keyboard && keyboard->grab) {
         zwp_input_method_keyboard_grab_v2_release(keyboard->grab);
-        keyboard->grab = NULL;
+        keyboard->grab = nullptr;
         typio_wl_trace(keyboard->frontend, "grab", "action=release status=ok");
         typio_log(TYPIO_LOG_DEBUG, "Keyboard grab released");
     }
@@ -365,12 +364,11 @@ void typio_wl_keyboard_release_grab(TypioWlKeyboard *keyboard) {
 /* ── Keyboard grab event handlers ────────────────────────────────── */
 
 static void kb_handle_keymap(void *data,
-                             struct zwp_input_method_keyboard_grab_v2 *kb,
+                             [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
                              uint32_t format, int32_t fd, uint32_t size) {
     TypioWlKeyboard *keyboard = data;
-    (void)kb;
 
-    typio_wl_trace(keyboard ? keyboard->frontend : NULL,
+    typio_wl_trace(keyboard ? keyboard->frontend : nullptr,
                    "keymap",
                    "stage=received format=%u size=%u",
                    format, size);
@@ -381,7 +379,7 @@ static void kb_handle_keymap(void *data,
         return;
     }
 
-    char *map_str = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    char *map_str = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
     if (map_str == MAP_FAILED) {
         typio_log(TYPIO_LOG_ERROR, "Failed to mmap keymap");
         close(fd);
@@ -396,11 +394,11 @@ static void kb_handle_keymap(void *data,
     /* Replace keymap and state */
     if (keyboard->xkb_state) {
         xkb_state_unref(keyboard->xkb_state);
-        keyboard->xkb_state = NULL;
+        keyboard->xkb_state = nullptr;
     }
     if (keyboard->xkb_keymap) {
         xkb_keymap_unref(keyboard->xkb_keymap);
-        keyboard->xkb_keymap = NULL;
+        keyboard->xkb_keymap = nullptr;
     }
 
     keyboard->xkb_keymap = xkb_keymap_new_from_string(keyboard->xkb_context,
@@ -418,7 +416,7 @@ static void kb_handle_keymap(void *data,
     if (!keyboard->xkb_state) {
         typio_log(TYPIO_LOG_ERROR, "Failed to create XKB state");
         xkb_keymap_unref(keyboard->xkb_keymap);
-        keyboard->xkb_keymap = NULL;
+        keyboard->xkb_keymap = nullptr;
         return;
     }
 
@@ -470,13 +468,11 @@ static void kb_process_key_release(TypioWlKeyboard *keyboard,
 /* ── Main key event dispatcher ───────────────────────────────────── */
 
 static void kb_handle_key(void *data,
-                          struct zwp_input_method_keyboard_grab_v2 *kb,
-                          uint32_t serial, uint32_t time, uint32_t key,
+                          [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
+                          [[maybe_unused]] uint32_t serial, uint32_t time, uint32_t key,
                           uint32_t state) {
     TypioWlKeyboard *keyboard = data;
     TypioWlFrontend *frontend = keyboard->frontend;
-    (void)kb;
-    (void)serial;
 
     if (!keyboard->xkb_state || !frontend->session)
         return;
@@ -512,13 +508,11 @@ static void kb_handle_key(void *data,
 /* ── Modifier event handler ──────────────────────────────────────── */
 
 static void kb_handle_modifiers(void *data,
-                                struct zwp_input_method_keyboard_grab_v2 *kb,
-                                uint32_t serial, uint32_t mods_depressed,
+                                [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
+                                [[maybe_unused]] uint32_t serial, uint32_t mods_depressed,
                                 uint32_t mods_latched, uint32_t mods_locked,
                                 uint32_t group) {
     TypioWlKeyboard *keyboard = data;
-    (void)kb;
-    (void)serial;
 
     if (!keyboard->xkb_state)
         return;
@@ -560,10 +554,9 @@ static void kb_handle_modifiers(void *data,
 }
 
 static void kb_handle_repeat_info(void *data,
-                                  struct zwp_input_method_keyboard_grab_v2 *kb,
+                                  [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
                                   int32_t rate, int32_t delay) {
     TypioWlKeyboard *keyboard = data;
-    (void)kb;
 
     keyboard->repeat_rate = rate;
     keyboard->repeat_delay = delay;

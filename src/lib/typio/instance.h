@@ -26,14 +26,14 @@ typedef struct TypioInstanceConfig {
 
 /**
  * @brief Create a new Typio instance with default configuration
- * @return New instance or NULL on failure
+ * @return New instance or nullptr on failure
  */
 TypioInstance *typio_instance_new(void);
 
 /**
  * @brief Create a new Typio instance with custom configuration
  * @param config Instance configuration
- * @return New instance or NULL on failure
+ * @return New instance or nullptr on failure
  */
 TypioInstance *typio_instance_new_with_config(const TypioInstanceConfig *config);
 
@@ -66,7 +66,7 @@ TypioEngineManager *typio_instance_get_engine_manager(TypioInstance *instance);
 /**
  * @brief Create a new input context
  * @param instance Typio instance
- * @return New input context or NULL on failure
+ * @return New input context or nullptr on failure
  */
 TypioInputContext *typio_instance_create_context(TypioInstance *instance);
 
@@ -81,7 +81,7 @@ void typio_instance_destroy_context(TypioInstance *instance,
 /**
  * @brief Get the focused input context
  * @param instance Typio instance
- * @return Focused context or NULL if none
+ * @return Focused context or nullptr if none
  */
 TypioInputContext *typio_instance_get_focused_context(TypioInstance *instance);
 
@@ -94,6 +94,27 @@ TypioInputContext *typio_instance_get_focused_context(TypioInstance *instance);
 void typio_instance_set_engine_changed_callback(TypioInstance *instance,
                                                  TypioEngineChangedCallback callback,
                                                  void *user_data);
+
+/**
+ * @brief Set a callback for engine status icon changes
+ * @param instance Typio instance
+ * @param callback Callback function
+ * @param user_data User data passed to callback
+ */
+void typio_instance_set_status_icon_changed_callback(TypioInstance *instance,
+                                                      TypioStatusIconChangedCallback callback,
+                                                      void *user_data);
+
+/**
+ * @brief Notify that the engine's status icon has changed
+ * @param instance Typio instance
+ * @param icon_name New icon name
+ *
+ * Called by engines when their visual status changes (e.g., Rime ascii mode).
+ * Only fires the callback if the icon actually changed.
+ */
+void typio_instance_notify_status_icon(TypioInstance *instance,
+                                        const char *icon_name);
 
 /**
  * @brief Get the configuration directory path

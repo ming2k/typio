@@ -40,7 +40,7 @@ static int alpha_sum(const unsigned char *data, int data_len) {
 }
 
 TEST(build_basic_icon) {
-    unsigned char *data = NULL;
+    unsigned char *data = nullptr;
     int width = 0;
     int height = 0;
     int data_len = 0;
@@ -49,7 +49,7 @@ TEST(build_basic_icon) {
                                         &width, &height, &data, &data_len));
     ASSERT(width == 64);
     ASSERT(height == 64);
-    ASSERT(data != NULL);
+    ASSERT(data != nullptr);
     ASSERT(data_len == 64 * 64 * 4);
     ASSERT(alpha_sum(data, data_len) > 0);
 
@@ -57,7 +57,7 @@ TEST(build_basic_icon) {
 }
 
 TEST(build_rime_icon) {
-    unsigned char *data = NULL;
+    unsigned char *data = nullptr;
     int width = 0;
     int height = 0;
     int data_len = 0;
@@ -66,7 +66,7 @@ TEST(build_rime_icon) {
                                         &width, &height, &data, &data_len));
     ASSERT(width == 64);
     ASSERT(height == 64);
-    ASSERT(data != NULL);
+    ASSERT(data != nullptr);
     ASSERT(data_len == 64 * 64 * 4);
     ASSERT(alpha_sum(data, data_len) > 0);
 

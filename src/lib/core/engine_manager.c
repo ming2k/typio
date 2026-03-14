@@ -59,7 +59,7 @@ static void free_engine_entry(EngineEntry *entry) {
 TypioEngineManager *typio_engine_manager_new(TypioInstance *instance) {
     TypioEngineManager *manager = calloc(1, sizeof(TypioEngineManager));
     if (!manager) {
-        return NULL;
+        return nullptr;
     }
 
     manager->instance = instance;
@@ -67,7 +67,7 @@ TypioEngineManager *typio_engine_manager_new(TypioInstance *instance) {
     manager->entries = calloc(manager->entry_capacity, sizeof(EngineEntry *));
     if (!manager->entries) {
         free(manager);
-        return NULL;
+        return nullptr;
     }
 
     manager->active_index = (size_t)-1;  /* No active engine */
@@ -79,13 +79,13 @@ static char *get_engine_config_path(TypioEngineManager *manager,
                                     const char *engine_name) {
     const char *config_dir = typio_instance_get_config_dir(manager->instance);
     if (!config_dir || !*config_dir) {
-        return NULL;
+        return nullptr;
     }
 
     size_t len = strlen(config_dir) + strlen(engine_name) + 15;
     char *path = malloc(len);
     if (!path) {
-        return NULL;
+        return nullptr;
     }
 
     snprintf(path, len, "%s/engines/%s.conf", config_dir, engine_name);
@@ -114,7 +114,7 @@ static EngineEntry *find_entry_by_name(TypioEngineManager *manager,
             return manager->entries[i];
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 static TypioResult add_entry(TypioEngineManager *manager, EngineEntry *entry) {
@@ -140,7 +140,7 @@ static TypioResult add_entry(TypioEngineManager *manager, EngineEntry *entry) {
 
     /* Invalidate name list cache */
     free(manager->name_list);
-    manager->name_list = NULL;
+    manager->name_list = nullptr;
     manager->name_list_size = 0;
 
     return TYPIO_OK;
@@ -161,7 +161,7 @@ int typio_engine_manager_load_dir(TypioEngineManager *manager,
     int count = 0;
     struct dirent *entry;
 
-    while ((entry = readdir(dir)) != NULL) {
+    while ((entry = readdir(dir)) != nullptr) {
         /* Check for .so files */
         const char *name = entry->d_name;
         size_t len = strlen(name);
@@ -322,7 +322,7 @@ TypioResult typio_engine_manager_unload(TypioEngineManager *manager,
 
             /* Invalidate name list cache */
             free(manager->name_list);
-            manager->name_list = NULL;
+            manager->name_list = nullptr;
             manager->name_list_size = 0;
 
             return TYPIO_OK;
@@ -336,7 +336,7 @@ const char **typio_engine_manager_list(TypioEngineManager *manager,
                                         size_t *count) {
     if (!manager) {
         if (count) *count = 0;
-        return NULL;
+        return nullptr;
     }
 
     /* Build cached list if needed */
@@ -345,13 +345,13 @@ const char **typio_engine_manager_list(TypioEngineManager *manager,
         manager->name_list = malloc((manager->entry_count + 1) * sizeof(char *));
         if (!manager->name_list) {
             if (count) *count = 0;
-            return NULL;
+            return nullptr;
         }
 
         for (size_t i = 0; i < manager->entry_count; i++) {
             manager->name_list[i] = manager->entries[i]->name;
         }
-        manager->name_list[manager->entry_count] = NULL;
+        manager->name_list[manager->entry_count] = nullptr;
         manager->name_list_size = manager->entry_count;
     }
 
@@ -362,22 +362,22 @@ const char **typio_engine_manager_list(TypioEngineManager *manager,
 const TypioEngineInfo *typio_engine_manager_get_info(TypioEngineManager *manager,
                                                       const char *name) {
     if (!manager || !name) {
-        return NULL;
+        return nullptr;
     }
 
     EngineEntry *entry = find_entry_by_name(manager, name);
-    return entry ? entry->info : NULL;
+    return entry ? entry->info : nullptr;
 }
 
 TypioEngine *typio_engine_manager_get_engine(TypioEngineManager *manager,
                                               const char *name) {
     if (!manager || !name) {
-        return NULL;
+        return nullptr;
     }
 
     EngineEntry *entry = find_entry_by_name(manager, name);
     if (!entry) {
-        return NULL;
+        return nullptr;
     }
 
     /* Create instance if not exists */
@@ -385,7 +385,7 @@ TypioEngine *typio_engine_manager_get_engine(TypioEngineManager *manager,
         entry->instance = entry->factory();
         if (!entry->instance) {
             typio_log_error("Failed to create engine instance: %s", name);
-            return NULL;
+            return nullptr;
         }
         
         /* Set XDG config path */
@@ -471,7 +471,7 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
 
 TypioEngine *typio_engine_manager_get_active(TypioEngineManager *manager) {
     if (!manager || manager->active_index == (size_t)-1) {
-        return NULL;
+        return nullptr;
     }
 
     return manager->entries[manager->active_index]->instance;

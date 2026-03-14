@@ -67,19 +67,19 @@ TypioPwCapture *typio_pw_capture_new(TypioPwCaptureCallback cb,
                                      void *user_data) {
     TypioPwCapture *cap = calloc(1, sizeof(TypioPwCapture));
     if (!cap) {
-        return NULL;
+        return nullptr;
     }
 
     cap->callback = cb;
     cap->user_data = user_data;
 
-    pw_init(NULL, NULL);
+    pw_init(nullptr, nullptr);
 
-    cap->loop = pw_thread_loop_new("typio-capture", NULL);
+    cap->loop = pw_thread_loop_new("typio-capture", nullptr);
     if (!cap->loop) {
         typio_log(TYPIO_LOG_ERROR, "Failed to create PipeWire thread loop");
         free(cap);
-        return NULL;
+        return nullptr;
     }
 
     struct pw_properties *props = pw_properties_new(
@@ -88,7 +88,7 @@ TypioPwCapture *typio_pw_capture_new(TypioPwCaptureCallback cb,
         PW_KEY_MEDIA_ROLE, "Communication",
         PW_KEY_APP_NAME, "Typio",
         PW_KEY_NODE_NAME, "typio-voice-capture",
-        NULL);
+        nullptr);
 
     cap->stream = pw_stream_new_simple(
         pw_thread_loop_get_loop(cap->loop),
@@ -101,7 +101,7 @@ TypioPwCapture *typio_pw_capture_new(TypioPwCaptureCallback cb,
         typio_log(TYPIO_LOG_ERROR, "Failed to create PipeWire stream");
         pw_thread_loop_destroy(cap->loop);
         free(cap);
-        return NULL;
+        return nullptr;
     }
 
     if (pw_thread_loop_start(cap->loop) < 0) {
@@ -109,7 +109,7 @@ TypioPwCapture *typio_pw_capture_new(TypioPwCaptureCallback cb,
         pw_stream_destroy(cap->stream);
         pw_thread_loop_destroy(cap->loop);
         free(cap);
-        return NULL;
+        return nullptr;
     }
 
     typio_log(TYPIO_LOG_INFO, "PipeWire capture initialized");
@@ -195,8 +195,7 @@ int typio_pw_capture_get_fd(TypioPwCapture *cap) {
     return -1;
 }
 
-void typio_pw_capture_dispatch(TypioPwCapture *cap) {
+void typio_pw_capture_dispatch([[maybe_unused]] TypioPwCapture *cap) {
     /* With pw_thread_loop, dispatching is handled internally.
      * This is a no-op but kept for API completeness. */
-    (void)cap;
 }

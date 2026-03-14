@@ -29,19 +29,18 @@
 #include "tray/tray.h"
 #endif
 
-static TypioInstance *g_instance = NULL;
+static TypioInstance *g_instance = nullptr;
 #ifdef HAVE_WAYLAND
-static TypioWlFrontend *g_wl_frontend = NULL;
+static TypioWlFrontend *g_wl_frontend = nullptr;
 #endif
 #ifdef HAVE_STATUS_BUS
-static TypioStatusBus *g_status_bus = NULL;
+static TypioStatusBus *g_status_bus = nullptr;
 #endif
 #ifdef HAVE_SYSTRAY
-static TypioTray *g_tray = NULL;
+static TypioTray *g_tray = nullptr;
 #endif
 
-static void signal_handler(int sig) {
-    (void)sig;
+static void signal_handler([[maybe_unused]] int sig) {
 #ifdef HAVE_WAYLAND
     if (g_wl_frontend) {
         typio_wl_frontend_stop(g_wl_frontend);
@@ -163,9 +162,7 @@ static bool write_rime_schema_config(const char *schema_name) {
 }
 #endif
 
-static void log_callback(TypioLogLevel level, const char *message, void *user_data) {
-    (void)user_data;
-
+static void log_callback(TypioLogLevel level, const char *message, [[maybe_unused]] void *user_data) {
     const char *level_str;
     switch (level) {
         case TYPIO_LOG_DEBUG:   level_str = "DEBUG"; break;
@@ -211,11 +208,11 @@ static void update_tray_engine_status(void) {
 
     TypioEngineManager *manager = typio_instance_get_engine_manager(g_instance);
     TypioEngine *active = typio_engine_manager_get_active(manager);
-    const char *engine_name = active ? typio_engine_get_name(active) : NULL;
+    const char *engine_name = active ? typio_engine_get_name(active) : nullptr;
     const char *icon_name = (active && active->info && active->info->icon) ?
                             active->info->icon : "typio-keyboard";
     typio_tray_set_icon(g_tray, icon_name);
-    typio_tray_update_engine(g_tray, engine_name, active != NULL);
+    typio_tray_update_engine(g_tray, engine_name, active != nullptr);
 }
 #endif
 
@@ -228,10 +225,7 @@ static void update_status_bus_state(void) {
 #endif
 
 #ifdef HAVE_SYSTRAY
-static void tray_menu_callback(TypioTray *tray, const char *action, void *user_data) {
-    (void)tray;
-    (void)user_data;
-
+static void tray_menu_callback([[maybe_unused]] TypioTray *tray, const char *action, [[maybe_unused]] void *user_data) {
     if (strcmp(action, "quit") == 0) {
 #ifdef HAVE_WAYLAND
         if (g_wl_frontend) {
@@ -280,12 +274,19 @@ static void tray_menu_callback(TypioTray *tray, const char *action, void *user_d
 }
 #endif
 
-static void on_engine_change(TypioInstance *instance,
-                             const TypioEngineInfo *engine,
-                             void *user_data) {
-    (void)instance;
-    (void)engine;
-    (void)user_data;
+static void on_status_icon_change([[maybe_unused]] TypioInstance *instance,
+                                   [[maybe_unused]] const char *icon_name,
+                                   [[maybe_unused]] void *user_data) {
+#ifdef HAVE_SYSTRAY
+    if (g_tray && icon_name) {
+        typio_tray_set_icon(g_tray, icon_name);
+    }
+#endif
+}
+
+static void on_engine_change([[maybe_unused]] TypioInstance *instance,
+                             [[maybe_unused]] const TypioEngineInfo *engine,
+                             [[maybe_unused]] void *user_data) {
 #ifdef HAVE_SYSTRAY
     update_tray_engine_status();
 #endif
@@ -312,12 +313,12 @@ int main(int argc, char *argv[]) {
         {0, 0, 0, 0}
     };
 
-    TypioInstanceConfig config = {0};
+    TypioInstanceConfig config = {};
     bool list_only = false;
     bool verbose = false;
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "c:d:E:e:lvhV", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "c:d:E:e:lvhV", long_options, nullptr)) != -1) {
         switch (opt) {
             case 'c':
                 config.config_dir = optarg;
@@ -409,7 +410,7 @@ int main(int argc, char *argv[]) {
         .icon_name = "typio-keyboard",
         .tooltip = "Typio Input Method",
         .menu_callback = tray_menu_callback,
-        .user_data = NULL,
+        .user_data = nullptr,
     };
     g_tray = typio_tray_new(g_instance, &tray_config);
     if (g_tray && typio_tray_is_registered(g_tray)) {
@@ -426,20 +427,20 @@ int main(int argc, char *argv[]) {
     /* Main event loop */
 #ifdef HAVE_WAYLAND
     /* Create Wayland frontend */
-    g_wl_frontend = typio_wl_frontend_new(g_instance, NULL);
+    g_wl_frontend = typio_wl_frontend_new(g_instance, nullptr);
     if (!g_wl_frontend) {
         fprintf(stderr, "Failed to create Wayland frontend\n");
         fprintf(stderr, "Make sure the session provides zwp_input_method_manager_v2 and a working text-input-v3 path\n");
 #ifdef HAVE_SYSTRAY
         if (g_tray) {
             typio_tray_destroy(g_tray);
-            g_tray = NULL;
+            g_tray = nullptr;
         }
 #endif
 #ifdef HAVE_STATUS_BUS
         if (g_status_bus) {
             typio_status_bus_destroy(g_status_bus);
-            g_status_bus = NULL;
+            g_status_bus = nullptr;
         }
 #endif
         typio_instance_free(g_instance);
@@ -459,7 +460,8 @@ int main(int argc, char *argv[]) {
 #endif
 
     /* Set engine change callback for external state updates */
-    typio_instance_set_engine_changed_callback(g_instance, on_engine_change, NULL);
+    typio_instance_set_engine_changed_callback(g_instance, on_engine_change, nullptr);
+    typio_instance_set_status_icon_changed_callback(g_instance, on_status_icon_change, nullptr);
 
     printf("Wayland input method frontend started\n");
 
@@ -472,19 +474,19 @@ int main(int argc, char *argv[]) {
     }
 
     typio_wl_frontend_destroy(g_wl_frontend);
-    g_wl_frontend = NULL;
+    g_wl_frontend = nullptr;
 
     if (wl_result < 0) {
 #ifdef HAVE_SYSTRAY
         if (g_tray) {
             typio_tray_destroy(g_tray);
-            g_tray = NULL;
+            g_tray = nullptr;
         }
 #endif
 #ifdef HAVE_STATUS_BUS
         if (g_status_bus) {
             typio_status_bus_destroy(g_status_bus);
-            g_status_bus = NULL;
+            g_status_bus = nullptr;
         }
 #endif
         typio_instance_free(g_instance);
@@ -496,13 +498,13 @@ int main(int argc, char *argv[]) {
 #ifdef HAVE_SYSTRAY
     if (g_tray) {
         typio_tray_destroy(g_tray);
-        g_tray = NULL;
+        g_tray = nullptr;
     }
 #endif
 #ifdef HAVE_STATUS_BUS
     if (g_status_bus) {
         typio_status_bus_destroy(g_status_bus);
-        g_status_bus = NULL;
+        g_status_bus = nullptr;
     }
 #endif
     typio_instance_free(g_instance);
@@ -513,13 +515,13 @@ int main(int argc, char *argv[]) {
     /* Clean up tray */
     if (g_tray) {
         typio_tray_destroy(g_tray);
-        g_tray = NULL;
+        g_tray = nullptr;
     }
 #endif
 #ifdef HAVE_STATUS_BUS
     if (g_status_bus) {
         typio_status_bus_destroy(g_status_bus);
-        g_status_bus = NULL;
+        g_status_bus = nullptr;
     }
 #endif
 

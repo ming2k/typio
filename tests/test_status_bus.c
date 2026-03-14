@@ -3,14 +3,12 @@
  * @brief D-Bus status interface integration tests
  */
 
-#define _POSIX_C_SOURCE 200809L
 
 #include "status/status.h"
 #include "typio/typio.h"
 
 #include <dbus/dbus.h>
 #include <signal.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,7 +52,7 @@ static void sleep_briefly(void) {
         .tv_nsec = 1000 * 1000,
     };
 
-    nanosleep(&delay, NULL);
+    nanosleep(&delay, nullptr);
 }
 
 static void read_line_or_die(int fd, char *buf, size_t size) {
@@ -77,7 +75,7 @@ static void read_line_or_die(int fd, char *buf, size_t size) {
 static TestBusProcess start_test_bus(void) {
     int pipefd[2];
     pid_t pid;
-    TestBusProcess bus = {0};
+    TestBusProcess bus = {};
     char pid_line[64];
 
     ASSERT(pipe(pipefd) == 0);
@@ -92,7 +90,7 @@ static TestBusProcess start_test_bus(void) {
         execlp("dbus-daemon", "dbus-daemon",
                "--session", "--nofork",
                "--print-address=1", "--print-pid=1",
-               (char *)NULL);
+               (char *)nullptr);
         _exit(127);
     }
 
@@ -125,7 +123,7 @@ static DBusConnection *open_client_connection(const char *address) {
 
     dbus_error_init(&err);
     conn = dbus_connection_open_private(address, &err);
-    ASSERT(conn != NULL);
+    ASSERT(conn != nullptr);
     ASSERT(!dbus_error_is_set(&err));
     ASSERT(dbus_bus_register(conn, &err));
     ASSERT(!dbus_error_is_set(&err));
@@ -135,20 +133,20 @@ static DBusConnection *open_client_connection(const char *address) {
 static DBusMessage *call_get_all(DBusConnection *client,
                                  TypioStatusBus *bus) {
     DBusMessage *msg;
-    DBusPendingCall *pending = NULL;
-    DBusMessage *reply = NULL;
+    DBusPendingCall *pending = nullptr;
+    DBusMessage *reply = nullptr;
     const char *interface = TYPIO_STATUS_DBUS_INTERFACE;
 
     msg = dbus_message_new_method_call(TYPIO_STATUS_DBUS_SERVICE,
                                        TYPIO_STATUS_DBUS_PATH,
                                        "org.freedesktop.DBus.Properties",
                                        "GetAll");
-    ASSERT(msg != NULL);
+    ASSERT(msg != nullptr);
     ASSERT(dbus_message_append_args(msg,
                                     DBUS_TYPE_STRING, &interface,
                                     DBUS_TYPE_INVALID));
     ASSERT(dbus_connection_send_with_reply(client, msg, &pending, 1000));
-    ASSERT(pending != NULL);
+    ASSERT(pending != nullptr);
     dbus_message_unref(msg);
 
     for (int i = 0; i < 100 && !dbus_pending_call_get_completed(pending); ++i) {
@@ -160,7 +158,7 @@ static DBusMessage *call_get_all(DBusConnection *client,
     ASSERT(dbus_pending_call_get_completed(pending));
     reply = dbus_pending_call_steal_reply(pending);
     dbus_pending_call_unref(pending);
-    ASSERT(reply != NULL);
+    ASSERT(reply != nullptr);
     return reply;
 }
 
@@ -169,21 +167,21 @@ static DBusMessage *call_status_method(DBusConnection *client,
                                        const char *method,
                                        const char *string_arg) {
     DBusMessage *msg;
-    DBusPendingCall *pending = NULL;
-    DBusMessage *reply = NULL;
+    DBusPendingCall *pending = nullptr;
+    DBusMessage *reply = nullptr;
 
     msg = dbus_message_new_method_call(TYPIO_STATUS_DBUS_SERVICE,
                                        TYPIO_STATUS_DBUS_PATH,
                                        TYPIO_STATUS_DBUS_INTERFACE,
                                        method);
-    ASSERT(msg != NULL);
+    ASSERT(msg != nullptr);
     if (string_arg) {
         ASSERT(dbus_message_append_args(msg,
                                         DBUS_TYPE_STRING, &string_arg,
                                         DBUS_TYPE_INVALID));
     }
     ASSERT(dbus_connection_send_with_reply(client, msg, &pending, 1000));
-    ASSERT(pending != NULL);
+    ASSERT(pending != nullptr);
     dbus_message_unref(msg);
 
     for (int i = 0; i < 100 && !dbus_pending_call_get_completed(pending); ++i) {
@@ -195,7 +193,7 @@ static DBusMessage *call_status_method(DBusConnection *client,
     ASSERT(dbus_pending_call_get_completed(pending));
     reply = dbus_pending_call_steal_reply(pending);
     dbus_pending_call_unref(pending);
-    ASSERT(reply != NULL);
+    ASSERT(reply != nullptr);
     return reply;
 }
 
@@ -207,8 +205,8 @@ static bool dict_contains_string(DBusMessageIter *dict,
     while (dbus_message_iter_get_arg_type(dict) == DBUS_TYPE_DICT_ENTRY) {
         DBusMessageIter kv;
         DBusMessageIter variant;
-        const char *entry_key = NULL;
-        const char *entry_val = NULL;
+        const char *entry_key = nullptr;
+        const char *entry_val = nullptr;
 
         dbus_message_iter_recurse(dict, &entry);
         kv = entry;
@@ -262,7 +260,7 @@ static bool reply_contains_engine_state_name(DBusMessage *reply,
         DBusMessageIter kv;
         DBusMessageIter variant;
         DBusMessageIter state_dict;
-        const char *entry_key = NULL;
+        const char *entry_key = nullptr;
 
         dbus_message_iter_recurse(&dict, &entry);
         kv = entry;
@@ -290,15 +288,15 @@ TEST(exports_basic_engine_state_and_emits_change_signal) {
     DBusConnection *client;
     DBusMessage *reply;
     DBusError err;
-    DBusMessage *signal_msg = NULL;
+    DBusMessage *signal_msg = nullptr;
 
     bus_proc = start_test_bus();
     instance = typio_instance_new_with_config(&config);
-    ASSERT(instance != NULL);
+    ASSERT(instance != nullptr);
     ASSERT(typio_instance_init(instance) == TYPIO_OK);
 
     bus = typio_status_bus_new(instance);
-    ASSERT(bus != NULL);
+    ASSERT(bus != nullptr);
 
     client = open_client_connection(bus_proc.address);
     reply = call_get_all(client, bus);
@@ -309,7 +307,7 @@ TEST(exports_basic_engine_state_and_emits_change_signal) {
     reply = call_status_method(client, bus, "ActivateEngine", "basic");
     dbus_message_unref(reply);
 
-    reply = call_status_method(client, bus, "ReloadConfig", NULL);
+    reply = call_status_method(client, bus, "ReloadConfig", nullptr);
     dbus_message_unref(reply);
 
     dbus_error_init(&err);
@@ -321,14 +319,14 @@ TEST(exports_basic_engine_state_and_emits_change_signal) {
     dbus_connection_flush(client);
 
     typio_status_bus_emit_properties_changed(bus);
-    for (int i = 0; i < 100 && signal_msg == NULL; ++i) {
+    for (int i = 0; i < 100 && signal_msg == nullptr; ++i) {
         typio_status_bus_dispatch(bus);
         dbus_connection_read_write(client, 10);
         signal_msg = dbus_connection_pop_message(client);
         sleep_briefly();
     }
 
-    ASSERT(signal_msg != NULL);
+    ASSERT(signal_msg != nullptr);
     ASSERT(dbus_message_is_signal(signal_msg,
                                   "org.freedesktop.DBus.Properties",
                                   "PropertiesChanged"));

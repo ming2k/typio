@@ -1,4 +1,3 @@
-#define _POSIX_C_SOURCE 200809L
 
 #include "path_expand.h"
 #include "typio/typio.h"
@@ -10,7 +9,6 @@
 
 #include <errno.h>
 #include <limits.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,7 +68,7 @@ static void typio_rime_free_config(TypioRimeConfig *config) {
 
 static char *typio_rime_path_join(const char *base, const char *suffix) {
     if (!base || !suffix) {
-        return NULL;
+        return nullptr;
     }
 
     const size_t base_len = strlen(base);
@@ -78,7 +76,7 @@ static char *typio_rime_path_join(const char *base, const char *suffix) {
     const bool need_slash = base_len > 0 && base[base_len - 1] != '/';
     char *path = malloc(base_len + suffix_len + (need_slash ? 2 : 1));
     if (!path) {
-        return NULL;
+        return nullptr;
     }
 
     snprintf(path,
@@ -127,7 +125,7 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
                                           TypioRimeConfig *config) {
     const char *config_path;
     const char *data_dir;
-    TypioConfig *file_config = NULL;
+    TypioConfig *file_config = nullptr;
     char *default_user_dir;
 
     if (!engine || !instance || !config) {
@@ -156,9 +154,9 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
         return TYPIO_OK;
     }
 
-    const char *schema = typio_config_get_string(file_config, "schema", NULL);
-    const char *shared_data_dir = typio_config_get_string(file_config, "shared_data_dir", NULL);
-    const char *user_data_dir = typio_config_get_string(file_config, "user_data_dir", NULL);
+    const char *schema = typio_config_get_string(file_config, "schema", nullptr);
+    const char *shared_data_dir = typio_config_get_string(file_config, "shared_data_dir", nullptr);
+    const char *user_data_dir = typio_config_get_string(file_config, "user_data_dir", nullptr);
     const int page_size = typio_config_get_int(file_config, "page_size", config->page_size);
     const bool full_check = typio_config_get_bool(file_config, "full_check", false);
 
@@ -325,7 +323,7 @@ static TypioRimeSession *typio_rime_get_session(TypioEngine *engine,
     TypioRimeSession *session;
 
     if (!state || !state->api) {
-        return NULL;
+        return nullptr;
     }
 
     session = typio_input_context_get_property(ctx, TYPIO_RIME_SESSION_KEY);
@@ -335,16 +333,16 @@ static TypioRimeSession *typio_rime_get_session(TypioEngine *engine,
     }
 
     if (!create) {
-        return NULL;
+        return nullptr;
     }
 
     if (!typio_rime_ensure_deployed(state)) {
-        return NULL;
+        return nullptr;
     }
 
     session = calloc(1, sizeof(*session));
     if (!session) {
-        return NULL;
+        return nullptr;
     }
 
     session->state = state;
@@ -352,12 +350,12 @@ static TypioRimeSession *typio_rime_get_session(TypioEngine *engine,
     if (session->session_id == 0) {
         free(session);
         typio_log_error("Failed to create Rime session");
-        return NULL;
+        return nullptr;
     }
 
     if (!typio_rime_apply_schema(session)) {
         typio_rime_free_session(session);
-        return NULL;
+        return nullptr;
     }
 
     typio_input_context_set_property(ctx, TYPIO_RIME_SESSION_KEY, session, typio_rime_free_session);
@@ -570,7 +568,7 @@ static void typio_rime_destroy(TypioEngine *engine) {
 
     typio_rime_free_config(&state->config);
     free(state);
-    typio_engine_set_user_data(engine, NULL);
+    typio_engine_set_user_data(engine, nullptr);
 }
 
 static void typio_rime_focus_in(TypioEngine *engine, TypioInputContext *ctx) {
@@ -752,7 +750,7 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
         return TYPIO_OK;
     }
 
-    schema = typio_config_get_string(file_config, "schema", NULL);
+    schema = typio_config_get_string(file_config, "schema", nullptr);
     page_size = typio_config_get_int(file_config, "page_size", state->config.page_size);
 
     if (schema && *schema) {
@@ -771,6 +769,18 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
     typio_config_free(file_config);
     typio_rime_apply_runtime_config(engine);
     return TYPIO_OK;
+}
+
+static const char *typio_rime_get_status_icon(TypioEngine *engine,
+                                               TypioInputContext *ctx) {
+    TypioRimeSession *session = typio_rime_get_session(engine, ctx, false);
+
+    if (!session || !session->state->api->get_option) {
+        return "typio-rime";
+    }
+
+    Bool ascii = session->state->api->get_option(session->session_id, "ascii_mode");
+    return ascii ? "typio-rime-latin" : "typio-rime";
 }
 
 static const TypioEngineInfo typio_rime_engine_info = {
@@ -797,6 +807,7 @@ static const TypioEngineOps typio_rime_engine_ops = {
     .select_candidate = typio_rime_select_candidate,
     .page_candidates = typio_rime_page_candidates,
     .reload_config = typio_rime_reload_config,
+    .get_status_icon = typio_rime_get_status_icon,
 };
 
 const TypioEngineInfo *typio_engine_get_info(void) {

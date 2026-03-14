@@ -8,7 +8,6 @@
 
 #include "typio/types.h"
 
-#include <stdbool.h>
 #include <stdint.h>
 
 bool typio_wl_shortcut_chord_is_switch_modifier(uint32_t keysym);

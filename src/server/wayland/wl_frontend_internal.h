@@ -19,7 +19,6 @@
 #include "input-method-unstable-v2-client-protocol.h"
 #include "virtual-keyboard-unstable-v1-client-protocol.h"
 #include <xkbcommon/xkbcommon.h>
-#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef HAVE_STATUS_BUS

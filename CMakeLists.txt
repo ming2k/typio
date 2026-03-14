@@ -1,9 +1,12 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(typio VERSION 1.2.0 LANGUAGES C)
 
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
+
+# POSIX features (strdup, clock_gettime, etc.) — centralized here
+add_compile_definitions(_POSIX_C_SOURCE=200809L)
 
 # Production-grade compiler warnings
 add_compile_options(

@@ -45,7 +45,7 @@ TEST(plain_preedit_only) {
     int cursor_pos = -1;
     char *display = typio_wl_build_plain_preedit(&preedit, &cursor_pos);
 
-    ASSERT(display != NULL);
+    ASSERT(display != nullptr);
     ASSERT_STR_EQ(display, "zhongwen");
     ASSERT_EQ(cursor_pos, 5);
 
@@ -54,9 +54,9 @@ TEST(plain_preedit_only) {
 
 TEST(plain_preedit_null) {
     int cursor_pos = 99;
-    char *display = typio_wl_build_plain_preedit(NULL, &cursor_pos);
+    char *display = typio_wl_build_plain_preedit(nullptr, &cursor_pos);
 
-    ASSERT(display == NULL);
+    ASSERT(display == nullptr);
     ASSERT_EQ(cursor_pos, -1);
 }
 
