@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-03-15
+
+### Added
+
+- **Mozc engine support**: added a Mozc-backed Japanese input engine with tray
+  status icon integration and session-aware mode tracking.
+
+### Changed
+
+- **Mozc IPC compatibility**: aligned Typio's Mozc transport and protobuf subset
+  with upstream Mozc, including raw `Input`/`Output` IPC, session creation
+  metadata, candidate-window parsing, and abstract Unix socket discovery for
+  modern Mozc deployments.
+- **Mozc failure handling**: reduced Mozc IPC timeout cost and added retry
+  backoff plus richer diagnostics so session-creation failures no longer stall
+  every keypress.
+
 ## [1.3.0] - 2026-03-15
 
 ### Added
@@ -215,6 +232,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installation.
 
 [1.2.0]: https://github.com/user/typio/releases/tag/v1.2.0
+[1.4.0]: https://github.com/user/typio/releases/tag/v1.4.0
 [1.1.2]: https://github.com/user/typio/releases/tag/v1.1.2
 [1.1.1]: https://github.com/user/typio/releases/tag/v1.1.1
 [1.1.0]: https://github.com/user/typio/releases/tag/v1.1.0
