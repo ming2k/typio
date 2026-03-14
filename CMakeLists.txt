@@ -26,6 +26,7 @@ option(BUILD_RIME_ENGINE "Build the Rime engine" ON)
 option(ENABLE_WAYLAND "Enable Wayland input-method frontend support" ON)
 option(ENABLE_STATUS_BUS "Enable D-Bus runtime status/control interface" ON)
 option(ENABLE_SYSTRAY "Enable StatusNotifierItem tray support" ON)
+option(BUILD_WHISPER "Build Whisper voice input support" OFF)
 set(TYPIO_AUTOSTART_DIR "/etc/xdg/autostart" CACHE PATH
     "Directory where the Typio desktop autostart entry is installed")
 
@@ -64,6 +65,36 @@ endif()
 if(BUILD_RIME_ENGINE)
     pkg_check_modules(RIME REQUIRED rime)
     pkg_get_variable(RIME_PKGDATADIR rime pkgdatadir)
+endif()
+
+if(BUILD_WHISPER)
+    # whisper.cpp may be installed under a private prefix (e.g. /usr/lib/whisper.cpp)
+    # to avoid file collisions with llama.cpp's bundled ggml.
+    set(WHISPER_PREFIX "/usr/lib/whisper.cpp" CACHE PATH
+        "Installation prefix of whisper.cpp")
+    set(ENV{PKG_CONFIG_PATH}
+        "${WHISPER_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+
+    pkg_check_modules(WHISPER REQUIRED whisper)
+    pkg_check_modules(PIPEWIRE REQUIRED libpipewire-0.3)
+
+    # whisper.pc Libs has wrong link order for static builds and may omit
+    # transitive deps (ggml-cpu, OpenMP, C++ runtime).
+    # Detect static vs shared and build the correct link list ourselves.
+    find_library(WHISPER_LIB whisper HINTS ${WHISPER_LIBRARY_DIRS})
+    if(WHISPER_LIB AND WHISPER_LIB MATCHES "\\.a$")
+        find_library(GGML_LIB ggml HINTS ${WHISPER_LIBRARY_DIRS})
+        find_library(GGML_BASE_LIB ggml-base HINTS ${WHISPER_LIBRARY_DIRS})
+        find_library(GGML_CPU_LIB ggml-cpu HINTS ${WHISPER_LIBRARY_DIRS})
+        set(WHISPER_LINK_LIBRARIES
+            ${WHISPER_LIB}
+            ${GGML_LIB} ${GGML_CPU_LIB} ${GGML_BASE_LIB}
+            gomp stdc++ m)
+    else()
+        set(WHISPER_LINK_LIBRARIES ${WHISPER_LIBRARIES})
+    endif()
+
+    set(HAVE_WHISPER ON)
 endif()
 
 configure_file(

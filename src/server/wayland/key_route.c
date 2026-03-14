@@ -21,6 +21,12 @@
 #include <time.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
+#ifdef HAVE_WHISPER
+/* Push-to-Talk: Super+V */
+#define TYPIO_PTT_KEYSYM XKB_KEY_v
+#define TYPIO_PTT_MODIFIER TYPIO_MOD_SUPER
+#endif
+
 static uint64_t key_route_monotonic_ms(void) {
     struct timespec ts;
 
@@ -62,6 +68,8 @@ static const char *key_route_state_name(TypioKeyTrackState state) {
         return "released_pending";
     case TYPIO_KEY_SUPPRESSED_STARTUP:
         return "suppressed_startup";
+    case TYPIO_KEY_VOICE_PTT:
+        return "voice_ptt";
     default:
         return "unknown";
     }
@@ -268,6 +276,21 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         return;
     }
 
+#ifdef HAVE_WHISPER
+    if (typio_voice_service_is_available(frontend->voice) &&
+        keysym == TYPIO_PTT_KEYSYM &&
+        (modifiers & TYPIO_PTT_MODIFIER) != 0) {
+        typio_voice_service_start(frontend->voice);
+        key_set_state(frontend, key, TYPIO_KEY_VOICE_PTT);
+        typio_wl_set_preedit(frontend, "\xf0\x9f\x8e\x99 Recording...", 0, 0);
+        typio_wl_commit(frontend);
+        key_route_trace(keyboard, "press-ptt", key, keysym, modifiers, unicode,
+                        TYPIO_KEY_VOICE_PTT, "voice ptt start");
+        typio_log(TYPIO_LOG_DEBUG, "Voice PTT started: keycode=%u", key);
+        return;
+    }
+#endif
+
     if (key_route_is_app_shortcut(keysym, modifiers)) {
         typio_wl_vk_forward_key(keyboard, time, key, WL_KEYBOARD_KEY_STATE_PRESSED, unicode);
         key_set_state(frontend, key, TYPIO_KEY_APP_SHORTCUT);
@@ -357,6 +380,18 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
         typio_log(TYPIO_LOG_DEBUG,
                   "Forwarded application shortcut release: keycode=%u", key);
         return;
+
+#ifdef HAVE_WHISPER
+    case TYPIO_KEY_VOICE_PTT:
+        key_route_trace(keyboard, "release-ptt", key, keysym, modifiers, unicode,
+                        kstate, "voice ptt stop");
+        typio_voice_service_stop(frontend->voice);
+        typio_wl_set_preedit(frontend, "\xe2\x8c\x9b Processing...", 0, 0);
+        typio_wl_commit(frontend);
+        key_clear_tracking(frontend, key);
+        typio_log(TYPIO_LOG_DEBUG, "Voice PTT released: keycode=%u", key);
+        return;
+#endif
 
     case TYPIO_KEY_FORWARDED:
         key_route_trace(keyboard, "release-forward", key, keysym, modifiers, unicode,

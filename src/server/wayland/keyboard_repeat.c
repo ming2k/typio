@@ -87,6 +87,9 @@ static void keyboard_repeat_trace(TypioWlKeyboard *keyboard,
     case TYPIO_KEY_SUPPRESSED_STARTUP:
         route = "suppressed_startup";
         break;
+    case TYPIO_KEY_VOICE_PTT:
+        route = "voice_ptt";
+        break;
     }
 
     typio_wl_trace(keyboard->frontend,

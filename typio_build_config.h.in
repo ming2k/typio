@@ -17,5 +17,6 @@
 #cmakedefine HAVE_WAYLAND
 #cmakedefine HAVE_STATUS_BUS
 #cmakedefine HAVE_SYSTRAY
+#cmakedefine HAVE_WHISPER
 
 #endif /* TYPIO_BUILD_CONFIG_H */

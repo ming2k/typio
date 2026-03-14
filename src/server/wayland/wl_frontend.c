@@ -169,6 +169,17 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
 
     typio_log(TYPIO_LOG_INFO, "Wayland input method frontend initialized");
 
+#ifdef HAVE_WHISPER
+    frontend->voice = typio_voice_service_new(instance);
+    if (frontend->voice && typio_voice_service_is_available(frontend->voice)) {
+        typio_log(TYPIO_LOG_INFO, "Voice input service ready");
+    } else if (frontend->voice) {
+        typio_log(TYPIO_LOG_INFO, "Voice input service created but no model available");
+    } else {
+        typio_log(TYPIO_LOG_WARNING, "Failed to create voice input service");
+    }
+#endif
+
     return frontend;
 }
 
@@ -188,6 +199,9 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 #ifdef HAVE_STATUS_BUS
     int status_fd = frontend->status_bus ? typio_status_bus_get_fd(frontend->status_bus) : -1;
 #endif
+#ifdef HAVE_WHISPER
+    int voice_fd = frontend->voice ? typio_voice_service_get_fd(frontend->voice) : -1;
+#endif
 
     while (frontend->running) {
         /* Flush pending requests */
@@ -203,8 +217,8 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             return -1;
         }
 
-        /* Build poll set: wayland fd + optional tray/status dbus fds + optional repeat fd */
-        struct pollfd fds[4];
+        /* Build poll set: wayland fd + optional tray/status/voice/repeat fds */
+        struct pollfd fds[5];
         int nfds = 0;
         int idx_display = nfds;
         fds[nfds++] = (struct pollfd){ .fd = display_fd, .events = POLLIN };
@@ -222,6 +236,14 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
         if (status_fd >= 0) {
             idx_status = nfds;
             fds[nfds++] = (struct pollfd){ .fd = status_fd, .events = POLLIN };
+        }
+#endif
+
+#ifdef HAVE_WHISPER
+        int idx_voice = -1;
+        if (voice_fd >= 0) {
+            idx_voice = nfds;
+            fds[nfds++] = (struct pollfd){ .fd = voice_fd, .events = POLLIN };
         }
 #endif
 
@@ -294,6 +316,18 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             typio_wl_keyboard_dispatch_repeat(frontend->keyboard);
         }
 
+#ifdef HAVE_WHISPER
+        /* Handle voice inference completion */
+        if (idx_voice >= 0 && (fds[idx_voice].revents & POLLIN)) {
+            TypioInputContext *ctx = frontend->session ?
+                frontend->session->ctx : NULL;
+            typio_voice_service_dispatch(frontend->voice, ctx);
+            /* Clear the "Processing..." preedit */
+            typio_wl_set_preedit(frontend, "", 0, 0);
+            typio_wl_commit(frontend);
+        }
+#endif
+
         if (!frontend->running) {
             break;
         }
@@ -336,6 +370,13 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
         typio_wl_popup_destroy(frontend->popup);
         frontend->popup = NULL;
     }
+
+#ifdef HAVE_WHISPER
+    if (frontend->voice) {
+        typio_voice_service_free(frontend->voice);
+        frontend->voice = NULL;
+    }
+#endif
 
     /* Clean up Wayland objects */
     if (frontend->virtual_keyboard) {

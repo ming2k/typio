@@ -28,6 +28,9 @@
 #ifdef HAVE_SYSTRAY
 #include "tray.h"
 #endif
+#ifdef HAVE_WHISPER
+#include "voice/voice_service.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -171,6 +174,9 @@ struct TypioWlFrontend {
 #ifdef HAVE_SYSTRAY
     /* System tray */
     TypioTray *tray;
+#endif
+#ifdef HAVE_WHISPER
+    TypioVoiceService *voice;
 #endif
 
     /* Protocol serial: must increment on every done, even without a session */

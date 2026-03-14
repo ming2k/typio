@@ -87,9 +87,33 @@ if(HAVE_SYSTRAY)
     )
 endif()
 
+# Whisper voice input support
+if(HAVE_WHISPER)
+    list(APPEND TYPIO_SERVER_SOURCES
+        voice/voice_service.c
+        voice/pw_capture.c
+    )
+
+    list(APPEND TYPIO_SERVER_INCLUDE_DIRS
+        ${CMAKE_CURRENT_SOURCE_DIR}/voice
+        ${WHISPER_INCLUDE_DIRS}
+        ${PIPEWIRE_INCLUDE_DIRS}
+    )
+
+    list(APPEND TYPIO_SERVER_LIBRARIES
+        ${WHISPER_LINK_LIBRARIES}
+        ${PIPEWIRE_LIBRARIES}
+        pthread
+    )
+endif()
+
 add_executable(typio-server ${TYPIO_SERVER_SOURCES})
 
 target_include_directories(typio-server PRIVATE ${TYPIO_SERVER_INCLUDE_DIRS})
+
+if(HAVE_WHISPER AND WHISPER_LIBRARY_DIRS)
+    target_link_directories(typio-server PRIVATE ${WHISPER_LIBRARY_DIRS})
+endif()
 
 target_link_libraries(typio-server PRIVATE ${TYPIO_SERVER_LIBRARIES})
 
