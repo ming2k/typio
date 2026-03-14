@@ -6,7 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "wl_frontend_internal.h"
-#include "inline_ui.h"
+#include "preedit_format.h"
 #include "typio/config.h"
 #include "typio/instance.h"
 #include "typio/engine_manager.h"

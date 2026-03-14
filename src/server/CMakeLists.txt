@@ -36,7 +36,7 @@ if(HAVE_WAYLAND)
         wayland/startup_guard.c
         wayland/vk_bridge.c
         wayland/wl_frontend.c
-        wayland/inline_ui.c
+        wayland/preedit_format.c
         wayland/wl_input_method.c
         wayland/wl_keyboard.c
         wayland/wl_trace.c

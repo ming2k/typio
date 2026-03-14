@@ -4,7 +4,7 @@
  */
 
 #include "wl_frontend_internal.h"
-#include "inline_ui.h"
+#include "preedit_format.h"
 #include "wl_trace.h"
 #include "typio/typio.h"
 #include "utils/log.h"
@@ -21,7 +21,6 @@ static void on_preedit_callback(TypioInputContext *ctx,
 static void on_candidate_callback(TypioInputContext *ctx,
                                   const TypioCandidateList *candidates,
                                   void *user_data);
-static void update_inline_ui(TypioWlSession *session, TypioInputContext *ctx);
 static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *ctx);
 static bool session_is_focused(TypioWlFrontend *frontend);
 static void set_pending_reactivation(TypioWlFrontend *frontend, bool pending);
@@ -497,7 +496,7 @@ static void on_preedit_callback(TypioInputContext *ctx,
     /* Preedit changes are rendered together with candidates in
      * on_candidate_callback.  Rendering here would consume a popup
      * buffer with stale candidate data before the candidate callback
-     * fires, causing alternating popup/inline on every keystroke. */
+     * fires, causing alternating popup rendering on every keystroke. */
 }
 
 static void on_candidate_callback(TypioInputContext *ctx,
@@ -515,20 +514,10 @@ static void on_candidate_callback(TypioInputContext *ctx,
 
 static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *ctx) {
     const TypioPreedit *preedit;
-    const TypioCandidateList *candidates;
     char *plain_text;
     int cursor_pos = -1;
-    bool has_candidates;
 
     if (!session || !ctx) {
-        return;
-    }
-
-    candidates = typio_input_context_get_candidates(ctx);
-    has_candidates = candidates && candidates->count > 0;
-
-    if (!has_candidates && !typio_wl_popup_is_available(session->frontend)) {
-        update_inline_ui(session, ctx);
         return;
     }
 
@@ -541,35 +530,6 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
         free(plain_text);
     }
 
-    if (!typio_wl_popup_update(session->frontend, ctx)) {
-        update_inline_ui(session, ctx);
-        return;
-    }
-
+    typio_wl_popup_update(session->frontend, ctx);
     typio_wl_commit(session->frontend);
-}
-
-static void update_inline_ui(TypioWlSession *session, TypioInputContext *ctx) {
-    const TypioPreedit *preedit;
-    const TypioCandidateList *candidates;
-    char *inline_text;
-    int cursor_pos = -1;
-
-    if (!session || !ctx) {
-        return;
-    }
-
-    preedit = typio_input_context_get_preedit(ctx);
-    candidates = typio_input_context_get_candidates(ctx);
-    inline_text = typio_wl_build_inline_preedit(preedit, candidates, &cursor_pos);
-    if (!inline_text) {
-        typio_wl_set_preedit(session->frontend, "", -1, -1);
-        typio_wl_commit(session->frontend);
-        return;
-    }
-
-    typio_log(TYPIO_LOG_DEBUG, "Inline UI: %s (cursor=%d)", inline_text, cursor_pos);
-    typio_wl_set_preedit(session->frontend, inline_text, cursor_pos, cursor_pos);
-    typio_wl_commit(session->frontend);
-    free(inline_text);
 }

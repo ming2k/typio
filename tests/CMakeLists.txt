@@ -10,15 +10,15 @@ add_executable(test_engine_manager test_engine_manager.c)
 target_link_libraries(test_engine_manager PRIVATE typio-core)
 add_test(NAME test_engine_manager COMMAND test_engine_manager)
 
-add_executable(test_inline_ui
+add_executable(test_preedit_format
     test_inline_ui.c
-    ${CMAKE_SOURCE_DIR}/src/server/wayland/inline_ui.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/preedit_format.c
 )
-target_include_directories(test_inline_ui PRIVATE
+target_include_directories(test_preedit_format PRIVATE
     ${CMAKE_SOURCE_DIR}/src/lib
     ${CMAKE_SOURCE_DIR}/src/server/wayland
 )
-add_test(NAME test_inline_ui COMMAND test_inline_ui)
+add_test(NAME test_preedit_format COMMAND test_preedit_format)
 
 if(HAVE_SYSTRAY)
     add_executable(test_tray_icon_pixmap
