@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-03-15
+
+### Added
+
+- **Rime ascii mode icon**: tray icon switches between `typio-rime` (Chinese)
+  and `typio-rime-latin` (English) when Rime toggles `ascii_mode`, via a new
+  `get_status_icon` engine op and status icon change callback.
+
+### Changed
+
+- **C23 migration**: bumped C standard from C11 to C23 and CMake minimum from
+  3.16 to 3.20. Replaced `NULL` with `nullptr`, removed `<stdbool.h>` includes,
+  adopted `{}` empty initializers, converted `(void)param` casts to
+  `[[maybe_unused]]` parameter attributes, and centralized `_POSIX_C_SOURCE`
+  in CMakeLists.txt.
+- **Tray menu**: removed the redundant "Current: xxx" header from the
+  right-click menu since the engine list already marks the active engine.
+- **Portable string comparison**: replaced POSIX `strcasecmp` with a hand-rolled
+  `tolower()`-based implementation to drop the `<strings.h>` dependency.
+
+### Removed
+
+- Unused `keysym` and `has_composition` parameters from
+  `startup_guard_classify_press`.
+
 ## [1.2.0] - 2026-03-14
 
 ### Added
