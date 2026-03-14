@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-14
+
+### Added
+
+- **Whisper voice input**: optional speech-to-text support via OpenAI Whisper,
+  with PipeWire audio capture (`pw_capture`), a background voice service, and
+  a hotkey-triggered dictation mode integrated into the Wayland frontend.
+
+### Changed
+
+- **Preedit format cleanup**: removed the inline candidate fallback path and
+  renamed `inline_ui` to `preedit_format`, simplifying the preedit rendering
+  pipeline to only the popup and plain preedit-string paths.
+
 ## [1.1.2] - 2026-03-14
 
 ### Added
@@ -175,6 +189,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `wayland_generate_protocol()` macro. Supports build-tree testing without
   installation.
 
+[1.2.0]: https://github.com/user/typio/releases/tag/v1.2.0
 [1.1.2]: https://github.com/user/typio/releases/tag/v1.1.2
 [1.1.1]: https://github.com/user/typio/releases/tag/v1.1.1
 [1.1.0]: https://github.com/user/typio/releases/tag/v1.1.0
