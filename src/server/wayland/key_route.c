@@ -279,7 +279,7 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         (modifiers & TYPIO_PTT_MODIFIER) != 0) {
         typio_voice_service_start(frontend->voice);
         key_set_state(frontend, key, TYPIO_KEY_VOICE_PTT);
-        typio_wl_set_preedit(frontend, "\xf0\x9f\x8e\x99 Recording...", 0, 0);
+        typio_wl_set_preedit(frontend, "[Recording...]", 0, 0);
         typio_wl_commit(frontend);
         key_route_trace(keyboard, "press-ptt", key, keysym, modifiers, unicode,
                         TYPIO_KEY_VOICE_PTT, "voice ptt start");
@@ -383,7 +383,7 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
         key_route_trace(keyboard, "release-ptt", key, keysym, modifiers, unicode,
                         kstate, "voice ptt stop");
         typio_voice_service_stop(frontend->voice);
-        typio_wl_set_preedit(frontend, "\xe2\x8c\x9b Processing...", 0, 0);
+        typio_wl_set_preedit(frontend, "[Processing...]", 0, 0);
         typio_wl_commit(frontend);
         key_clear_tracking(frontend, key);
         typio_log(TYPIO_LOG_DEBUG, "Voice PTT released: keycode=%u", key);
