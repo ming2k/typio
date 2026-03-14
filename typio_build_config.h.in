@@ -14,6 +14,7 @@
 
 #cmakedefine BUILD_BASIC_ENGINE
 #cmakedefine BUILD_RIME_ENGINE
+#cmakedefine BUILD_MOZC_ENGINE
 #cmakedefine HAVE_WAYLAND
 #cmakedefine HAVE_STATUS_BUS
 #cmakedefine HAVE_SYSTRAY

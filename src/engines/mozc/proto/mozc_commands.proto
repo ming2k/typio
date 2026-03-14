@@ -1,0 +1,236 @@
+// Minimal Mozc protocol subset used by Typio.
+// Field numbers and enum values must match upstream Mozc exactly.
+
+syntax = "proto2";
+
+package mozc.commands;
+
+enum CompositionMode {
+  DIRECT = 0;
+  HIRAGANA = 1;
+  FULL_KATAKANA = 2;
+  HALF_ASCII = 3;
+  FULL_ASCII = 4;
+  HALF_KATAKANA = 5;
+}
+
+message KeyEvent {
+  enum SpecialKey {
+    NO_SPECIALKEY = 0;
+    DIGIT = 1;
+    ON = 2;
+    OFF = 3;
+    SPACE = 4;
+    ENTER = 5;
+    LEFT = 6;
+    RIGHT = 7;
+    UP = 8;
+    DOWN = 9;
+    ESCAPE = 10;
+    DEL = 11;
+    BACKSPACE = 12;
+    HENKAN = 13;
+    MUHENKAN = 14;
+    KANA = 15;
+    HOME = 16;
+    END = 17;
+    TAB = 18;
+    F1 = 19;
+    F2 = 20;
+    F3 = 21;
+    F4 = 22;
+    F5 = 23;
+    F6 = 24;
+    F7 = 25;
+    F8 = 26;
+    F9 = 27;
+    F10 = 28;
+    F11 = 29;
+    F12 = 30;
+    PAGE_UP = 31;
+    PAGE_DOWN = 32;
+    INSERT = 33;
+    EISU = 46;
+    TEXT_INPUT = 64;
+    HANKAKU = 65;
+    KATAKANA = 67;
+  }
+
+  enum ModifierKey {
+    CTRL = 1;
+    ALT = 2;
+    SHIFT = 4;
+    KEY_DOWN = 8;
+    KEY_UP = 16;
+    CAPS = 2048;
+  }
+
+  optional uint32 key_code = 1;
+  optional uint32 modifiers = 2;
+  optional SpecialKey special_key = 3;
+  repeated ModifierKey modifier_keys = 4;
+  optional string key_string = 5;
+  optional CompositionMode mode = 7;
+  optional bool activated = 9;
+  optional int64 timestamp_msec = 10;
+}
+
+message SessionCommand {
+  enum CommandType {
+    NONE = 0;
+    REVERT = 1;
+    SUBMIT = 2;
+    SELECT_CANDIDATE = 3;
+    HIGHLIGHT_CANDIDATE = 4;
+    SWITCH_COMPOSITION_MODE = 5;
+    GET_STATUS = 6;
+    SUBMIT_CANDIDATE = 7;
+    CONVERT_REVERSE = 8;
+    UNDO = 9;
+    RESET_CONTEXT = 10;
+    MOVE_CURSOR = 11;
+    SWITCH_INPUT_FIELD_TYPE = 12;
+    UNDO_OR_REWIND = 14;
+    COMMIT_RAW_TEXT = 19;
+    CONVERT_PREV_PAGE = 20;
+    CONVERT_NEXT_PAGE = 21;
+    TURN_ON_IME = 22;
+    TURN_OFF_IME = 23;
+    DELETE_CANDIDATE_FROM_HISTORY = 24;
+    STOP_KEY_TOGGLING = 25;
+    UPDATE_COMPOSITION = 26;
+    REQUEST_NWP = 27;
+  }
+
+  required CommandType type = 1;
+  optional int32 id = 2;
+  optional CompositionMode composition_mode = 3;
+}
+
+message Context {
+  optional string preceding_text = 1;
+  optional string following_text = 2;
+  optional bool suppress_suggestion = 3 [default = false];
+  optional int32 revision = 5 [default = 0];
+}
+
+message Capability {
+  enum TextDeletionCapabilityType {
+    NO_TEXT_DELETION_CAPABILITY = 0;
+    DELETE_PRECEDING_TEXT = 1;
+  }
+
+  optional TextDeletionCapabilityType text_deletion = 1
+      [default = NO_TEXT_DELETION_CAPABILITY];
+}
+
+message ApplicationInfo {
+  optional uint32 process_id = 1;
+  optional uint32 thread_id = 2;
+}
+
+message Input {
+  enum CommandType {
+    NONE = 0;
+    CREATE_SESSION = 1;
+    DELETE_SESSION = 2;
+    SEND_KEY = 3;
+    TEST_SEND_KEY = 4;
+    SEND_COMMAND = 5;
+  }
+
+  required CommandType type = 1;
+  optional uint64 id = 2;
+  optional KeyEvent key = 3;
+  optional SessionCommand command = 4;
+  optional Context context = 6;
+  optional Capability capability = 7;
+  optional ApplicationInfo application_info = 8;
+  optional bool request_suggestion = 14 [default = true];
+}
+
+message Result {
+  enum ResultType {
+    NONE = 0;
+    STRING = 1;
+  }
+
+  required ResultType type = 1;
+  required string value = 2;
+}
+
+message Preedit {
+  required uint32 cursor = 1;
+
+  repeated group Segment = 2 {
+    enum Annotation {
+      NONE = 0;
+      UNDERLINE = 1;
+      HIGHLIGHT = 2;
+    }
+
+    required Annotation annotation = 3;
+    required string value = 4;
+    required uint32 value_length = 5;
+  }
+}
+
+message Annotation {
+  optional string prefix = 1;
+  optional string suffix = 2;
+  optional string description = 3;
+  optional string shortcut = 4;
+}
+
+message CandidateWord {
+  optional int32 id = 1;
+  optional uint32 index = 2;
+  optional string key = 3;
+  optional string value = 4;
+  optional Annotation annotation = 5;
+}
+
+message Footer {
+  optional string label = 1;
+  optional bool index_visible = 2 [default = false];
+  optional bool logo_visible = 3 [default = false];
+  optional string sub_label = 4;
+}
+
+message CandidateWindow {
+  optional uint32 focused_index = 1;
+  required uint32 size = 2;
+
+  repeated group Candidate = 3 {
+    required uint32 index = 4;
+    required string value = 5;
+    optional Annotation annotation = 7;
+    optional int32 id = 9;
+  }
+
+  required uint32 position = 6;
+  optional Footer footer = 13;
+  optional uint32 page_size = 18 [default = 9];
+}
+
+message Status {
+  optional bool activated = 1;
+  optional CompositionMode mode = 2;
+  optional CompositionMode comeback_mode = 3;
+}
+
+message Output {
+  enum ErrorCode {
+    SESSION_SUCCESS = 0;
+    SESSION_FAILURE = 1;
+  }
+
+  optional uint64 id = 1;
+  optional CompositionMode mode = 2;
+  optional bool consumed = 3;
+  optional Result result = 4;
+  optional Preedit preedit = 5;
+  optional CandidateWindow candidate_window = 6;
+  optional ErrorCode error_code = 11 [default = SESSION_SUCCESS];
+  optional Status status = 13;
+}

@@ -5,3 +5,6 @@ default_engine = basic
 
 # When the Rime plugin is installed, you can switch to:
 # default_engine = rime
+
+# When the Mozc plugin is installed, you can switch to:
+# default_engine = mozc
