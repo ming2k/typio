@@ -16,8 +16,10 @@
 #include <dirent.h>
 #include <dlfcn.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #define TYPIO_ENGINE_CONFIG_SUFFIX ".toml"
+#define TYPIO_MRU_THRESHOLD_MS 1500
 
 /* Engine registry entry */
 typedef struct EngineEntry {
@@ -31,12 +33,21 @@ typedef struct EngineEntry {
     bool is_builtin;
 } EngineEntry;
 
+static uint64_t engine_manager_monotonic_ms(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 0;
+    return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+}
+
 struct TypioEngineManager {
     TypioInstance *instance;
     EngineEntry **entries;
     size_t entry_count;
     size_t entry_capacity;
     size_t active_index;
+    size_t prev_active_index;
+    uint64_t last_switch_ms;
     const char **name_list;
     size_t name_list_size;
 };
@@ -74,6 +85,7 @@ TypioEngineManager *typio_engine_manager_new(TypioInstance *instance) {
     }
 
     manager->active_index = (size_t)-1;  /* No active engine */
+    manager->prev_active_index = (size_t)-1;
 
     return manager;
 }
@@ -313,8 +325,17 @@ TypioResult typio_engine_manager_unload(TypioEngineManager *manager,
             /* Deactivate if active */
             if (i == manager->active_index) {
                 manager->active_index = (size_t)-1;
-            } else if (manager->active_index > i) {
+            } else if (manager->active_index != (size_t)-1 &&
+                       manager->active_index > i) {
                 manager->active_index--;
+            }
+
+            /* Keep prev_active_index consistent */
+            if (i == manager->prev_active_index) {
+                manager->prev_active_index = (size_t)-1;
+            } else if (manager->prev_active_index != (size_t)-1 &&
+                       manager->prev_active_index > i) {
+                manager->prev_active_index--;
             }
 
             free_engine_entry(manager->entries[i]);
@@ -465,7 +486,9 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
         return result;
     }
 
+    manager->prev_active_index = manager->active_index;
     manager->active_index = index;
+    manager->last_switch_ms = engine_manager_monotonic_ms();
 
     /* Notify instance */
     typio_instance_notify_engine_changed(manager->instance, entry->info);
@@ -490,7 +513,19 @@ TypioResult typio_engine_manager_next(TypioEngineManager *manager) {
     if (manager->active_index == (size_t)-1) {
         next_index = 0;
     } else {
-        next_index = (manager->active_index + 1) % manager->entry_count;
+        uint64_t now_ms = engine_manager_monotonic_ms();
+        uint64_t elapsed = now_ms - manager->last_switch_ms;
+
+        /* MRU: if enough time has passed and we have a previous engine,
+         * switch back to it instead of cycling sequentially */
+        if (elapsed > TYPIO_MRU_THRESHOLD_MS &&
+            manager->prev_active_index != (size_t)-1 &&
+            manager->prev_active_index != manager->active_index &&
+            manager->prev_active_index < manager->entry_count) {
+            next_index = manager->prev_active_index;
+        } else {
+            next_index = (manager->active_index + 1) % manager->entry_count;
+        }
     }
 
     return typio_engine_manager_set_active(manager,
