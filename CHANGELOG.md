@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-03-16
+
+### Added
+
+- **Configurable keyboard shortcuts**: shortcuts for engine switching and voice
+  PTT are now defined in `[shortcuts]` config section instead of being hardcoded.
+  Supports modifier-only chords (e.g. `Ctrl+Shift`) and modifier+key combos
+  (e.g. `Super+v`).
+- **Control center redesign**: reorganized into tabbed layout with Display,
+  Engine, Voice, Shortcuts, and Models tabs.  Display settings (popup theme,
+  candidate layout, font size) take effect in real time.  Engine configuration
+  is contextual to the currently selected engine.
+- **Shortcut recorder**: click-to-record shortcut capture in the Shortcuts tab,
+  supporting both modifier-only and modifier+key bindings.
+- **Voice model dropdown**: voice model is now selected from a dropdown that
+  scans installed models on disk, replacing the previous text entry.
+- **Sherpa-ONNX model auto-detection**: when no model is specified, the sherpa
+  backend scans its model directory for the first usable model instead of
+  requiring a `default/` directory.
+- **Voice service runtime reload**: changing voice backend or model in the
+  control center takes effect immediately without restarting the server.
+
+### Fixed
+
+- **Config serializer duplicate sections**: `typio_config_to_string` now groups
+  entries by section, preventing duplicate `[voice]`, `[engines]` etc. headers
+  that caused config corruption on save.
+- **Voice backend build flag**: added missing `typio_build_config.h` include in
+  `voice_service.c` so `HAVE_SHERPA_ONNX` / `HAVE_WHISPER` are properly defined.
+- **Settings not persisting**: voice model, backend, and shortcut changes in the
+  control center now save immediately instead of only syncing to an in-memory
+  buffer.
+
 ## [1.4.2] - 2026-03-15
 
 ### Added
@@ -276,6 +309,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.2.0]: https://github.com/user/typio/releases/tag/v1.2.0
 [1.4.0]: https://github.com/user/typio/releases/tag/v1.4.0
 [1.4.1]: https://github.com/user/typio/releases/tag/v1.4.1
+[1.5.0]: https://github.com/user/typio/releases/tag/v1.5.0
 [1.4.2]: https://github.com/user/typio/releases/tag/v1.4.2
 [1.1.2]: https://github.com/user/typio/releases/tag/v1.1.2
 [1.1.1]: https://github.com/user/typio/releases/tag/v1.1.1
