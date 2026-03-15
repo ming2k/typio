@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-03-15
+
+### Added
+
+- **Unified TOML example**: added a single `typio.toml.example` that documents
+  the supported root configuration layout for Rime, Mozc, and Whisper.
+
+### Changed
+
+- **Single-source configuration model**: standardized user configuration on
+  `typio.toml` as the only supported format and removed legacy `.conf`
+  compatibility paths from runtime loading and tests.
+- **Root-owned runtime config**: built-in integrations now read their settings
+  from the live root configuration model instead of relying on separate
+  per-engine config files.
+- **Documentation refresh**: updated user and developer docs to describe the
+  TOML-only configuration workflow, D-Bus config editing support, and new
+  example/install layout.
+
 ## [1.4.0] - 2026-03-15
 
 ### Added
@@ -233,6 +252,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [1.2.0]: https://github.com/user/typio/releases/tag/v1.2.0
 [1.4.0]: https://github.com/user/typio/releases/tag/v1.4.0
+[1.4.1]: https://github.com/user/typio/releases/tag/v1.4.1
 [1.1.2]: https://github.com/user/typio/releases/tag/v1.1.2
 [1.1.1]: https://github.com/user/typio/releases/tag/v1.1.1
 [1.1.0]: https://github.com/user/typio/releases/tag/v1.1.0
