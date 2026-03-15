@@ -139,19 +139,13 @@ install(
 )
 
 install(
-    FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/typio.conf.example"
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/typio.toml.example"
     DESTINATION "${TYPIO_INSTALL_DATADIR}"
 )
 
 install(
     DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/icons/hicolor/"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor"
-)
-
-install(
-    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/engines/"
-    DESTINATION "${TYPIO_INSTALL_DATADIR}/engines"
-    FILES_MATCHING PATTERN "*.example"
 )
 
 if(BUILD_CONTROL_PANEL)

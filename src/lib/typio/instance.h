@@ -131,6 +131,22 @@ const char *typio_instance_get_config_dir(TypioInstance *instance);
 const char *typio_instance_get_data_dir(TypioInstance *instance);
 
 /**
+ * @brief Get the live root configuration object
+ * @param instance Typio instance
+ * @return Mutable config object owned by the instance
+ */
+TypioConfig *typio_instance_get_config(TypioInstance *instance);
+
+/**
+ * @brief Get a copied engine-specific config section from the root config
+ * @param instance Typio instance
+ * @param engine_name Engine name, e.g. "rime"
+ * @return Newly allocated config section, or nullptr if unavailable
+ */
+TypioConfig *typio_instance_get_engine_config(TypioInstance *instance,
+                                               const char *engine_name);
+
+/**
  * @brief Reload configuration
  * @param instance Typio instance
  * @return TYPIO_OK on success, error code on failure
@@ -143,6 +159,21 @@ TypioResult typio_instance_reload_config(TypioInstance *instance);
  * @return TYPIO_OK on success, error code on failure
  */
 TypioResult typio_instance_save_config(TypioInstance *instance);
+
+/**
+ * @brief Export current root configuration as text
+ * @param instance Typio instance
+ * @return Newly allocated text buffer, or nullptr on failure
+ */
+char *typio_instance_get_config_text(TypioInstance *instance);
+
+/**
+ * @brief Replace the root configuration from text, save it, and reload runtime state
+ * @param instance Typio instance
+ * @param content Configuration text in Typio's TOML-compatible format
+ * @return TYPIO_OK on success, error code on failure
+ */
+TypioResult typio_instance_set_config_text(TypioInstance *instance, const char *content);
 
 #ifdef __cplusplus
 }

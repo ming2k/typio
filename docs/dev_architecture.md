@@ -100,8 +100,12 @@ For external engines, Typio expects exported symbols:
 Each engine instance receives a config path such as:
 
 ```text
-~/.config/typio/engines/<engine>.conf
+~/.config/typio/engines/<engine>.toml
 ```
+
+For built-in integrations, Typio's authoritative user configuration now lives
+in the root file `~/.config/typio/typio.toml`, typically under sections such
+as `[engines.rime]` and `[engines.mozc]`.
 
 ## Wayland Data Flow
 

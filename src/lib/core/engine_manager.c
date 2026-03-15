@@ -15,6 +15,9 @@
 #include <stdio.h>
 #include <dirent.h>
 #include <dlfcn.h>
+#include <sys/stat.h>
+
+#define TYPIO_ENGINE_CONFIG_SUFFIX ".toml"
 
 /* Engine registry entry */
 typedef struct EngineEntry {
@@ -82,13 +85,14 @@ static char *get_engine_config_path(TypioEngineManager *manager,
         return nullptr;
     }
 
-    size_t len = strlen(config_dir) + strlen(engine_name) + 15;
+    size_t len = strlen(config_dir) + strlen(engine_name) + 16;
     char *path = malloc(len);
     if (!path) {
         return nullptr;
     }
 
-    snprintf(path, len, "%s/engines/%s.conf", config_dir, engine_name);
+    snprintf(path, len, "%s/engines/%s%s",
+             config_dir, engine_name, TYPIO_ENGINE_CONFIG_SUFFIX);
     return path;
 }
 

@@ -812,18 +812,20 @@ static TypioResult mozc_load_config(TypioEngine *engine,
         return TYPIO_ERROR_OUT_OF_MEMORY;
     }
 
-    const char *config_path = typio_engine_get_config_path(engine);
-    if (!config_path) {
+    if (!engine || !engine->instance) {
         return TYPIO_OK;
     }
 
-    TypioConfig *file_config = typio_config_load_file(config_path);
-    if (!file_config) {
+    TypioConfig *engine_config =
+        typio_instance_get_engine_config(engine->instance, "mozc");
+    if (!engine_config) {
         return TYPIO_OK;
     }
 
-    const char *server = typio_config_get_string(file_config, "server_path", nullptr);
-    int page_size = typio_config_get_int(file_config, "page_size", config->page_size);
+    const char *server =
+        typio_config_get_string(engine_config, "server_path", nullptr);
+    int page_size =
+        typio_config_get_int(engine_config, "page_size", config->page_size);
 
     if (server && *server) {
         free(config->server_path);
@@ -833,7 +835,7 @@ static TypioResult mozc_load_config(TypioEngine *engine,
         config->page_size = page_size;
     }
 
-    typio_config_free(file_config);
+    typio_config_free(engine_config);
 
     if (!config->server_path) {
         return TYPIO_ERROR_OUT_OF_MEMORY;
@@ -1031,18 +1033,18 @@ static TypioResult mozc_reload_config(TypioEngine *engine) {
         return TYPIO_ERROR_NOT_INITIALIZED;
     }
 
-    const char *config_path = typio_engine_get_config_path(engine);
-    if (!config_path) {
+    if (!engine->instance) {
         return TYPIO_OK;
     }
 
-    TypioConfig *file_config = typio_config_load_file(config_path);
-    if (!file_config) {
+    TypioConfig *engine_config =
+        typio_instance_get_engine_config(engine->instance, "mozc");
+    if (!engine_config) {
         return TYPIO_OK;
     }
 
-    const char *server = typio_config_get_string(file_config, "server_path", nullptr);
-    int page_size = typio_config_get_int(file_config, "page_size",
+    const char *server = typio_config_get_string(engine_config, "server_path", nullptr);
+    int page_size = typio_config_get_int(engine_config, "page_size",
                                          state->config.page_size);
 
     if (server && *server) {
@@ -1053,7 +1055,7 @@ static TypioResult mozc_reload_config(TypioEngine *engine) {
         state->config.page_size = page_size;
     }
 
-    typio_config_free(file_config);
+    typio_config_free(engine_config);
     return TYPIO_OK;
 }
 

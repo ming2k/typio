@@ -62,11 +62,13 @@ surface when the required popup objects are available. If you still only see
 inline candidates, Typio likely failed to initialize `wl_compositor`,
 `wl_shm`, or the popup surface itself.
 
-If the popup theme does not match your desktop, set one explicitly in `~/.config/typio/engines/rime.conf`:
+If the popup theme does not match your desktop, set one explicitly in
+`~/.config/typio/typio.toml`:
 
-```ini
-popup_theme = dark
-candidate_layout = horizontal
+```toml
+[engines.rime]
+popup_theme = "dark"
+candidate_layout = "horizontal"
 ```
 
 If the tray shows a generic icon instead of the Rime icon, make sure you are

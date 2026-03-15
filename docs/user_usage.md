@@ -58,10 +58,12 @@ Read-only properties:
 - `ActiveEngine`
 - `AvailableEngines`
 - `ActiveEngineState`
+- `ConfigText`
 
 Methods:
 
 - `ActivateEngine(s)`
+- `SetConfigText(s)`
 - `ReloadConfig()`
 
 `ActiveEngineState` is an `a{sv}` map containing stable engine metadata plus
@@ -86,6 +88,7 @@ The control panel reads Typio state from `org.typio.InputMethod1` and can:
 - list available engines
 - display structured engine/config state
 - switch engines
+- edit the root `typio.toml` text
 - reload Typio configuration
 
 ## Built-In `basic` Engine
@@ -119,7 +122,11 @@ popup surface. If popup rendering is unavailable in the current session,
 Typio keeps candidate state visible inline in preedit. Candidate selection
 still uses the engine's normal selection keys.
 
-The popup defaults to a horizontal candidate layout. You can override it in `rime.conf` with `candidate_layout = vertical`. Popup colors can be forced with `popup_theme = light` or `popup_theme = dark`; otherwise `popup_theme = auto` uses desktop theme hints when available.
+The popup defaults to a horizontal candidate layout. You can override it in
+`typio.toml` under `[engines.rime]` with `candidate_layout = "vertical"`.
+Popup colors can be forced with `popup_theme = "light"` or
+`popup_theme = "dark"`; otherwise `popup_theme = "auto"` uses desktop theme
+hints when available.
 
 After installation, `typio --list` will show `rime` automatically if the plugin was installed into the configured engine directory.
 

@@ -174,66 +174,57 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
     pthread_mutex_init(&svc->result_mutex, nullptr);
 
     /* Read config */
-    const char *config_dir = typio_instance_get_config_dir(instance);
-    if (config_dir) {
-        char config_path[512];
-        snprintf(config_path, sizeof(config_path), "%s/typio.conf", config_dir);
-        TypioConfig *config = typio_config_load_file(config_path);
-        if (config) {
-            const char *lang = typio_config_get_string(config,
-                                                        "whisper.language",
-                                                        "zh");
-            strncpy(svc->language, lang, sizeof(svc->language) - 1);
-            svc->language[sizeof(svc->language) - 1] = '\0';
+    TypioConfig *config = typio_instance_get_config(instance);
+    if (config) {
+        const char *lang = typio_config_get_string(config,
+                                                    "whisper.language",
+                                                    "zh");
+        strncpy(svc->language, lang, sizeof(svc->language) - 1);
+        svc->language[sizeof(svc->language) - 1] = '\0';
 
-            const char *model_name = typio_config_get_string(config,
-                                                              "whisper.model",
-                                                              "base");
+        const char *model_name = typio_config_get_string(config,
+                                                          "whisper.model",
+                                                          "base");
 
-            /* Build model path before freeing config (model_name points
-             * into config's internal storage). */
-            const char *data_dir = typio_instance_get_data_dir(instance);
-            char model_path[512] = {};
-            if (data_dir) {
-                snprintf(model_path, sizeof(model_path),
-                         "%s/whisper/ggml-%s.bin", data_dir, model_name);
+        const char *data_dir = typio_instance_get_data_dir(instance);
+        char model_path[512] = {};
+        if (data_dir) {
+            snprintf(model_path, sizeof(model_path),
+                     "%s/whisper/ggml-%s.bin", data_dir, model_name);
+        }
+
+        if (model_path[0] != '\0') {
+            struct whisper_context_params cparams =
+                whisper_context_default_params();
+            svc->whisper_ctx =
+                whisper_init_from_file_with_params(model_path, cparams);
+            if (!svc->whisper_ctx) {
+                typio_log(TYPIO_LOG_WARNING,
+                          "Whisper model not found: %s "
+                          "(voice input disabled)", model_path);
+            } else {
+                typio_log(TYPIO_LOG_INFO,
+                          "Whisper model loaded: %s", model_path);
             }
-            typio_config_free(config);
-
-            if (model_path[0] != '\0') {
-
-                struct whisper_context_params cparams =
-                    whisper_context_default_params();
-                svc->whisper_ctx =
-                    whisper_init_from_file_with_params(model_path, cparams);
-                if (!svc->whisper_ctx) {
-                    typio_log(TYPIO_LOG_WARNING,
-                              "Whisper model not found: %s "
-                              "(voice input disabled)", model_path);
-                } else {
-                    typio_log(TYPIO_LOG_INFO,
-                              "Whisper model loaded: %s", model_path);
-                }
-            }
-        } else {
-            /* No config file — try default model path */
-            const char *data_dir = typio_instance_get_data_dir(instance);
-            if (data_dir) {
-                char model_path[512];
-                snprintf(model_path, sizeof(model_path),
-                         "%s/whisper/ggml-base.bin", data_dir);
-                struct whisper_context_params cparams =
-                    whisper_context_default_params();
-                svc->whisper_ctx =
-                    whisper_init_from_file_with_params(model_path, cparams);
-                if (svc->whisper_ctx) {
-                    typio_log(TYPIO_LOG_INFO,
-                              "Whisper model loaded: %s", model_path);
-                } else {
-                    typio_log(TYPIO_LOG_WARNING,
-                              "Whisper model not found: %s "
-                              "(voice input disabled)", model_path);
-                }
+        }
+    } else {
+        /* No config loaded yet — try default model path */
+        const char *data_dir = typio_instance_get_data_dir(instance);
+        if (data_dir) {
+            char model_path[512];
+            snprintf(model_path, sizeof(model_path),
+                     "%s/whisper/ggml-base.bin", data_dir);
+            struct whisper_context_params cparams =
+                whisper_context_default_params();
+            svc->whisper_ctx =
+                whisper_init_from_file_with_params(model_path, cparams);
+            if (svc->whisper_ctx) {
+                typio_log(TYPIO_LOG_INFO,
+                          "Whisper model loaded: %s", model_path);
+            } else {
+                typio_log(TYPIO_LOG_WARNING,
+                          "Whisper model not found: %s "
+                          "(voice input disabled)", model_path);
             }
         }
     }

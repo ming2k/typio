@@ -86,8 +86,7 @@ Installed artifacts:
 - `lib/typio/engines/rime.so`
 - `include/typio/*.h`
 - `lib/pkgconfig/typio.pc`
-- `share/typio/typio.conf.example`
-- `share/typio/engines/rime.conf.example`
+- `share/typio/typio.toml.example`
 
 ## Documentation
 
@@ -115,12 +114,13 @@ Installed artifacts:
 - Typio directly implements the Wayland input-method side and depends on the compositor/application text-input-v3 path for end-to-end text input.
 - The built-in `basic` engine does not provide candidate UI.
 - The `rime` engine renders candidates through `zwp_input_popup_surface_v2`. If popup rendering is unavailable in the current session, Typio keeps candidate state visible inline in preedit.
-- The Rime popup defaults to a horizontal layout and can follow common desktop light/dark theme hints, with `rime.conf` overrides when needed.
+- The Rime popup defaults to a horizontal layout and can follow common desktop light/dark theme hints, with `typio.toml` overrides under `[engines.rime]` when needed.
 - Tray hosts that ignore themed icon paths can still render the current engine icon through the exported `IconPixmap` fallback.
 - When the active engine is `rime`, the tray menu exposes a dedicated submenu with the current schema and schema-switch actions.
 - Typio also exports a D-Bus status object at `org.typio.InputMethod1` so shells
   such as quickshell can read the active engine, available engines, and
   engine/config state as structured properties instead of inferring everything
   from tray icon changes.
+- Typio supports a single user-facing config file: `~/.config/typio/typio.toml`.
 - Build-tree plugin testing is supported with `typio --engine-dir <build-dir>/engines`.
 - The pre-`typio-core` prototype API and examples were removed; the maintained public headers now live under `src/lib/typio/`.

@@ -226,6 +226,7 @@ static dbus_bool_t append_active_engine_state_dict(DBusMessageIter *iter,
     TypioConfig *config = nullptr;
     const TypioEngineInfo *info;
     const char *config_path;
+    const char *engine_name;
     dbus_bool_t ok = TRUE;
 
     if (!dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, "{sv}", &dict)) {
@@ -235,6 +236,7 @@ static dbus_bool_t append_active_engine_state_dict(DBusMessageIter *iter,
     engine = status_active_engine(bus);
     info = engine ? engine->info : nullptr;
     config_path = engine ? typio_engine_get_config_path(engine) : nullptr;
+    engine_name = engine ? typio_engine_get_name(engine) : nullptr;
 
     if (info) {
         ok = append_dict_entry_string(&dict, "name", info->name) &&
@@ -254,8 +256,8 @@ static dbus_bool_t append_active_engine_state_dict(DBusMessageIter *iter,
         ok = append_dict_entry_string(&dict, "config_path", config_path);
     }
 
-    if (ok && config_path && *config_path) {
-        config = typio_config_load_file(config_path);
+    if (ok && bus && bus->instance && engine_name && *engine_name) {
+        config = typio_instance_get_engine_config(bus->instance, engine_name);
         if (config) {
             ok = append_config_entries(&dict, config);
             typio_config_free(config);
@@ -298,6 +300,7 @@ static dbus_bool_t append_property_variant(DBusMessageIter *iter,
     DBusMessageIter variant;
     TypioEngine *engine = status_active_engine(bus);
     const char *active_name = engine ? typio_engine_get_name(engine) : "";
+    char *config_text;
 
     if (strcmp(property, "Version") == 0) {
         const char *version = TYPIO_VERSION;
@@ -337,6 +340,24 @@ static dbus_bool_t append_property_variant(DBusMessageIter *iter,
         if (!append_active_engine_state_dict(&variant, bus)) {
             return FALSE;
         }
+        return dbus_message_iter_close_container(iter, &variant);
+    }
+
+    if (strcmp(property, "ConfigText") == 0) {
+        const char *text = "";
+        config_text = (bus && bus->instance) ? typio_instance_get_config_text(bus->instance) : nullptr;
+        if (config_text) {
+            text = config_text;
+        }
+        if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "s", &variant)) {
+            free(config_text);
+            return FALSE;
+        }
+        if (!dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &text)) {
+            free(config_text);
+            return FALSE;
+        }
+        free(config_text);
         return dbus_message_iter_close_container(iter, &variant);
     }
 
@@ -386,6 +407,7 @@ static DBusMessage *status_handle_properties_getall(TypioStatusBus *bus,
         "ActiveEngine",
         "AvailableEngines",
         "ActiveEngineState",
+        "ConfigText",
     };
 
     if (!dbus_message_get_args(msg, nullptr,
@@ -457,6 +479,14 @@ static DBusMessage *status_handle_activate_engine(TypioStatusBus *bus,
                                       "Failed to activate requested engine");
     }
 
+    if (bus && bus->instance) {
+        TypioConfig *config = typio_instance_get_config(bus->instance);
+        if (config) {
+            typio_config_set_string(config, "default_engine", engine_name);
+            typio_instance_save_config(bus->instance);
+        }
+    }
+
     typio_status_bus_emit_properties_changed(bus);
     return dbus_message_new_method_return(msg);
 }
@@ -469,6 +499,29 @@ static DBusMessage *status_handle_reload_config(TypioStatusBus *bus,
     if (result != TYPIO_OK) {
         return dbus_message_new_error(msg, DBUS_ERROR_FAILED,
                                       "Failed to reload Typio configuration");
+    }
+
+    typio_status_bus_emit_properties_changed(bus);
+    return dbus_message_new_method_return(msg);
+}
+
+static DBusMessage *status_handle_set_config_text(TypioStatusBus *bus,
+                                                  DBusMessage *msg) {
+    const char *config_text = nullptr;
+    TypioResult result;
+
+    if (!dbus_message_get_args(msg, nullptr,
+                               DBUS_TYPE_STRING, &config_text,
+                               DBUS_TYPE_INVALID) ||
+        !config_text) {
+        return dbus_message_new_error(msg, DBUS_ERROR_INVALID_ARGS,
+                                      "SetConfigText expects a configuration string");
+    }
+
+    result = bus ? typio_instance_set_config_text(bus->instance, config_text) : TYPIO_ERROR;
+    if (result != TYPIO_OK) {
+        return dbus_message_new_error(msg, DBUS_ERROR_FAILED,
+                                      "Failed to save Typio configuration text");
     }
 
     typio_status_bus_emit_properties_changed(bus);
@@ -513,7 +566,9 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
             "    <property name=\"ActiveEngine\" type=\"s\" access=\"read\"/>\n"
             "    <property name=\"AvailableEngines\" type=\"as\" access=\"read\"/>\n"
             "    <property name=\"ActiveEngineState\" type=\"a{sv}\" access=\"read\"/>\n"
+            "    <property name=\"ConfigText\" type=\"s\" access=\"read\"/>\n"
             "    <method name=\"ActivateEngine\"><arg name=\"engine\" type=\"s\" direction=\"in\"/></method>\n"
+            "    <method name=\"SetConfigText\"><arg name=\"content\" type=\"s\" direction=\"in\"/></method>\n"
             "    <method name=\"ReloadConfig\"/>\n"
             "  </interface>\n"
             "  <interface name=\"org.freedesktop.DBus.Properties\">\n"
@@ -530,6 +585,8 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
                interface[0] == '\0') {
         if (strcmp(member, "ActivateEngine") == 0) {
             reply = status_handle_activate_engine(bus, msg);
+        } else if (strcmp(member, "SetConfigText") == 0) {
+            reply = status_handle_set_config_text(bus, msg);
         } else if (strcmp(member, "ReloadConfig") == 0) {
             reply = status_handle_reload_config(bus, msg);
         }
@@ -651,6 +708,7 @@ void typio_status_bus_emit_properties_changed(TypioStatusBus *bus) {
         "ActiveEngine",
         "AvailableEngines",
         "ActiveEngineState",
+        "ConfigText",
     };
 
     if (!bus || !bus->conn) {

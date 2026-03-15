@@ -17,6 +17,17 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
+#define TYPIO_CONFIG_FILE_NAME "typio.toml"
+
+static void build_config_path(char *buffer, size_t buffer_size,
+                              const char *config_dir, const char *file_name) {
+    if (!buffer || buffer_size == 0 || !config_dir || !file_name) {
+        return;
+    }
+
+    snprintf(buffer, buffer_size, "%s/%s", config_dir, file_name);
+}
+
 struct TypioInstance {
     TypioEngineManager *engine_manager;
     TypioConfig *config;
@@ -214,8 +225,8 @@ TypioResult typio_instance_init(TypioInstance *instance) {
 
     /* Load configuration */
     char config_path[512];
-    snprintf(config_path, sizeof(config_path), "%s/typio.conf",
-             instance->config_dir);
+    build_config_path(config_path, sizeof(config_path),
+                      instance->config_dir, TYPIO_CONFIG_FILE_NAME);
 
     instance->config = typio_config_load_file(config_path);
     if (!instance->config) {
@@ -391,14 +402,34 @@ const char *typio_instance_get_data_dir(TypioInstance *instance) {
     return instance ? instance->data_dir : nullptr;
 }
 
+TypioConfig *typio_instance_get_config(TypioInstance *instance) {
+    return instance ? instance->config : nullptr;
+}
+
+TypioConfig *typio_instance_get_engine_config(TypioInstance *instance,
+                                              const char *engine_name) {
+    char section_name[256];
+
+    if (!instance || !instance->config || !engine_name || !*engine_name) {
+        return nullptr;
+    }
+
+    snprintf(section_name, sizeof(section_name), "engines.%s", engine_name);
+    return typio_config_get_section(instance->config, section_name);
+}
+
 TypioResult typio_instance_reload_config(TypioInstance *instance) {
     if (!instance) {
         return TYPIO_ERROR_INVALID_ARGUMENT;
     }
 
     char config_path[512];
-    snprintf(config_path, sizeof(config_path), "%s/typio.conf",
-             instance->config_dir);
+    const char *configured_default_engine = nullptr;
+    const char *current_engine_name = nullptr;
+    TypioEngine *active;
+
+    build_config_path(config_path, sizeof(config_path),
+                      instance->config_dir, TYPIO_CONFIG_FILE_NAME);
 
     TypioConfig *new_config = typio_config_load_file(config_path);
     if (new_config) {
@@ -408,8 +439,20 @@ TypioResult typio_instance_reload_config(TypioInstance *instance) {
         instance->config = new_config;
     }
 
+    configured_default_engine = typio_config_get_string(instance->config,
+                                                        "default_engine",
+                                                        nullptr);
+    active = typio_engine_manager_get_active(instance->engine_manager);
+    current_engine_name = active ? typio_engine_get_name(active) : nullptr;
+    if (configured_default_engine && *configured_default_engine &&
+        (!current_engine_name ||
+         strcmp(configured_default_engine, current_engine_name) != 0)) {
+        typio_engine_manager_set_active(instance->engine_manager,
+                                        configured_default_engine);
+        active = typio_engine_manager_get_active(instance->engine_manager);
+    }
+
     /* Notify engines to reload their configs */
-    TypioEngine *active = typio_engine_manager_get_active(instance->engine_manager);
     if (active && active->ops->reload_config) {
         active->ops->reload_config(active);
     }
@@ -423,10 +466,45 @@ TypioResult typio_instance_save_config(TypioInstance *instance) {
     }
 
     char config_path[512];
-    snprintf(config_path, sizeof(config_path), "%s/typio.conf",
-             instance->config_dir);
+    build_config_path(config_path, sizeof(config_path),
+                      instance->config_dir, TYPIO_CONFIG_FILE_NAME);
 
     return typio_config_save_file(instance->config, config_path);
+}
+
+char *typio_instance_get_config_text(TypioInstance *instance) {
+    if (!instance || !instance->config) {
+        return nullptr;
+    }
+
+    return typio_config_to_string(instance->config);
+}
+
+TypioResult typio_instance_set_config_text(TypioInstance *instance, const char *content) {
+    TypioConfig *parsed;
+    TypioConfig *old_config;
+    TypioResult save_result;
+
+    if (!instance || !content) {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    parsed = typio_config_load_string(content);
+    if (!parsed) {
+        return TYPIO_ERROR;
+    }
+
+    old_config = instance->config;
+    instance->config = parsed;
+    save_result = typio_instance_save_config(instance);
+    if (save_result != TYPIO_OK) {
+        instance->config = old_config;
+        typio_config_free(parsed);
+        return save_result;
+    }
+    typio_config_free(old_config);
+
+    return typio_instance_reload_config(instance);
 }
 
 /* Internal function to notify engine change */

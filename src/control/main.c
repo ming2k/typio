@@ -4,6 +4,7 @@
  */
 
 #include "status/status.h"
+#include "typio/typio.h"
 
 #include <gio/gio.h>
 #include <glib/gstdio.h>
@@ -50,9 +51,17 @@ typedef struct TypioControl {
     GtkLabel *engine_label;
     GtkDropDown *engine_dropdown;
     GtkStringList *engine_model;
+    GtkEntry *rime_schema_entry;
+    GtkSpinButton *rime_page_size_spin;
+    GtkSpinButton *mozc_page_size_spin;
+    GtkEntry *whisper_language_entry;
+    GtkDropDown *whisper_model_dropdown;
+    GtkStringList *whisper_model_model;
     GtkTextBuffer *state_buffer;
+    GtkTextBuffer *config_buffer;
     GtkButton *reload_button;
     GtkButton *refresh_button;
+    GtkButton *save_config_button;
     GDBusProxy *proxy;
     guint name_watch_id;
     gboolean updating_ui;
@@ -61,6 +70,9 @@ typedef struct TypioControl {
     WhisperModelRow model_rows[WHISPER_MODEL_COUNT];
     char *whisper_dir;
 } TypioControl;
+
+static void control_sync_form_from_buffer(TypioControl *control);
+static void control_sync_buffer_from_form(TypioControl *control);
 
 static char *variant_value_to_text(GVariant *value) {
     return g_variant_print(value, TRUE);
@@ -91,6 +103,141 @@ static void control_set_state_text(TypioControl *control, GVariant *state) {
 
     gtk_text_buffer_set_text(control->state_buffer, text->str, -1);
     g_string_free(text, TRUE);
+}
+
+static void control_set_config_text(TypioControl *control, GVariant *config_text) {
+    const char *text = "default_engine = \"basic\"\n";
+
+    if (!control || !control->config_buffer) {
+        return;
+    }
+
+    if (config_text && g_variant_is_of_type(config_text, G_VARIANT_TYPE_STRING)) {
+        text = g_variant_get_string(config_text, nullptr);
+    }
+
+    gtk_text_buffer_set_text(control->config_buffer, text, -1);
+    control_sync_form_from_buffer(control);
+}
+
+static guint control_find_model_index(GtkStringList *model, const char *value) {
+    guint count;
+
+    if (!model || !value) {
+        return GTK_INVALID_LIST_POSITION;
+    }
+
+    count = (guint)g_list_model_get_n_items(G_LIST_MODEL(model));
+    for (guint i = 0; i < count; ++i) {
+        const char *item = gtk_string_list_get_string(model, i);
+        if (item && g_strcmp0(item, value) == 0) {
+            return i;
+        }
+    }
+
+    return GTK_INVALID_LIST_POSITION;
+}
+
+static void control_sync_form_from_buffer(TypioControl *control) {
+    GtkTextIter start;
+    GtkTextIter end;
+    char *content;
+    TypioConfig *config;
+    guint whisper_selected;
+
+    if (!control || !control->config_buffer) {
+        return;
+    }
+
+    gtk_text_buffer_get_bounds(control->config_buffer, &start, &end);
+    content = gtk_text_buffer_get_text(control->config_buffer, &start, &end, FALSE);
+    if (!content) {
+        return;
+    }
+
+    config = typio_config_load_string(content);
+    g_free(content);
+    if (!config) {
+        return;
+    }
+
+    control->updating_ui = TRUE;
+    if (control->rime_schema_entry) {
+        gtk_editable_set_text(GTK_EDITABLE(control->rime_schema_entry),
+                              typio_config_get_string(config, "engines.rime.schema", ""));
+    }
+    if (control->rime_page_size_spin) {
+        gtk_spin_button_set_value(control->rime_page_size_spin,
+                                  typio_config_get_int(config, "engines.rime.page_size", 9));
+    }
+    if (control->mozc_page_size_spin) {
+        gtk_spin_button_set_value(control->mozc_page_size_spin,
+                                  typio_config_get_int(config, "engines.mozc.page_size", 9));
+    }
+    if (control->whisper_language_entry) {
+        gtk_editable_set_text(GTK_EDITABLE(control->whisper_language_entry),
+                              typio_config_get_string(config, "whisper.language", "zh"));
+    }
+    if (control->whisper_model_dropdown && control->whisper_model_model) {
+        whisper_selected = control_find_model_index(
+            control->whisper_model_model,
+            typio_config_get_string(config, "whisper.model", "base"));
+        gtk_drop_down_set_selected(control->whisper_model_dropdown, whisper_selected);
+    }
+    control->updating_ui = FALSE;
+
+    typio_config_free(config);
+}
+
+static void control_sync_buffer_from_form(TypioControl *control) {
+    GtkTextIter start;
+    GtkTextIter end;
+    char *content;
+    char *rendered;
+    TypioConfig *config;
+    guint selected;
+    const char *model_name;
+
+    if (!control || !control->config_buffer || control->updating_ui) {
+        return;
+    }
+
+    gtk_text_buffer_get_bounds(control->config_buffer, &start, &end);
+    content = gtk_text_buffer_get_text(control->config_buffer, &start, &end, FALSE);
+    config = content ? typio_config_load_string(content) : nullptr;
+    g_free(content);
+    if (!config) {
+        config = typio_config_new();
+    }
+    if (!config) {
+        return;
+    }
+
+    typio_config_set_string(config, "engines.rime.schema",
+                            gtk_editable_get_text(GTK_EDITABLE(control->rime_schema_entry)));
+    typio_config_set_int(config, "engines.rime.page_size",
+                         gtk_spin_button_get_value_as_int(control->rime_page_size_spin));
+    typio_config_set_int(config, "engines.mozc.page_size",
+                         gtk_spin_button_get_value_as_int(control->mozc_page_size_spin));
+    typio_config_set_string(config, "whisper.language",
+                            gtk_editable_get_text(GTK_EDITABLE(control->whisper_language_entry)));
+
+    selected = gtk_drop_down_get_selected(control->whisper_model_dropdown);
+    model_name = selected == GTK_INVALID_LIST_POSITION
+        ? "base"
+        : gtk_string_list_get_string(control->whisper_model_model, selected);
+    typio_config_set_string(config, "whisper.model", model_name ? model_name : "base");
+
+    rendered = typio_config_to_string(config);
+    typio_config_free(config);
+    if (!rendered) {
+        return;
+    }
+
+    control->updating_ui = TRUE;
+    gtk_text_buffer_set_text(control->config_buffer, rendered, -1);
+    control->updating_ui = FALSE;
+    free(rendered);
 }
 
 static void control_set_engine_model(TypioControl *control,
@@ -133,6 +280,7 @@ static void control_refresh_from_proxy(TypioControl *control) {
     GVariant *active_engine;
     GVariant *available_engines;
     GVariant *engine_state;
+    GVariant *config_text;
     const char *active_name = "";
 
     if (!control) {
@@ -144,9 +292,11 @@ static void control_refresh_from_proxy(TypioControl *control) {
         gtk_label_set_text(control->engine_label, "Current engine: unavailable");
         control_set_engine_model(control, nullptr, nullptr);
         control_set_state_text(control, nullptr);
+        control_set_config_text(control, nullptr);
         gtk_widget_set_sensitive(GTK_WIDGET(control->engine_dropdown), FALSE);
         gtk_widget_set_sensitive(GTK_WIDGET(control->reload_button), FALSE);
         gtk_widget_set_sensitive(GTK_WIDGET(control->refresh_button), FALSE);
+        gtk_widget_set_sensitive(GTK_WIDGET(control->save_config_button), FALSE);
         return;
     }
 
@@ -154,10 +304,12 @@ static void control_refresh_from_proxy(TypioControl *control) {
     gtk_widget_set_sensitive(GTK_WIDGET(control->engine_dropdown), TRUE);
     gtk_widget_set_sensitive(GTK_WIDGET(control->reload_button), TRUE);
     gtk_widget_set_sensitive(GTK_WIDGET(control->refresh_button), TRUE);
+    gtk_widget_set_sensitive(GTK_WIDGET(control->save_config_button), TRUE);
 
     active_engine = g_dbus_proxy_get_cached_property(control->proxy, "ActiveEngine");
     available_engines = g_dbus_proxy_get_cached_property(control->proxy, "AvailableEngines");
     engine_state = g_dbus_proxy_get_cached_property(control->proxy, "ActiveEngineState");
+    config_text = g_dbus_proxy_get_cached_property(control->proxy, "ConfigText");
 
     if (active_engine) {
         active_name = g_variant_get_string(active_engine, nullptr);
@@ -172,9 +324,13 @@ static void control_refresh_from_proxy(TypioControl *control) {
 
     control_set_engine_model(control, available_engines, active_name);
     control_set_state_text(control, engine_state);
+    control_set_config_text(control, config_text);
 
     if (engine_state) {
         g_variant_unref(engine_state);
+    }
+    if (config_text) {
+        g_variant_unref(config_text);
     }
     if (available_engines) {
         g_variant_unref(available_engines);
@@ -240,6 +396,60 @@ static void on_reload_clicked([[maybe_unused]] GtkButton *button, gpointer user_
 
 static void on_refresh_clicked([[maybe_unused]] GtkButton *button, gpointer user_data) {
     control_refresh_from_proxy((TypioControl *)user_data);
+}
+
+static void on_save_config_clicked([[maybe_unused]] GtkButton *button, gpointer user_data) {
+    TypioControl *control = user_data;
+    GtkTextIter start;
+    GtkTextIter end;
+    char *content;
+    GError *error = nullptr;
+    GVariant *reply;
+
+    if (!control || !control->proxy || !control->config_buffer) {
+        return;
+    }
+
+    gtk_text_buffer_get_bounds(control->config_buffer, &start, &end);
+    content = gtk_text_buffer_get_text(control->config_buffer, &start, &end, FALSE);
+    if (!content) {
+        return;
+    }
+
+    reply = g_dbus_proxy_call_sync(control->proxy,
+                                   "SetConfigText",
+                                   g_variant_new("(s)", content),
+                                   G_DBUS_CALL_FLAGS_NONE,
+                                   -1,
+                                   nullptr,
+                                   &error);
+    g_free(content);
+
+    if (!reply) {
+        gtk_label_set_text(control->availability_label,
+                           error ? error->message : "Failed to save configuration");
+        g_clear_error(&error);
+        return;
+    }
+
+    g_variant_unref(reply);
+    control_refresh_from_proxy(control);
+}
+
+static void on_form_entry_changed([[maybe_unused]] GtkEditable *editable, gpointer user_data) {
+    control_sync_buffer_from_form((TypioControl *)user_data);
+}
+
+static void on_form_spin_changed([[maybe_unused]] GtkSpinButton *spin, gpointer user_data) {
+    control_sync_buffer_from_form((TypioControl *)user_data);
+}
+
+static void on_form_dropdown_changed(GObject *object,
+                                     [[maybe_unused]] GParamSpec *pspec,
+                                     gpointer user_data) {
+    if (GTK_DROP_DOWN(object)) {
+        control_sync_buffer_from_form((TypioControl *)user_data);
+    }
 }
 
 static void on_engine_selected(GObject *object,
@@ -591,6 +801,12 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *buttons;
     GtkWidget *scroller;
     GtkWidget *text_view;
+    GtkWidget *config_label;
+    GtkWidget *config_scroller;
+    GtkWidget *config_view;
+    GtkWidget *frame;
+    GtkWidget *grid;
+    GtkAdjustment *adjustment;
 
     control->app = app;
 
@@ -638,6 +854,62 @@ static void activate(GtkApplication *app, gpointer user_data) {
                      G_CALLBACK(on_refresh_clicked), control);
     gtk_box_append(GTK_BOX(buttons), GTK_WIDGET(control->refresh_button));
 
+    control->save_config_button = GTK_BUTTON(gtk_button_new_with_label("Save Config"));
+    g_signal_connect(control->save_config_button, "clicked",
+                     G_CALLBACK(on_save_config_clicked), control);
+    gtk_box_append(GTK_BOX(buttons), GTK_WIDGET(control->save_config_button));
+
+    frame = gtk_frame_new("Structured Config");
+    gtk_box_append(GTK_BOX(content), frame);
+
+    grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 8);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 12);
+    gtk_widget_set_margin_top(grid, 12);
+    gtk_widget_set_margin_bottom(grid, 12);
+    gtk_widget_set_margin_start(grid, 12);
+    gtk_widget_set_margin_end(grid, 12);
+    gtk_frame_set_child(GTK_FRAME(frame), grid);
+
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Rime schema"), 0, 0, 1, 1);
+    control->rime_schema_entry = GTK_ENTRY(gtk_entry_new());
+    g_signal_connect(control->rime_schema_entry, "changed",
+                     G_CALLBACK(on_form_entry_changed), control);
+    gtk_grid_attach(GTK_GRID(grid), GTK_WIDGET(control->rime_schema_entry), 1, 0, 1, 1);
+
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Rime page size"), 0, 1, 1, 1);
+    adjustment = gtk_adjustment_new(9.0, 1.0, 20.0, 1.0, 1.0, 0.0);
+    control->rime_page_size_spin = GTK_SPIN_BUTTON(
+        gtk_spin_button_new(adjustment, 1.0, 0));
+    g_signal_connect(control->rime_page_size_spin, "value-changed",
+                     G_CALLBACK(on_form_spin_changed), control);
+    gtk_grid_attach(GTK_GRID(grid), GTK_WIDGET(control->rime_page_size_spin), 1, 1, 1, 1);
+
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Mozc page size"), 0, 2, 1, 1);
+    adjustment = gtk_adjustment_new(9.0, 1.0, 20.0, 1.0, 1.0, 0.0);
+    control->mozc_page_size_spin = GTK_SPIN_BUTTON(
+        gtk_spin_button_new(adjustment, 1.0, 0));
+    g_signal_connect(control->mozc_page_size_spin, "value-changed",
+                     G_CALLBACK(on_form_spin_changed), control);
+    gtk_grid_attach(GTK_GRID(grid), GTK_WIDGET(control->mozc_page_size_spin), 1, 2, 1, 1);
+
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Whisper language"), 0, 3, 1, 1);
+    control->whisper_language_entry = GTK_ENTRY(gtk_entry_new());
+    g_signal_connect(control->whisper_language_entry, "changed",
+                     G_CALLBACK(on_form_entry_changed), control);
+    gtk_grid_attach(GTK_GRID(grid), GTK_WIDGET(control->whisper_language_entry), 1, 3, 1, 1);
+
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Whisper model"), 0, 4, 1, 1);
+    control->whisper_model_model = gtk_string_list_new(nullptr);
+    for (size_t i = 0; i < WHISPER_MODEL_COUNT; ++i) {
+        gtk_string_list_append(control->whisper_model_model, whisper_models[i].name);
+    }
+    control->whisper_model_dropdown = GTK_DROP_DOWN(
+        gtk_drop_down_new(G_LIST_MODEL(control->whisper_model_model), nullptr));
+    g_signal_connect(control->whisper_model_dropdown, "notify::selected",
+                     G_CALLBACK(on_form_dropdown_changed), control);
+    gtk_grid_attach(GTK_GRID(grid), GTK_WIDGET(control->whisper_model_dropdown), 1, 4, 1, 1);
+
     gtk_box_append(GTK_BOX(content), whisper_create_model_section(control));
 
     scroller = gtk_scrolled_window_new();
@@ -650,6 +922,20 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text_view), TRUE);
     control->state_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text_view));
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), text_view);
+
+    config_label = gtk_label_new("Root Config");
+    gtk_label_set_xalign(GTK_LABEL(config_label), 0.0f);
+    gtk_box_append(GTK_BOX(content), config_label);
+
+    config_scroller = gtk_scrolled_window_new();
+    gtk_widget_set_vexpand(config_scroller, TRUE);
+    gtk_box_append(GTK_BOX(content), config_scroller);
+
+    config_view = gtk_text_view_new();
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(config_view), TRUE);
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(config_view), GTK_WRAP_NONE);
+    control->config_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(config_view));
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(config_scroller), config_view);
 
     gtk_window_set_child(GTK_WINDOW(window), content);
     control->window = window;

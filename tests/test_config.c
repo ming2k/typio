@@ -219,7 +219,7 @@ TEST(config_save_load) {
     typio_config_set_string(config, "name", "test_save");
     typio_config_set_int(config, "number", 999);
 
-    const char *path = "/tmp/typio_test_config.conf";
+    const char *path = "/tmp/typio_test_config.toml";
 
     /* Save */
     TypioResult result = typio_config_save_file(config, path);

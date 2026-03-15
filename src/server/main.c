@@ -15,8 +15,6 @@
 #include <signal.h>
 #include <getopt.h>
 #include <unistd.h>
-#include <sys/stat.h>
-#include <errno.h>
 
 #ifdef HAVE_WAYLAND
 #include "wayland/wl_frontend.h"
@@ -67,46 +65,8 @@ static void print_help(const char *prog) {
 }
 
 #ifdef HAVE_SYSTRAY
-static bool ensure_dir_recursive(const char *path) {
-    char *copy;
-    bool ok = true;
-
-    if (!path || !*path) {
-        return false;
-    }
-
-    copy = calloc(strlen(path) + 1U, sizeof(char));
-    if (!copy) {
-        return false;
-    }
-    memcpy(copy, path, strlen(path));
-
-    for (char *p = copy + 1; *p; ++p) {
-        if (*p != '/') {
-            continue;
-        }
-        *p = '\0';
-        if (mkdir(copy, 0755) != 0 && errno != EEXIST) {
-            ok = false;
-            *p = '/';
-            break;
-        }
-        *p = '/';
-    }
-
-    if (ok && mkdir(copy, 0755) != 0 && errno != EEXIST) {
-        ok = false;
-    }
-
-    free(copy);
-    return ok;
-}
-
 static bool write_rime_schema_config(const char *schema_name) {
-    const char *config_dir;
     const char *data_dir;
-    char engines_dir[512];
-    char config_path[512];
     char user_data_dir[512];
     TypioConfig *config;
     TypioResult result;
@@ -115,50 +75,43 @@ static bool write_rime_schema_config(const char *schema_name) {
         return false;
     }
 
-    config_dir = typio_instance_get_config_dir(g_instance);
     data_dir = typio_instance_get_data_dir(g_instance);
-    if (!config_dir || !data_dir) {
+    if (!data_dir) {
         return false;
     }
 
-    if (snprintf(engines_dir, sizeof(engines_dir), "%s/engines", config_dir) >= (int)sizeof(engines_dir) ||
-        snprintf(config_path, sizeof(config_path), "%s/rime.conf", engines_dir) >= (int)sizeof(config_path) ||
-        snprintf(user_data_dir, sizeof(user_data_dir), "%s/rime", data_dir) >= (int)sizeof(user_data_dir)) {
+    if (snprintf(user_data_dir, sizeof(user_data_dir), "%s/rime", data_dir) >= (int)sizeof(user_data_dir)) {
         return false;
     }
 
-    if (!ensure_dir_recursive(engines_dir)) {
-        return false;
-    }
-
-    config = typio_config_load_file(config_path);
-    if (!config) {
-        config = typio_config_new();
-    }
+    config = typio_instance_get_config(g_instance);
     if (!config) {
         return false;
     }
 
-    typio_config_set_string(config, "schema", schema_name);
-    if (!typio_config_has_key(config, "page_size")) {
-        typio_config_set_int(config, "page_size", 10);
+    typio_config_set_string(config, "engines.rime.schema", schema_name);
+    if (!typio_config_has_key(config, "engines.rime.page_size")) {
+        typio_config_set_int(config, "engines.rime.page_size", 10);
     }
-    if (!typio_config_has_key(config, "user_data_dir")) {
-        typio_config_set_string(config, "user_data_dir", user_data_dir);
+    if (!typio_config_has_key(config, "engines.rime.user_data_dir")) {
+        typio_config_set_string(config, "engines.rime.user_data_dir", user_data_dir);
     }
-    if (!typio_config_has_key(config, "popup_theme")) {
-        typio_config_set_string(config, "popup_theme", "auto");
+    if (!typio_config_has_key(config, "engines.rime.popup_theme")) {
+        typio_config_set_string(config, "engines.rime.popup_theme", "auto");
     }
-    if (!typio_config_has_key(config, "candidate_layout")) {
-        typio_config_set_string(config, "candidate_layout", "horizontal");
+    if (!typio_config_has_key(config, "engines.rime.candidate_layout")) {
+        typio_config_set_string(config, "engines.rime.candidate_layout", "horizontal");
     }
-    if (!typio_config_has_key(config, "font_size")) {
-        typio_config_set_int(config, "font_size", 11);
+    if (!typio_config_has_key(config, "engines.rime.font_size")) {
+        typio_config_set_int(config, "engines.rime.font_size", 11);
     }
 
-    result = typio_config_save_file(config, config_path);
-    typio_config_free(config);
-    return result == TYPIO_OK;
+    result = typio_instance_save_config(g_instance);
+    if (result != TYPIO_OK) {
+        return false;
+    }
+
+    return typio_instance_reload_config(g_instance) == TYPIO_OK;
 }
 #endif
 

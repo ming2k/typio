@@ -11,6 +11,7 @@
 #include <wayland-client.h>
 #include <poll.h>
 #include <errno.h>
+#include <sys/inotify.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -36,6 +37,90 @@ static const struct wl_seat_listener seat_listener = {
     .capabilities = seat_handle_capabilities,
     .name = seat_handle_name,
 };
+
+static void frontend_refresh_runtime_config(TypioWlFrontend *frontend) {
+    if (!frontend || !frontend->instance) {
+        return;
+    }
+
+    if (typio_instance_reload_config(frontend->instance) != TYPIO_OK) {
+        typio_log(TYPIO_LOG_WARNING, "Failed to reload Typio configuration after file change");
+    }
+#ifdef HAVE_STATUS_BUS
+    if (frontend->status_bus) {
+        typio_status_bus_emit_properties_changed(frontend->status_bus);
+    }
+#endif
+}
+
+static void frontend_handle_config_watch(TypioWlFrontend *frontend) {
+    char buffer[4096];
+    ssize_t nread;
+
+    if (!frontend || frontend->config_watch_fd < 0) {
+        return;
+    }
+
+    while ((nread = read(frontend->config_watch_fd, buffer, sizeof(buffer))) > 0) {
+        ssize_t offset = 0;
+        bool should_reload = false;
+
+        while (offset < nread) {
+            const struct inotify_event *event =
+                (const struct inotify_event *)(buffer + offset);
+            if ((event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE |
+                                IN_DELETE_SELF | IN_MOVE_SELF | IN_ATTRIB)) != 0) {
+                should_reload = true;
+            }
+            offset += (ssize_t)sizeof(struct inotify_event) + event->len;
+        }
+
+        if (should_reload) {
+            frontend_refresh_runtime_config(frontend);
+        }
+    }
+}
+
+static void frontend_setup_config_watch(TypioWlFrontend *frontend) {
+    char engines_dir[512];
+    const char *config_dir;
+
+    if (!frontend || !frontend->instance) {
+        return;
+    }
+
+    frontend->config_watch_fd = -1;
+    frontend->config_dir_watch = -1;
+    frontend->config_engines_watch = -1;
+
+    config_dir = typio_instance_get_config_dir(frontend->instance);
+    if (!config_dir || !*config_dir) {
+        return;
+    }
+
+    frontend->config_watch_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    if (frontend->config_watch_fd < 0) {
+        typio_log(TYPIO_LOG_WARNING, "Failed to initialize configuration watch");
+        return;
+    }
+
+    frontend->config_dir_watch = inotify_add_watch(frontend->config_watch_fd,
+                                                   config_dir,
+                                                   IN_CLOSE_WRITE | IN_MOVED_TO |
+                                                   IN_CREATE | IN_DELETE |
+                                                   IN_DELETE_SELF | IN_MOVE_SELF |
+                                                   IN_ATTRIB);
+
+    if (snprintf(engines_dir, sizeof(engines_dir), "%s/engines", config_dir) <
+        (int)sizeof(engines_dir)) {
+        frontend->config_engines_watch = inotify_add_watch(frontend->config_watch_fd,
+                                                           engines_dir,
+                                                           IN_CLOSE_WRITE | IN_MOVED_TO |
+                                                           IN_CREATE | IN_DELETE |
+                                                           IN_DELETE_SELF | IN_MOVE_SELF |
+                                                           IN_ATTRIB);
+    }
+}
 
 TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
                                         const TypioWlFrontendConfig *config) {
@@ -180,6 +265,8 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
     }
 #endif
 
+    frontend_setup_config_watch(frontend);
+
     return frontend;
 }
 
@@ -218,7 +305,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
         }
 
         /* Build poll set: wayland fd + optional tray/status/voice/repeat fds */
-        struct pollfd fds[5];
+        struct pollfd fds[6];
         int nfds = 0;
         int idx_display = nfds;
         fds[nfds++] = (struct pollfd){ .fd = display_fd, .events = POLLIN };
@@ -253,6 +340,12 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
         if (repeat_fd >= 0) {
             idx_repeat = nfds;
             fds[nfds++] = (struct pollfd){ .fd = repeat_fd, .events = POLLIN };
+        }
+
+        int idx_config = -1;
+        if (frontend->config_watch_fd >= 0) {
+            idx_config = nfds;
+            fds[nfds++] = (struct pollfd){ .fd = frontend->config_watch_fd, .events = POLLIN };
         }
 
         int ret = poll(fds, (nfds_t)nfds, 100);
@@ -328,6 +421,10 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
         }
 #endif
 
+        if (idx_config >= 0 && (fds[idx_config].revents & POLLIN)) {
+            frontend_handle_config_watch(frontend);
+        }
+
         if (!frontend->running) {
             break;
         }
@@ -369,6 +466,17 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
     if (frontend->popup) {
         typio_wl_popup_destroy(frontend->popup);
         frontend->popup = nullptr;
+    }
+
+    if (frontend->config_dir_watch >= 0 && frontend->config_watch_fd >= 0) {
+        inotify_rm_watch(frontend->config_watch_fd, frontend->config_dir_watch);
+    }
+    if (frontend->config_engines_watch >= 0 && frontend->config_watch_fd >= 0) {
+        inotify_rm_watch(frontend->config_watch_fd, frontend->config_engines_watch);
+    }
+    if (frontend->config_watch_fd >= 0) {
+        close(frontend->config_watch_fd);
+        frontend->config_watch_fd = -1;
     }
 
 #ifdef HAVE_WHISPER

@@ -195,7 +195,6 @@ static void tray_fill_rime_schema_names(TypioTrayRimeMenuInfo *info) {
 static bool tray_load_rime_menu_info(TypioTray *tray, TypioTrayRimeMenuInfo *info) {
     TypioEngineManager *manager;
     TypioEngine *engine;
-    const char *config_path;
     TypioConfig *config;
     char *path;
 
@@ -210,8 +209,7 @@ static bool tray_load_rime_menu_info(TypioTray *tray, TypioTrayRimeMenuInfo *inf
         return false;
     }
 
-    config_path = typio_engine_get_config_path(engine);
-    config = config_path ? typio_config_load_file(config_path) : nullptr;
+    config = typio_instance_get_engine_config(tray->instance, "rime");
     if (config) {
         const char *schema = typio_config_get_string(config, "schema", nullptr);
         const char *user_data_dir = typio_config_get_string(config, "user_data_dir", nullptr);

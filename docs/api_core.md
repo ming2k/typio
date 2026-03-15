@@ -62,7 +62,7 @@ void typio_input_context_set_candidate_callback(TypioInputContext *ctx, TypioCan
 
 ## `TypioConfig`
 
-INI-style configuration storage.
+TOML-compatible flat-key configuration storage.
 
 ```c
 TypioConfig *typio_config_new(void);

@@ -125,8 +125,7 @@ TEST(load_and_compose) {
     char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
     char config_dir[1024];
     char data_dir[1024];
-    char engine_config_dir[1024];
-    char engine_config_path[1024];
+    char config_path[1024];
     TypioInstanceConfig config = {};
     CaptureState capture = {};
 
@@ -134,13 +133,15 @@ TEST(load_and_compose) {
 
     ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", temp_root) < (int)sizeof(config_dir));
     ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) < (int)sizeof(data_dir));
-    ASSERT(snprintf(engine_config_dir, sizeof(engine_config_dir), "%s/engines", config_dir) < (int)sizeof(engine_config_dir));
-    ASSERT(snprintf(engine_config_path, sizeof(engine_config_path), "%s/rime.conf", engine_config_dir) < (int)sizeof(engine_config_path));
+    ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) < (int)sizeof(config_path));
 
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
-    ASSERT(ensure_dir(engine_config_dir));
-    ASSERT(write_file(engine_config_path, "schema = luna_pinyin\npage_size = 5\n"));
+    ASSERT(write_file(config_path,
+                      "default_engine = \"rime\"\n"
+                      "[engines.rime]\n"
+                      "schema = \"luna_pinyin\"\n"
+                      "page_size = 5\n"));
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;

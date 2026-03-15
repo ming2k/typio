@@ -1,0 +1,21 @@
+# Typio configuration example
+
+default_engine = "basic"
+
+[engines.rime]
+schema = "luna_pinyin"
+page_size = 9
+popup_theme = "auto"
+candidate_layout = "horizontal"
+font_size = 11
+# shared_data_dir = "/usr/share/rime-data"
+# user_data_dir = "~/.local/share/typio/rime"
+# full_check = false
+
+[engines.mozc]
+page_size = 9
+# server_path = "/usr/lib/mozc/mozc_server"
+
+[whisper]
+language = "zh"
+model = "base"

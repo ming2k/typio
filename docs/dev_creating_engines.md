@@ -75,7 +75,7 @@ const char *path = typio_engine_get_config_path(engine);
 Typical value:
 
 ```text
-~/.config/typio/engines/my-engine.conf
+~/.config/typio/engines/my-engine.toml
 ```
 
 ## Build Example

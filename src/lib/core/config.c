@@ -15,6 +15,8 @@
 #include <errno.h>
 #include <limits.h>
 
+#define TYPIO_CONFIG_HEADER "# Typio configuration file (TOML-compatible subset)\n\n"
+
 /* Configuration entry */
 typedef struct ConfigEntry {
     char *key;
@@ -72,6 +74,36 @@ static char *trim_whitespace(char *str) {
     end[1] = '\0';
 
     return str;
+}
+
+static void write_escaped_string(FILE *file, const char *value) {
+    const unsigned char *p = (const unsigned char *)(value ? value : "");
+
+    fputc('"', file);
+    while (*p) {
+        switch (*p) {
+        case '\\':
+            fputs("\\\\", file);
+            break;
+        case '"':
+            fputs("\\\"", file);
+            break;
+        case '\n':
+            fputs("\\n", file);
+            break;
+        case '\r':
+            fputs("\\r", file);
+            break;
+        case '\t':
+            fputs("\\t", file);
+            break;
+        default:
+            fputc((int)*p, file);
+            break;
+        }
+        ++p;
+    }
+    fputc('"', file);
 }
 
 TypioConfig *typio_config_load_file(const char *path) {
@@ -302,7 +334,7 @@ TypioResult typio_config_save_file(const TypioConfig *config, const char *path) 
         return TYPIO_ERROR;
     }
 
-    fprintf(file, "# Typio configuration file\n\n");
+    fputs(TYPIO_CONFIG_HEADER, file);
 
     /* Group entries by section */
     char current_section[256] = "";
@@ -330,7 +362,9 @@ TypioResult typio_config_save_file(const TypioConfig *config, const char *path) 
             const char *key = dot + 1;
             switch (entry->value.type) {
                 case TYPIO_CONFIG_STRING:
-                    fprintf(file, "%s = %s\n", key, entry->value.data.string_val);
+                    fprintf(file, "%s = ", key);
+                    write_escaped_string(file, entry->value.data.string_val);
+                    fputc('\n', file);
                     break;
                 case TYPIO_CONFIG_INT:
                     fprintf(file, "%s = %d\n", key, entry->value.data.int_val);
@@ -354,8 +388,9 @@ TypioResult typio_config_save_file(const TypioConfig *config, const char *path) 
 
             switch (entry->value.type) {
                 case TYPIO_CONFIG_STRING:
-                    fprintf(file, "%s = %s\n", entry->key,
-                            entry->value.data.string_val);
+                    fprintf(file, "%s = ", entry->key);
+                    write_escaped_string(file, entry->value.data.string_val);
+                    fputc('\n', file);
                     break;
                 case TYPIO_CONFIG_INT:
                     fprintf(file, "%s = %d\n", entry->key,
@@ -394,7 +429,7 @@ char *typio_config_to_string(const TypioConfig *config) {
         return nullptr;
     }
 
-    fprintf(stream, "# Typio configuration file\n\n");
+    fputs(TYPIO_CONFIG_HEADER, stream);
 
     char current_section[256] = "";
     ConfigEntry *entry = config->entries;
@@ -426,7 +461,9 @@ char *typio_config_to_string(const TypioConfig *config) {
 
         switch (entry->value.type) {
             case TYPIO_CONFIG_STRING:
-                fprintf(stream, "%s = %s\n", write_key, entry->value.data.string_val);
+                fprintf(stream, "%s = ", write_key);
+                write_escaped_string(stream, entry->value.data.string_val);
+                fputc('\n', stream);
                 break;
             case TYPIO_CONFIG_INT:
                 fprintf(stream, "%s = %d\n", write_key, entry->value.data.int_val);

@@ -185,6 +185,9 @@ struct TypioWlFrontend {
     volatile bool running;
     TypioWlLifecyclePhase lifecycle_phase;
     bool pending_reactivation;
+    int config_watch_fd;
+    int config_dir_watch;
+    int config_engines_watch;
 
     /* Error message buffer */
     char error_msg[256];

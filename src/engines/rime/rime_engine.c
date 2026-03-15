@@ -123,9 +123,8 @@ static bool typio_rime_path_exists(const char *path) {
 static TypioResult typio_rime_load_config(TypioEngine *engine,
                                           TypioInstance *instance,
                                           TypioRimeConfig *config) {
-    const char *config_path;
     const char *data_dir;
-    TypioConfig *file_config = nullptr;
+    TypioConfig *engine_config = nullptr;
     char *default_user_dir;
 
     if (!engine || !instance || !config) {
@@ -145,20 +144,16 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
         return TYPIO_ERROR_OUT_OF_MEMORY;
     }
 
-    config_path = typio_engine_get_config_path(engine);
-    if (config_path) {
-        file_config = typio_config_load_file(config_path);
-    }
-
-    if (!file_config) {
+    engine_config = typio_instance_get_engine_config(instance, "rime");
+    if (!engine_config) {
         return TYPIO_OK;
     }
 
-    const char *schema = typio_config_get_string(file_config, "schema", nullptr);
-    const char *shared_data_dir = typio_config_get_string(file_config, "shared_data_dir", nullptr);
-    const char *user_data_dir = typio_config_get_string(file_config, "user_data_dir", nullptr);
-    const int page_size = typio_config_get_int(file_config, "page_size", config->page_size);
-    const bool full_check = typio_config_get_bool(file_config, "full_check", false);
+    const char *schema = typio_config_get_string(engine_config, "schema", nullptr);
+    const char *shared_data_dir = typio_config_get_string(engine_config, "shared_data_dir", nullptr);
+    const char *user_data_dir = typio_config_get_string(engine_config, "user_data_dir", nullptr);
+    const int page_size = typio_config_get_int(engine_config, "page_size", config->page_size);
+    const bool full_check = typio_config_get_bool(engine_config, "full_check", false);
 
     if (schema && *schema) {
         free(config->schema);
@@ -179,7 +174,7 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
     }
     config->full_check = full_check;
 
-    typio_config_free(file_config);
+    typio_config_free(engine_config);
 
     if (!config->schema || !config->shared_data_dir || !config->user_data_dir) {
         typio_rime_free_config(config);
@@ -731,8 +726,7 @@ static void typio_rime_apply_runtime_config(TypioEngine *engine) {
 
 static TypioResult typio_rime_reload_config(TypioEngine *engine) {
     TypioRimeState *state = typio_engine_get_user_data(engine);
-    TypioConfig *file_config;
-    const char *config_path;
+    TypioConfig *engine_config;
     const char *schema;
     int page_size;
 
@@ -740,18 +734,17 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
         return TYPIO_ERROR_NOT_INITIALIZED;
     }
 
-    config_path = typio_engine_get_config_path(engine);
-    if (!config_path) {
+    if (!engine->instance) {
         return TYPIO_OK;
     }
 
-    file_config = typio_config_load_file(config_path);
-    if (!file_config) {
+    engine_config = typio_instance_get_engine_config(engine->instance, "rime");
+    if (!engine_config) {
         return TYPIO_OK;
     }
 
-    schema = typio_config_get_string(file_config, "schema", nullptr);
-    page_size = typio_config_get_int(file_config, "page_size", state->config.page_size);
+    schema = typio_config_get_string(engine_config, "schema", nullptr);
+    page_size = typio_config_get_int(engine_config, "page_size", state->config.page_size);
 
     if (schema && *schema) {
         free(state->config.schema);
@@ -761,12 +754,12 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
         state->config.page_size = page_size;
     }
 
-    if (typio_config_has_key(file_config, "shared_data_dir") ||
-        typio_config_has_key(file_config, "user_data_dir")) {
+    if (typio_config_has_key(engine_config, "shared_data_dir") ||
+        typio_config_has_key(engine_config, "user_data_dir")) {
         typio_log_warning("Rime data directories require restarting Typio to take effect");
     }
 
-    typio_config_free(file_config);
+    typio_config_free(engine_config);
     typio_rime_apply_runtime_config(engine);
     return TYPIO_OK;
 }
