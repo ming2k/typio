@@ -320,16 +320,34 @@ static void control_sync_form_from_buffer(TypioControl *control) {
 
     /* Voice settings */
     if (control->voice_backend_dropdown && control->voice_backend_model) {
+        /* Read new format first, fall back to legacy */
+        const char *voice_backend = typio_config_get_string(config,
+                                        "default_voice_engine", nullptr);
+        if (!voice_backend) {
+            voice_backend = typio_config_get_string(config,
+                                "voice.backend", "whisper");
+        }
         guint idx = control_find_model_index(
-            control->voice_backend_model,
-            typio_config_get_string(config, "voice.backend", "whisper"));
+            control->voice_backend_model, voice_backend);
         gtk_drop_down_set_selected(control->voice_backend_dropdown, idx);
     }
     control_refresh_voice_models(control);
     if (control->voice_model_dropdown && control->voice_model_list) {
+        /* Read model from [engines.<backend>] first, fall back to legacy */
+        guint backend_idx = gtk_drop_down_get_selected(control->voice_backend_dropdown);
+        const char *backend_name = (backend_idx != GTK_INVALID_LIST_POSITION)
+            ? gtk_string_list_get_string(control->voice_backend_model, backend_idx)
+            : "whisper";
+        char engine_model_key[256];
+        g_snprintf(engine_model_key, sizeof(engine_model_key),
+                   "engines.%s.model", backend_name);
+        const char *voice_model = typio_config_get_string(config,
+                                      engine_model_key, nullptr);
+        if (!voice_model) {
+            voice_model = typio_config_get_string(config, "voice.model", "");
+        }
         guint idx = control_find_model_index(
-            control->voice_model_list,
-            typio_config_get_string(config, "voice.model", ""));
+            control->voice_model_list, voice_model);
         gtk_drop_down_set_selected(control->voice_model_dropdown, idx);
     }
     /* Shortcut settings */
@@ -399,20 +417,23 @@ static void control_sync_buffer_from_form(TypioControl *control) {
     typio_config_set_int(config, "engines.mozc.page_size",
                          gtk_spin_button_get_value_as_int(control->mozc_page_size_spin));
 
-    /* Voice settings */
+    /* Voice settings — write new unified format */
     selected = gtk_drop_down_get_selected(control->voice_backend_dropdown);
     model_name = selected == GTK_INVALID_LIST_POSITION
         ? "whisper"
         : gtk_string_list_get_string(control->voice_backend_model, selected);
-    typio_config_set_string(config, "voice.backend",
-                            model_name ? model_name : "whisper");
+    const char *voice_backend = model_name ? model_name : "whisper";
+    typio_config_set_string(config, "default_voice_engine", voice_backend);
 
     selected = gtk_drop_down_get_selected(control->voice_model_dropdown);
     if (selected != GTK_INVALID_LIST_POSITION) {
         const char *voice_model =
             gtk_string_list_get_string(control->voice_model_list, selected);
         if (voice_model && *voice_model) {
-            typio_config_set_string(config, "voice.model", voice_model);
+            char engine_model_key[256];
+            g_snprintf(engine_model_key, sizeof(engine_model_key),
+                       "engines.%s.model", voice_backend);
+            typio_config_set_string(config, engine_model_key, voice_model);
         }
     }
 
@@ -1222,7 +1243,7 @@ static GtkWidget *build_mozc_config(TypioControl *control) {
     return grid;
 }
 
-static GtkWidget *build_engine_page(TypioControl *control) {
+static GtkWidget *build_keyboard_page(TypioControl *control) {
     GtkWidget *page;
     GtkWidget *row;
     GtkWidget *buttons;
@@ -1337,7 +1358,7 @@ static GtkWidget *build_voice_page(TypioControl *control) {
     gtk_widget_set_margin_start(page, 16);
     gtk_widget_set_margin_end(page, 16);
 
-    frame = gtk_frame_new("Voice Input");
+    frame = gtk_frame_new("Voice Engine");
     gtk_box_append(GTK_BOX(page), frame);
 
     grid = gtk_grid_new();
@@ -1367,7 +1388,18 @@ static GtkWidget *build_voice_page(TypioControl *control) {
                      G_CALLBACK(on_display_dropdown_changed), control);
     gtk_grid_attach(GTK_GRID(grid), GTK_WIDGET(control->voice_model_dropdown), 1, 1, 1, 1);
 
-    return page;
+    /* Model downloads */
+    gtk_box_append(GTK_BOX(page), sherpa_create_model_section(control));
+    gtk_box_append(GTK_BOX(page), whisper_create_model_section(control));
+
+    /* Wrap in a scrolled window since model list can be long */
+    GtkWidget *scroller = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), page);
+    gtk_widget_set_vexpand(scroller, TRUE);
+
+    return scroller;
 }
 
 /* --- Shortcut recorder --- */
@@ -1638,19 +1670,18 @@ static GtkWidget *build_display_page(TypioControl *control) {
     return page;
 }
 
-static GtkWidget *build_models_page(TypioControl *control) {
-    GtkWidget *page;
+static GtkWidget *build_engines_page(TypioControl *control) {
+    GtkWidget *sub_notebook = gtk_notebook_new();
+    gtk_notebook_set_tab_pos(GTK_NOTEBOOK(sub_notebook), GTK_POS_TOP);
 
-    page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    gtk_widget_set_margin_top(page, 16);
-    gtk_widget_set_margin_bottom(page, 16);
-    gtk_widget_set_margin_start(page, 16);
-    gtk_widget_set_margin_end(page, 16);
+    gtk_notebook_append_page(GTK_NOTEBOOK(sub_notebook),
+                             build_keyboard_page(control),
+                             gtk_label_new("Keyboard"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(sub_notebook),
+                             build_voice_page(control),
+                             gtk_label_new("Voice"));
 
-    gtk_box_append(GTK_BOX(page), sherpa_create_model_section(control));
-    gtk_box_append(GTK_BOX(page), whisper_create_model_section(control));
-
-    return page;
+    return sub_notebook;
 }
 
 static void activate(GtkApplication *app, gpointer user_data) {
@@ -1677,17 +1708,11 @@ static void activate(GtkApplication *app, gpointer user_data) {
                              build_display_page(control),
                              gtk_label_new("Display"));
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook),
-                             build_engine_page(control),
-                             gtk_label_new("Engine"));
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook),
-                             build_voice_page(control),
-                             gtk_label_new("Voice"));
+                             build_engines_page(control),
+                             gtk_label_new("Engines"));
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook),
                              build_shortcuts_page(control),
                              gtk_label_new("Shortcuts"));
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook),
-                             build_models_page(control),
-                             gtk_label_new("Models"));
 
     gtk_window_set_child(GTK_WINDOW(window), notebook);
     control->window = window;
