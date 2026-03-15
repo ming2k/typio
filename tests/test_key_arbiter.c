@@ -159,6 +159,7 @@ static void setup(void) {
     memset(&test_keyboard, 0, sizeof(test_keyboard));
     memset(&test_session, 0, sizeof(test_session));
     test_keyboard.frontend = &test_frontend;
+    typio_shortcut_config_defaults(&test_frontend.shortcuts);
     typio_wl_key_arbiter_init(&test_keyboard.arbiter);
     reset_mocks();
 }

@@ -20,10 +20,8 @@
 #include <time.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
-#ifdef HAVE_WHISPER
-/* Push-to-Talk: Super+V */
-#define TYPIO_PTT_KEYSYM XKB_KEY_v
-#define TYPIO_PTT_MODIFIER TYPIO_MOD_SUPER
+#ifdef HAVE_VOICE
+#include "shortcut_config.h"
 #endif
 
 static uint64_t key_route_monotonic_ms(void) {
@@ -245,10 +243,15 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         return;
     }
 
-#ifdef HAVE_WHISPER
+#ifdef HAVE_VOICE
+    const TypioShortcutBinding *ptt = &frontend->shortcuts.voice_ptt;
+    typio_log(TYPIO_LOG_DEBUG,
+              "PTT check: keysym=0x%x mods=0x%x ptt_keysym=0x%x ptt_mods=0x%x voice_available=%s",
+              keysym, modifiers, ptt->keysym, ptt->modifiers,
+              typio_voice_service_is_available(frontend->voice) ? "yes" : "no");
     if (typio_voice_service_is_available(frontend->voice) &&
-        keysym == TYPIO_PTT_KEYSYM &&
-        (modifiers & TYPIO_PTT_MODIFIER) != 0) {
+        keysym == ptt->keysym &&
+        (modifiers & ptt->modifiers) == ptt->modifiers) {
         typio_voice_service_start(frontend->voice);
         key_set_state(frontend, key, TYPIO_KEY_VOICE_PTT);
         typio_wl_set_preedit(frontend, "[Recording...]", 0, 0);
@@ -348,7 +351,7 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                   "Forwarded application shortcut release: keycode=%u", key);
         return;
 
-#ifdef HAVE_WHISPER
+#ifdef HAVE_VOICE
     case TYPIO_KEY_VOICE_PTT:
         key_route_trace(keyboard, "release-ptt", key, keysym, modifiers, unicode,
                         kstate, "voice ptt stop");

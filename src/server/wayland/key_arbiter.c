@@ -122,42 +122,47 @@ static void arbiter_consume(TypioKeyArbiter *arbiter,
  * Enter BUFFERING when both Ctrl and Shift are physically held and
  * the pressed key is one of the chord modifiers.
  */
-static bool arbiter_should_start_buffering(uint32_t keysym,
+static bool arbiter_should_start_buffering(const TypioShortcutBinding *binding,
+                                           uint32_t keysym,
                                            uint32_t physical_modifiers) {
-    if (!typio_wl_shortcut_chord_is_switch_modifier(keysym))
+    if (!typio_wl_shortcut_chord_is_switch_modifier(binding, keysym))
         return false;
 
-    /* Both chord modifiers must be physically held (including the one
-     * being pressed right now — physical_modifiers is updated before
-     * the arbiter runs). */
-    uint32_t required = TYPIO_MOD_CTRL | TYPIO_MOD_SHIFT;
-    if ((physical_modifiers & required) != required)
+    /* All chord modifiers must be physically held */
+    if ((physical_modifiers & binding->modifiers) != binding->modifiers)
         return false;
 
-    /* Alt/Super must not be held */
-    uint32_t forbidden = TYPIO_MOD_ALT | TYPIO_MOD_SUPER;
+    /* Modifiers not part of the chord must not be held */
+    uint32_t all_mods = TYPIO_MOD_CTRL | TYPIO_MOD_SHIFT |
+                        TYPIO_MOD_ALT | TYPIO_MOD_SUPER;
+    uint32_t forbidden = all_mods & ~binding->modifiers;
     return (physical_modifiers & forbidden) == 0;
 }
 
 /**
  * Are all chord modifiers released?
  */
-static bool arbiter_chord_complete(uint32_t physical_modifiers) {
-    return (physical_modifiers &
-            (TYPIO_MOD_CTRL | TYPIO_MOD_SHIFT)) == 0;
+static bool arbiter_chord_complete(const TypioShortcutBinding *binding,
+                                   uint32_t physical_modifiers) {
+    return (physical_modifiers & binding->modifiers) == 0;
 }
 
 /**
  * Should we cancel buffering because of this event?
  * Yes if: non-modifier key pressed, or Alt/Super appeared.
  */
-static bool arbiter_should_cancel(uint32_t keysym,
+static bool arbiter_should_cancel(const TypioShortcutBinding *binding,
+                                  uint32_t keysym,
                                   uint32_t physical_modifiers,
                                   bool is_press) {
-    if (is_press && !typio_wl_shortcut_chord_is_switch_modifier(keysym))
+    if (is_press && !typio_wl_shortcut_chord_is_switch_modifier(binding, keysym))
         return true;
 
-    if ((physical_modifiers & (TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0)
+    /* If any modifier NOT in the chord is held, cancel */
+    uint32_t all_mods = TYPIO_MOD_CTRL | TYPIO_MOD_SHIFT |
+                        TYPIO_MOD_ALT | TYPIO_MOD_SUPER;
+    uint32_t forbidden = all_mods & ~binding->modifiers;
+    if ((physical_modifiers & forbidden) != 0)
         return true;
 
     return false;
@@ -182,10 +187,11 @@ void typio_wl_key_arbiter_press(TypioKeyArbiter *arbiter,
                                 uint32_t modifiers, uint32_t unicode,
                                 uint32_t time) {
     uint32_t phys = keyboard->physical_modifiers;
+    const TypioShortcutBinding *bind = &keyboard->frontend->shortcuts.switch_engine;
 
     switch (arbiter->state) {
     case TYPIO_ARBITER_IDLE:
-        if (arbiter_should_start_buffering(keysym, phys)) {
+        if (arbiter_should_start_buffering(bind, keysym, phys)) {
             arbiter->state = TYPIO_ARBITER_BUFFERING;
             arbiter_buffer_push(arbiter, true, key, keysym, modifiers,
                                 unicode, time);
@@ -200,7 +206,7 @@ void typio_wl_key_arbiter_press(TypioKeyArbiter *arbiter,
         return;
 
     case TYPIO_ARBITER_BUFFERING:
-        if (arbiter_should_cancel(keysym, phys, true) ||
+        if (arbiter_should_cancel(bind, keysym, phys, true) ||
             arbiter->buffer_count >= TYPIO_ARBITER_MAX_BUFFERED - 1) {
             /* Replay buffered events, then process this one normally */
             typio_wl_trace(keyboard->frontend, "arbiter",
@@ -227,6 +233,7 @@ void typio_wl_key_arbiter_release(TypioKeyArbiter *arbiter,
                                   uint32_t modifiers, uint32_t unicode,
                                   uint32_t time) {
     uint32_t phys = keyboard->physical_modifiers;
+    const TypioShortcutBinding *bind = &keyboard->frontend->shortcuts.switch_engine;
 
     switch (arbiter->state) {
     case TYPIO_ARBITER_IDLE:
@@ -235,7 +242,7 @@ void typio_wl_key_arbiter_release(TypioKeyArbiter *arbiter,
         return;
 
     case TYPIO_ARBITER_BUFFERING:
-        if (arbiter_should_cancel(keysym, phys, false)) {
+        if (arbiter_should_cancel(bind, keysym, phys, false)) {
             typio_wl_trace(keyboard->frontend, "arbiter",
                            "stage=replay reason=cancel-release keysym=0x%x",
                            keysym);
@@ -250,7 +257,7 @@ void typio_wl_key_arbiter_release(TypioKeyArbiter *arbiter,
                             unicode, time);
 
         /* Check if the chord is complete (all chord mods released) */
-        if (arbiter_chord_complete(phys)) {
+        if (arbiter_chord_complete(bind, phys)) {
             typio_wl_trace(keyboard->frontend, "arbiter",
                            "stage=consume detail=chord complete");
             arbiter_consume(arbiter, keyboard);

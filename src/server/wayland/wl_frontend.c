@@ -43,14 +43,42 @@ static void frontend_refresh_runtime_config(TypioWlFrontend *frontend) {
         return;
     }
 
+    typio_log(TYPIO_LOG_DEBUG, "Config reload: begin");
+
     if (typio_instance_reload_config(frontend->instance) != TYPIO_OK) {
-        typio_log(TYPIO_LOG_WARNING, "Failed to reload Typio configuration after file change");
+        typio_log(TYPIO_LOG_WARNING, "Config reload: failed to reload instance config");
+        return;
     }
+
+    TypioConfig *config = typio_instance_get_config(frontend->instance);
+
+    /* Reload shortcut bindings */
+    typio_shortcut_config_load(&frontend->shortcuts, config);
+    char *sw = typio_shortcut_format(&frontend->shortcuts.switch_engine);
+    char *ptt = typio_shortcut_format(&frontend->shortcuts.voice_ptt);
+    typio_log(TYPIO_LOG_INFO,
+              "Config reload: shortcuts switch_engine=%s voice_ptt=%s",
+              sw ? sw : "(none)", ptt ? ptt : "(none)");
+    free(sw);
+    free(ptt);
+
+#ifdef HAVE_VOICE
+    /* Reload voice backend if config changed */
+    if (frontend->voice) {
+        typio_voice_service_reload(frontend->voice);
+        typio_log(TYPIO_LOG_INFO,
+                  "Config reload: voice available=%s",
+                  typio_voice_service_is_available(frontend->voice) ? "yes" : "no");
+    }
+#endif
+
 #ifdef HAVE_STATUS_BUS
     if (frontend->status_bus) {
         typio_status_bus_emit_properties_changed(frontend->status_bus);
     }
 #endif
+
+    typio_log(TYPIO_LOG_DEBUG, "Config reload: complete");
 }
 
 static void frontend_handle_config_watch(TypioWlFrontend *frontend) {
@@ -134,6 +162,18 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
     }
 
     frontend->instance = instance;
+
+    /* Load shortcut bindings from config */
+    typio_shortcut_config_load(&frontend->shortcuts,
+                               typio_instance_get_config(instance));
+    {
+        char *se = typio_shortcut_format(&frontend->shortcuts.switch_engine);
+        char *ptt = typio_shortcut_format(&frontend->shortcuts.voice_ptt);
+        typio_log(TYPIO_LOG_INFO, "Shortcuts: switch_engine=%s, voice_ptt=%s",
+                  se ? se : "(none)", ptt ? ptt : "(none)");
+        free(se);
+        free(ptt);
+    }
 
     /* Connect to Wayland display */
     const char *display_name = config ? config->display_name : nullptr;
@@ -254,7 +294,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
 
     typio_log(TYPIO_LOG_INFO, "Wayland input method frontend initialized");
 
-#ifdef HAVE_WHISPER
+#ifdef HAVE_VOICE
     frontend->voice = typio_voice_service_new(instance);
     if (frontend->voice && typio_voice_service_is_available(frontend->voice)) {
         typio_log(TYPIO_LOG_INFO, "Voice input service ready");
@@ -286,7 +326,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 #ifdef HAVE_STATUS_BUS
     int status_fd = frontend->status_bus ? typio_status_bus_get_fd(frontend->status_bus) : -1;
 #endif
-#ifdef HAVE_WHISPER
+#ifdef HAVE_VOICE
     int voice_fd = frontend->voice ? typio_voice_service_get_fd(frontend->voice) : -1;
 #endif
 
@@ -326,7 +366,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
         }
 #endif
 
-#ifdef HAVE_WHISPER
+#ifdef HAVE_VOICE
         int idx_voice = -1;
         if (voice_fd >= 0) {
             idx_voice = nfds;
@@ -409,7 +449,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             typio_wl_keyboard_dispatch_repeat(frontend->keyboard);
         }
 
-#ifdef HAVE_WHISPER
+#ifdef HAVE_VOICE
         /* Handle voice inference completion */
         if (idx_voice >= 0 && (fds[idx_voice].revents & POLLIN)) {
             TypioInputContext *ctx = frontend->session ?
@@ -479,7 +519,7 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
         frontend->config_watch_fd = -1;
     }
 
-#ifdef HAVE_WHISPER
+#ifdef HAVE_VOICE
     if (frontend->voice) {
         typio_voice_service_free(frontend->voice);
         frontend->voice = nullptr;

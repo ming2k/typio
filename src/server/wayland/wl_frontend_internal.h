@@ -9,6 +9,7 @@
 #include "wl_frontend.h"
 #include "key_arbiter.h"
 #include "key_tracking.h"
+#include "shortcut_config.h"
 #include "lifecycle.h"
 #include "keyboard_repeat.h"
 #include "startup_guard.h"
@@ -28,7 +29,7 @@
 #ifdef HAVE_SYSTRAY
 #include "tray.h"
 #endif
-#ifdef HAVE_WHISPER
+#ifdef HAVE_VOICE
 #include "voice/voice_service.h"
 #endif
 
@@ -175,7 +176,7 @@ struct TypioWlFrontend {
     /* System tray */
     TypioTray *tray;
 #endif
-#ifdef HAVE_WHISPER
+#ifdef HAVE_VOICE
     TypioVoiceService *voice;
 #endif
 
@@ -189,6 +190,9 @@ struct TypioWlFrontend {
     int config_watch_fd;
     int config_dir_watch;
     int config_engines_watch;
+
+    /* Configurable shortcut bindings */
+    TypioShortcutConfig shortcuts;
 
     /* Error message buffer */
     char error_msg[256];
