@@ -9,6 +9,7 @@
  */
 
 
+#include "key_arbiter.h"
 #include "key_debug.h"
 #include "wl_frontend_internal.h"
 #include "wl_trace.h"
@@ -127,12 +128,10 @@ static uint32_t keyboard_event_modifiers(TypioWlKeyboard *keyboard,
 static void keyboard_update_physical_modifier_state(TypioWlKeyboard *keyboard,
                                                     uint32_t keysym,
                                                     uint32_t state) {
-    TypioWlFrontend *frontend;
     uint32_t bit;
 
     if (!keyboard)
         return;
-    frontend = keyboard->frontend;
 
     bit = typio_wl_modifier_policy_effective_modifiers(
         TYPIO_MOD_NONE, TYPIO_MOD_NONE, true, keysym,
@@ -145,26 +144,6 @@ static void keyboard_update_physical_modifier_state(TypioWlKeyboard *keyboard,
         keyboard->physical_modifiers |= bit;
     else
         keyboard->physical_modifiers &= ~bit;
-
-    if (frontend &&
-        typio_wl_shortcut_chord_should_reset(keyboard->physical_modifiers)) {
-        if (frontend->shortcut_chord_armed &&
-            !frontend->shortcut_chord_saw_non_modifier &&
-            !frontend->shortcut_chord_switch_triggered) {
-            TypioEngineManager *manager =
-                typio_instance_get_engine_manager(frontend->instance);
-            if (manager && typio_engine_manager_next(manager) == TYPIO_OK) {
-                frontend->shortcut_chord_switch_triggered = true;
-                typio_wl_trace(frontend, "key",
-                               "stage=shortcut-switch detail=ctrl+shift engine switch on release");
-                typio_log(TYPIO_LOG_INFO,
-                          "Switched engine via Ctrl+Shift chord (on release)");
-            }
-        }
-        frontend->shortcut_chord_saw_non_modifier = false;
-        frontend->shortcut_chord_switch_triggered = false;
-        frontend->shortcut_chord_armed = false;
-    }
 
     if ((keyboard->physical_modifiers &
          (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0) {
@@ -295,6 +274,7 @@ TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend) {
     keyboard->frontend = frontend;
     keyboard->suppress_stale_keys = true;
     keyboard->created_at_ms = keyboard_monotonic_ms();
+    typio_wl_key_arbiter_init(&keyboard->arbiter);
 
     keyboard->repeat_timer_fd = timerfd_create(CLOCK_MONOTONIC,
                                                TFD_CLOEXEC | TFD_NONBLOCK);
@@ -432,14 +412,14 @@ static void kb_handle_keymap(void *data,
 
 /* ── Key press handler ───────────────────────────────────────────── */
 
-static void kb_process_key_press(TypioWlKeyboard *keyboard,
-                                 TypioWlSession *session,
-                                 uint32_t key, xkb_keysym_t keysym,
-                                 uint32_t modifiers, uint32_t unicode,
-                                 uint32_t time) {
+void typio_wl_keyboard_process_key_press(TypioWlKeyboard *keyboard,
+                                         TypioWlSession *session,
+                                         uint32_t key, uint32_t keysym,
+                                         uint32_t modifiers, uint32_t unicode,
+                                         uint32_t time) {
     TypioKeyTrackState state_before_repeat;
 
-    typio_wl_key_route_process_press(keyboard, session, key, (uint32_t)keysym,
+    typio_wl_key_route_process_press(keyboard, session, key, keysym,
                                      modifiers, unicode, time);
 
     state_before_repeat = key_get_state(keyboard->frontend, key);
@@ -453,15 +433,15 @@ static void kb_process_key_press(TypioWlKeyboard *keyboard,
 
 /* ── Key release handler ─────────────────────────────────────────── */
 
-static void kb_process_key_release(TypioWlKeyboard *keyboard,
-                                   TypioWlSession *session,
-                                   uint32_t key, xkb_keysym_t keysym,
-                                   uint32_t modifiers, uint32_t unicode,
-                                   uint32_t time) {
+void typio_wl_keyboard_process_key_release(TypioWlKeyboard *keyboard,
+                                           TypioWlSession *session,
+                                           uint32_t key, uint32_t keysym,
+                                           uint32_t modifiers, uint32_t unicode,
+                                           uint32_t time) {
     if (keyboard->repeating && keyboard->repeat_key == key)
         typio_wl_keyboard_repeat_stop(keyboard);
 
-    typio_wl_key_route_process_release(keyboard, session, key, (uint32_t)keysym,
+    typio_wl_key_route_process_release(keyboard, session, key, keysym,
                                        modifiers, unicode, time);
 }
 
@@ -495,14 +475,18 @@ static void kb_handle_key(void *data,
                          key_get_state(frontend, key),
                          "dispatch");
 
-    if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
-        kb_process_key_press(keyboard, session, key, keysym, modifiers,
-                             unicode, time);
-    else
-        kb_process_key_release(keyboard, session, key, keysym, modifiers,
-                               unicode, time);
-
+    /* Update physical modifier state BEFORE the arbiter so it has
+     * accurate knowledge of which modifiers are physically held. */
     keyboard_update_physical_modifier_state(keyboard, (uint32_t)keysym, state);
+
+    if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
+        typio_wl_key_arbiter_press(&keyboard->arbiter, keyboard, session,
+                                   key, (uint32_t)keysym, modifiers,
+                                   unicode, time);
+    else
+        typio_wl_key_arbiter_release(&keyboard->arbiter, keyboard, session,
+                                     key, (uint32_t)keysym, modifiers,
+                                     unicode, time);
 }
 
 /* ── Modifier event handler ──────────────────────────────────────── */

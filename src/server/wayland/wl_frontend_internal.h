@@ -7,6 +7,7 @@
 #define TYPIO_WL_FRONTEND_INTERNAL_H
 
 #include "wl_frontend.h"
+#include "key_arbiter.h"
 #include "key_tracking.h"
 #include "lifecycle.h"
 #include "keyboard_repeat.h"
@@ -95,6 +96,9 @@ struct TypioWlKeyboard {
     size_t startup_suppressed_count;
     uint64_t created_at_ms;
 
+    /* Key event arbiter for system shortcut detection */
+    TypioKeyArbiter arbiter;
+
     /* Back reference */
     TypioWlFrontend *frontend;
 };
@@ -158,9 +162,6 @@ struct TypioWlFrontend {
     bool active_generation_owned_keys;
     bool active_generation_vk_dirty;
     bool carried_vk_modifiers;
-    bool shortcut_chord_saw_non_modifier;
-    bool shortcut_chord_switch_triggered;
-    bool shortcut_chord_armed;
 
     /* Session and keyboard state */
     TypioWlSession *session;
@@ -209,6 +210,16 @@ void typio_wl_keyboard_release_grab(TypioWlKeyboard *keyboard);
 void typio_wl_keyboard_cancel_repeat(TypioWlKeyboard *keyboard);
 int typio_wl_keyboard_get_repeat_fd(TypioWlKeyboard *keyboard);
 void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard);
+void typio_wl_keyboard_process_key_press(TypioWlKeyboard *keyboard,
+                                         TypioWlSession *session,
+                                         uint32_t key, uint32_t keysym,
+                                         uint32_t modifiers, uint32_t unicode,
+                                         uint32_t time);
+void typio_wl_keyboard_process_key_release(TypioWlKeyboard *keyboard,
+                                           TypioWlSession *session,
+                                           uint32_t key, uint32_t keysym,
+                                           uint32_t modifiers, uint32_t unicode,
+                                           uint32_t time);
 
 /* Popup functions (popup.c) */
 TypioWlPopup *typio_wl_popup_create(TypioWlFrontend *frontend);

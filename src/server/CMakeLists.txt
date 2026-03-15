@@ -23,6 +23,7 @@ if(HAVE_WAYLAND)
 
     list(APPEND TYPIO_SERVER_SOURCES
         wayland/boundary_bridge.c
+        wayland/key_arbiter.c
         wayland/key_debug.c
         wayland/key_tracking.c
         wayland/key_route.c

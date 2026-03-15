@@ -165,29 +165,6 @@ static bool key_route_is_app_shortcut(uint32_t keysym, uint32_t modifiers) {
     }
 }
 
-static void key_route_maybe_arm_engine_switch_chord(
-    TypioWlKeyboard *keyboard,
-    uint32_t keysym,
-    uint32_t modifiers) {
-    TypioWlFrontend *frontend;
-
-    if (!keyboard || !keyboard->frontend || !keyboard->frontend->instance)
-        return;
-
-    frontend = keyboard->frontend;
-    if (!typio_wl_shortcut_chord_should_switch_engine(
-            keysym,
-            modifiers,
-            frontend->shortcut_chord_saw_non_modifier,
-            frontend->shortcut_chord_switch_triggered)) {
-        return;
-    }
-
-    frontend->shortcut_chord_armed = true;
-    key_route_trace(keyboard, "shortcut-arm", 0, keysym, modifiers, 0,
-                    TYPIO_KEY_IDLE, "ctrl+shift chord armed");
-}
-
 void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
                                       TypioWlSession *session,
                                       uint32_t key,
@@ -242,11 +219,6 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         return;
     }
 
-    if (!typio_wl_shortcut_chord_is_switch_modifier(keysym) &&
-        (keyboard->physical_modifiers & (TYPIO_MOD_CTRL | TYPIO_MOD_SHIFT)) != 0) {
-        frontend->shortcut_chord_saw_non_modifier = true;
-    }
-
     key_claim_current_generation(frontend, key);
 
     suppress_reason = typio_wl_startup_guard_classify_press(
@@ -298,8 +270,6 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
                   key, keysym, modifiers);
         return;
     }
-
-    key_route_maybe_arm_engine_switch_chord(keyboard, keysym, modifiers);
 
     {
         TypioKeyEvent event = {

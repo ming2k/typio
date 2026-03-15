@@ -83,6 +83,25 @@ target_include_directories(test_repeat_guard PRIVATE
 )
 add_test(NAME test_repeat_guard COMMAND test_repeat_guard)
 
+add_executable(test_key_arbiter
+    test_key_arbiter.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/key_arbiter.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/shortcut_chord.c
+)
+target_include_directories(test_key_arbiter PRIVATE
+    ${CMAKE_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}/src/server/wayland-protocols
+    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/server
+    ${CMAKE_SOURCE_DIR}/src/server/tray
+    ${CMAKE_SOURCE_DIR}/src/server/voice
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+    ${DBUS_INCLUDE_DIRS}
+    ${WAYLAND_CLIENT_INCLUDE_DIRS}
+    ${XKBCOMMON_INCLUDE_DIRS}
+)
+add_test(NAME test_key_arbiter COMMAND test_key_arbiter)
+
 add_executable(test_shortcut_chord
     test_shortcut_chord.c
     ${CMAKE_SOURCE_DIR}/src/server/wayland/shortcut_chord.c
