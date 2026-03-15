@@ -416,6 +416,49 @@ TypioResult typio_config_save_file(const TypioConfig *config, const char *path) 
     return TYPIO_OK;
 }
 
+static void write_entry_value(FILE *stream, const char *key,
+                              const ConfigEntry *entry) {
+    switch (entry->value.type) {
+    case TYPIO_CONFIG_STRING:
+        fprintf(stream, "%s = ", key);
+        write_escaped_string(stream, entry->value.data.string_val);
+        fputc('\n', stream);
+        break;
+    case TYPIO_CONFIG_INT:
+        fprintf(stream, "%s = %d\n", key, entry->value.data.int_val);
+        break;
+    case TYPIO_CONFIG_BOOL:
+        fprintf(stream, "%s = %s\n", key,
+                entry->value.data.bool_val ? "true" : "false");
+        break;
+    case TYPIO_CONFIG_FLOAT:
+        fprintf(stream, "%s = %g\n", key, entry->value.data.float_val);
+        break;
+    default:
+        break;
+    }
+}
+
+/**
+ * Extract the section prefix from a dotted key (e.g. "voice" from "voice.backend").
+ * Returns empty string for top-level keys.  Writes into buf.
+ */
+static const char *entry_section(const ConfigEntry *entry,
+                                 char *buf, size_t buf_size) {
+    const char *dot = strchr(entry->key, '.');
+    if (!dot) {
+        buf[0] = '\0';
+        return buf;
+    }
+    size_t len = (size_t)(dot - entry->key);
+    if (len >= buf_size) {
+        len = buf_size - 1;
+    }
+    memcpy(buf, entry->key, len);
+    buf[len] = '\0';
+    return buf;
+}
+
 char *typio_config_to_string(const TypioConfig *config) {
     char *content = nullptr;
     size_t content_len = 0;
@@ -431,55 +474,51 @@ char *typio_config_to_string(const TypioConfig *config) {
 
     fputs(TYPIO_CONFIG_HEADER, stream);
 
-    char current_section[256] = "";
-    ConfigEntry *entry = config->entries;
-    while (entry) {
-        const char *dot = strchr(entry->key, '.');
-        const char *write_key = entry->key;
+    /* Collect unique section names in order of first appearance */
+    char sections[64][256];
+    size_t n_sections = 0;
 
-        if (dot) {
-            char section[256];
-            size_t section_len = (size_t)(dot - entry->key);
-            if (section_len >= sizeof(section)) {
-                section_len = sizeof(section) - 1;
-            }
-            memcpy(section, entry->key, section_len);
-            section[section_len] = '\0';
+    /* First pass: collect top-level keys (no section) */
+    for (ConfigEntry *e = config->entries; e; e = e->next) {
+        if (!strchr(e->key, '.')) {
+            write_entry_value(stream, e->key, e);
+        }
+    }
 
-            if (strcmp(section, current_section) != 0) {
-                strncpy(current_section, section, sizeof(current_section) - 1);
-                current_section[sizeof(current_section) - 1] = '\0';
-                fprintf(stream, "\n[%s]\n", current_section);
-            }
-            write_key = dot + 1;
-        } else {
-            if (current_section[0] != '\0') {
-                current_section[0] = '\0';
-                fprintf(stream, "\n");
+    /* Collect unique sections */
+    for (ConfigEntry *e = config->entries; e; e = e->next) {
+        char sec[256];
+        entry_section(e, sec, sizeof(sec));
+        if (sec[0] == '\0') {
+            continue;
+        }
+        bool found = false;
+        for (size_t i = 0; i < n_sections; i++) {
+            if (strcmp(sections[i], sec) == 0) {
+                found = true;
+                break;
             }
         }
-
-        switch (entry->value.type) {
-            case TYPIO_CONFIG_STRING:
-                fprintf(stream, "%s = ", write_key);
-                write_escaped_string(stream, entry->value.data.string_val);
-                fputc('\n', stream);
-                break;
-            case TYPIO_CONFIG_INT:
-                fprintf(stream, "%s = %d\n", write_key, entry->value.data.int_val);
-                break;
-            case TYPIO_CONFIG_BOOL:
-                fprintf(stream, "%s = %s\n", write_key,
-                        entry->value.data.bool_val ? "true" : "false");
-                break;
-            case TYPIO_CONFIG_FLOAT:
-                fprintf(stream, "%s = %g\n", write_key, entry->value.data.float_val);
-                break;
-            default:
-                break;
+        if (!found && n_sections < 64) {
+            strncpy(sections[n_sections], sec, 255);
+            sections[n_sections][255] = '\0';
+            n_sections++;
         }
+    }
 
-        entry = entry->next;
+    /* Second pass: output each section with all its entries grouped */
+    for (size_t i = 0; i < n_sections; i++) {
+        fprintf(stream, "\n[%s]\n", sections[i]);
+        size_t prefix_len = strlen(sections[i]);
+
+        for (ConfigEntry *e = config->entries; e; e = e->next) {
+            char sec[256];
+            entry_section(e, sec, sizeof(sec));
+            if (strcmp(sec, sections[i]) == 0) {
+                const char *subkey = e->key + prefix_len + 1;
+                write_entry_value(stream, subkey, e);
+            }
+        }
     }
 
     fclose(stream);
