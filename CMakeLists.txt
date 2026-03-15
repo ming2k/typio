@@ -29,8 +29,9 @@ option(BUILD_RIME_ENGINE "Build the Rime engine" ON)
 option(BUILD_MOZC_ENGINE "Build the Mozc Japanese input engine" OFF)
 option(ENABLE_WAYLAND "Enable Wayland input-method frontend support" ON)
 option(ENABLE_STATUS_BUS "Enable D-Bus runtime status/control interface" ON)
-option(ENABLE_SYSTRAY "Enable StatusNotifierItem tray support" ON)
+option(ENABLE_SYSTRAY "Enable StatusNotifierItem tray support" OFF)
 option(BUILD_WHISPER "Build Whisper voice input support" OFF)
+option(BUILD_SHERPA_ONNX "Build sherpa-onnx voice input support" OFF)
 set(TYPIO_AUTOSTART_DIR "/etc/xdg/autostart" CACHE PATH
     "Directory where the Typio desktop autostart entry is installed")
 
@@ -75,6 +76,13 @@ if(BUILD_MOZC_ENGINE)
     set(HAVE_MOZC ON)
 endif()
 
+# Voice input backends — at least one of BUILD_WHISPER / BUILD_SHERPA_ONNX
+# is needed for voice input.  PipeWire is required by both.
+if(BUILD_WHISPER OR BUILD_SHERPA_ONNX)
+    pkg_check_modules(PIPEWIRE REQUIRED libpipewire-0.3)
+    set(HAVE_VOICE ON)
+endif()
+
 if(BUILD_WHISPER)
     # whisper.cpp may be installed under a private prefix (e.g. /usr/lib/whisper.cpp)
     # to avoid file collisions with llama.cpp's bundled ggml.
@@ -84,7 +92,6 @@ if(BUILD_WHISPER)
         "${WHISPER_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
 
     pkg_check_modules(WHISPER REQUIRED whisper)
-    pkg_check_modules(PIPEWIRE REQUIRED libpipewire-0.3)
 
     # whisper.pc Libs has wrong link order for static builds and may omit
     # transitive deps (ggml-cpu, OpenMP, C++ runtime).
@@ -103,6 +110,29 @@ if(BUILD_WHISPER)
     endif()
 
     set(HAVE_WHISPER ON)
+endif()
+
+if(BUILD_SHERPA_ONNX)
+    set(SHERPA_ONNX_PREFIX "" CACHE PATH
+        "Installation prefix of sherpa-onnx (leave empty for system default)")
+    if(SHERPA_ONNX_PREFIX)
+        set(ENV{PKG_CONFIG_PATH}
+            "${SHERPA_ONNX_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+        list(APPEND CMAKE_PREFIX_PATH "${SHERPA_ONNX_PREFIX}")
+    endif()
+
+    find_library(SHERPA_ONNX_C_LIB sherpa-onnx-c-api
+        HINTS "${SHERPA_ONNX_PREFIX}/lib")
+    find_path(SHERPA_ONNX_INCLUDE_DIR sherpa-onnx/c-api/c-api.h
+        HINTS "${SHERPA_ONNX_PREFIX}/include")
+
+    if(NOT SHERPA_ONNX_C_LIB OR NOT SHERPA_ONNX_INCLUDE_DIR)
+        message(FATAL_ERROR "sherpa-onnx not found. Set SHERPA_ONNX_PREFIX or install sherpa-onnx.")
+    endif()
+
+    set(SHERPA_ONNX_LINK_LIBRARIES ${SHERPA_ONNX_C_LIB})
+    set(SHERPA_ONNX_INCLUDE_DIRS ${SHERPA_ONNX_INCLUDE_DIR})
+    set(HAVE_SHERPA_ONNX ON)
 endif()
 
 configure_file(

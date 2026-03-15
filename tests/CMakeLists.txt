@@ -87,6 +87,7 @@ add_executable(test_key_arbiter
     test_key_arbiter.c
     ${CMAKE_SOURCE_DIR}/src/server/wayland/key_arbiter.c
     ${CMAKE_SOURCE_DIR}/src/server/wayland/shortcut_chord.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/shortcut_config.c
 )
 target_include_directories(test_key_arbiter PRIVATE
     ${CMAKE_BINARY_DIR}
@@ -100,6 +101,7 @@ target_include_directories(test_key_arbiter PRIVATE
     ${WAYLAND_CLIENT_INCLUDE_DIRS}
     ${XKBCOMMON_INCLUDE_DIRS}
 )
+target_link_libraries(test_key_arbiter PRIVATE typio-core)
 add_test(NAME test_key_arbiter COMMAND test_key_arbiter)
 
 add_executable(test_shortcut_chord
@@ -109,6 +111,7 @@ add_executable(test_shortcut_chord
 target_include_directories(test_shortcut_chord PRIVATE
     ${CMAKE_SOURCE_DIR}/src/lib
     ${CMAKE_SOURCE_DIR}/src/server/wayland
+    ${XKBCOMMON_INCLUDE_DIRS}
 )
 add_test(NAME test_shortcut_chord COMMAND test_shortcut_chord)
 

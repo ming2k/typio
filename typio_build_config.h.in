@@ -18,6 +18,8 @@
 #cmakedefine HAVE_WAYLAND
 #cmakedefine HAVE_STATUS_BUS
 #cmakedefine HAVE_SYSTRAY
+#cmakedefine HAVE_VOICE
 #cmakedefine HAVE_WHISPER
+#cmakedefine HAVE_SHERPA_ONNX
 
 #endif /* TYPIO_BUILD_CONFIG_H */

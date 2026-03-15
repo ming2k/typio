@@ -861,7 +861,8 @@ static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
         build_menu_item(&children, item_id++, nullptr, "separator", TRUE);
     }
 
-    /* Quit */
+    /* Restart / Quit */
+    build_menu_item(&children, 98, "Restart", nullptr, TRUE);
     build_menu_item(&children, 99, "Quit", nullptr, TRUE);
 
     dbus_message_iter_close_container(&root_st, &children);
@@ -890,7 +891,12 @@ static DBusMessage *handle_menu_event(TypioTray *tray, DBusMessage *msg) {
     typio_log(TYPIO_LOG_DEBUG, "Menu event: id=%d, type=%s", id, event_type);
 
     if (strcmp(event_type, "clicked") == 0) {
-        if (id == 99) {
+        if (id == 98) {
+            /* Restart clicked */
+            if (tray->menu_callback) {
+                tray->menu_callback(tray, "restart", tray->user_data);
+            }
+        } else if (id == 99) {
             /* Quit clicked */
             if (tray->menu_callback) {
                 tray->menu_callback(tray, "quit", tray->user_data);

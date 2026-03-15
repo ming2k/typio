@@ -28,6 +28,8 @@
 #endif
 
 static TypioInstance *g_instance = nullptr;
+static char **g_argv = nullptr;
+static bool g_restart_requested = false;
 #ifdef HAVE_WAYLAND
 static TypioWlFrontend *g_wl_frontend = nullptr;
 #endif
@@ -185,6 +187,13 @@ static void tray_menu_callback([[maybe_unused]] TypioTray *tray, const char *act
             typio_wl_frontend_stop(g_wl_frontend);
         }
 #endif
+    } else if (strcmp(action, "restart") == 0) {
+        g_restart_requested = true;
+#ifdef HAVE_WAYLAND
+        if (g_wl_frontend) {
+            typio_wl_frontend_stop(g_wl_frontend);
+        }
+#endif
     } else if (strcmp(action, "activate") == 0) {
         /* Left-click: cycle to next engine */
         TypioEngineManager *manager = typio_instance_get_engine_manager(g_instance);
@@ -254,6 +263,8 @@ static void on_engine_change([[maybe_unused]] TypioInstance *instance,
 }
 
 int main(int argc, char *argv[]) {
+    g_argv = argv;
+
     static struct option long_options[] = {
         {"config",  required_argument, 0, 'c'},
         {"data",    required_argument, 0, 'd'},
@@ -482,6 +493,14 @@ int main(int argc, char *argv[]) {
 
     /* Cleanup */
     typio_instance_free(g_instance);
+
+    if (g_restart_requested) {
+        printf("Restarting...\n");
+        execv(g_argv[0], g_argv);
+        /* execv only returns on failure */
+        perror("execv");
+        return 1;
+    }
 
     printf("Goodbye!\n");
 

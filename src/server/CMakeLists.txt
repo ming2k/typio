@@ -6,6 +6,7 @@ set(TYPIO_SERVER_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/src/lib
 )
+set(TYPIO_SERVER_SYSTEM_INCLUDE_DIRS)
 set(TYPIO_SERVER_LIBRARIES typio-core dl)
 
 # Wayland frontend support
@@ -34,6 +35,7 @@ if(HAVE_WAYLAND)
         wayland/popup.c
         wayland/repeat_guard.c
         wayland/shortcut_chord.c
+        wayland/shortcut_config.c
         wayland/startup_guard.c
         wayland/vk_bridge.c
         wayland/wl_frontend.c
@@ -48,6 +50,9 @@ if(HAVE_WAYLAND)
     list(APPEND TYPIO_SERVER_INCLUDE_DIRS
         ${CMAKE_CURRENT_BINARY_DIR}/wayland-protocols
         ${CMAKE_CURRENT_SOURCE_DIR}/wayland
+    )
+
+    list(APPEND TYPIO_SERVER_SYSTEM_INCLUDE_DIRS
         ${CAIRO_PANGO_INCLUDE_DIRS}
         ${WAYLAND_CLIENT_INCLUDE_DIRS}
         ${XKBCOMMON_INCLUDE_DIRS}
@@ -66,7 +71,7 @@ if(HAVE_STATUS_BUS)
         status/status.c
     )
 
-    list(APPEND TYPIO_SERVER_INCLUDE_DIRS
+    list(APPEND TYPIO_SERVER_SYSTEM_INCLUDE_DIRS
         ${DBUS_INCLUDE_DIRS}
     )
 
@@ -88,8 +93,8 @@ if(HAVE_SYSTRAY)
     )
 endif()
 
-# Whisper voice input support
-if(HAVE_WHISPER)
+# Voice input support (shared infrastructure)
+if(HAVE_VOICE)
     list(APPEND TYPIO_SERVER_SOURCES
         voice/voice_service.c
         voice/pw_capture.c
@@ -97,23 +102,43 @@ if(HAVE_WHISPER)
 
     list(APPEND TYPIO_SERVER_INCLUDE_DIRS
         ${CMAKE_CURRENT_SOURCE_DIR}/voice
-        ${WHISPER_INCLUDE_DIRS}
+    )
+
+    list(APPEND TYPIO_SERVER_SYSTEM_INCLUDE_DIRS
         ${PIPEWIRE_INCLUDE_DIRS}
     )
 
     list(APPEND TYPIO_SERVER_LIBRARIES
-        ${WHISPER_LINK_LIBRARIES}
         ${PIPEWIRE_LIBRARIES}
         pthread
     )
 endif()
 
+# Whisper backend
+if(HAVE_WHISPER)
+    list(APPEND TYPIO_SERVER_SOURCES voice/voice_whisper.c)
+    list(APPEND TYPIO_SERVER_SYSTEM_INCLUDE_DIRS ${WHISPER_INCLUDE_DIRS})
+    list(APPEND TYPIO_SERVER_LIBRARIES ${WHISPER_LINK_LIBRARIES})
+endif()
+
+# Sherpa-ONNX backend
+if(HAVE_SHERPA_ONNX)
+    list(APPEND TYPIO_SERVER_SOURCES voice/voice_sherpa.c)
+    list(APPEND TYPIO_SERVER_SYSTEM_INCLUDE_DIRS ${SHERPA_ONNX_INCLUDE_DIRS})
+    list(APPEND TYPIO_SERVER_LIBRARIES ${SHERPA_ONNX_LINK_LIBRARIES})
+endif()
+
 add_executable(typio-server ${TYPIO_SERVER_SOURCES})
 
 target_include_directories(typio-server PRIVATE ${TYPIO_SERVER_INCLUDE_DIRS})
+target_include_directories(typio-server SYSTEM PRIVATE ${TYPIO_SERVER_SYSTEM_INCLUDE_DIRS})
 
 if(HAVE_WHISPER AND WHISPER_LIBRARY_DIRS)
     target_link_directories(typio-server PRIVATE ${WHISPER_LIBRARY_DIRS})
+endif()
+
+if(HAVE_SHERPA_ONNX AND SHERPA_ONNX_PREFIX)
+    target_link_directories(typio-server PRIVATE "${SHERPA_ONNX_PREFIX}/lib")
 endif()
 
 target_link_libraries(typio-server PRIVATE ${TYPIO_SERVER_LIBRARIES})
