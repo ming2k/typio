@@ -45,8 +45,9 @@ struct TypioEngineManager {
     EngineEntry **entries;
     size_t entry_count;
     size_t entry_capacity;
-    size_t active_index;
-    size_t prev_active_index;
+    size_t active_keyboard_index;
+    size_t active_voice_index;
+    size_t prev_active_keyboard_index;
     uint64_t last_switch_ms;
     const char **name_list;
     size_t name_list_size;
@@ -84,8 +85,9 @@ TypioEngineManager *typio_engine_manager_new(TypioInstance *instance) {
         return nullptr;
     }
 
-    manager->active_index = (size_t)-1;  /* No active engine */
-    manager->prev_active_index = (size_t)-1;
+    manager->active_keyboard_index = (size_t)-1;
+    manager->active_voice_index = (size_t)-1;
+    manager->prev_active_keyboard_index = (size_t)-1;
 
     return manager;
 }
@@ -322,20 +324,28 @@ TypioResult typio_engine_manager_unload(TypioEngineManager *manager,
 
     for (size_t i = 0; i < manager->entry_count; i++) {
         if (strcmp(manager->entries[i]->name, name) == 0) {
-            /* Deactivate if active */
-            if (i == manager->active_index) {
-                manager->active_index = (size_t)-1;
-            } else if (manager->active_index != (size_t)-1 &&
-                       manager->active_index > i) {
-                manager->active_index--;
+            /* Deactivate if active (keyboard slot) */
+            if (i == manager->active_keyboard_index) {
+                manager->active_keyboard_index = (size_t)-1;
+            } else if (manager->active_keyboard_index != (size_t)-1 &&
+                       manager->active_keyboard_index > i) {
+                manager->active_keyboard_index--;
             }
 
-            /* Keep prev_active_index consistent */
-            if (i == manager->prev_active_index) {
-                manager->prev_active_index = (size_t)-1;
-            } else if (manager->prev_active_index != (size_t)-1 &&
-                       manager->prev_active_index > i) {
-                manager->prev_active_index--;
+            /* Deactivate if active (voice slot) */
+            if (i == manager->active_voice_index) {
+                manager->active_voice_index = (size_t)-1;
+            } else if (manager->active_voice_index != (size_t)-1 &&
+                       manager->active_voice_index > i) {
+                manager->active_voice_index--;
+            }
+
+            /* Keep prev_active_keyboard_index consistent */
+            if (i == manager->prev_active_keyboard_index) {
+                manager->prev_active_keyboard_index = (size_t)-1;
+            } else if (manager->prev_active_keyboard_index != (size_t)-1 &&
+                       manager->prev_active_keyboard_index > i) {
+                manager->prev_active_keyboard_index--;
             }
 
             free_engine_entry(manager->entries[i]);
@@ -450,21 +460,62 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
         return TYPIO_ERROR_NOT_FOUND;
     }
 
-    /* Already active? */
-    if (index == manager->active_index) {
+    EngineEntry *entry = manager->entries[index];
+    bool is_voice = entry->info->type == TYPIO_ENGINE_TYPE_VOICE;
+
+    /* Route to voice slot if this is a voice engine */
+    if (is_voice) {
+        if (index == manager->active_voice_index) {
+            return TYPIO_OK;
+        }
+
+        /* Deactivate current voice engine */
+        if (manager->active_voice_index != (size_t)-1) {
+            EngineEntry *current = manager->entries[manager->active_voice_index];
+            if (current->instance) {
+                typio_engine_deactivate(current->instance);
+            }
+        }
+
+        /* Get or create engine instance */
+        if (!entry->instance) {
+            entry->instance = entry->factory();
+            if (!entry->instance) {
+                typio_log_error("Failed to create engine instance: %s", name);
+                return TYPIO_ERROR_ENGINE_LOAD_FAILED;
+            }
+
+            char *config_path = get_engine_config_path(manager, entry->name);
+            if (config_path) {
+                typio_engine_set_config_path(entry->instance, config_path);
+                free(config_path);
+            }
+        }
+
+        TypioResult result = typio_engine_activate(entry->instance, manager->instance);
+        if (result != TYPIO_OK) {
+            return result;
+        }
+
+        manager->active_voice_index = index;
+        typio_log_info("Active voice engine: %s", entry->info->name);
         return TYPIO_OK;
     }
 
-    /* Deactivate current engine */
-    if (manager->active_index != (size_t)-1) {
-        EngineEntry *current = manager->entries[manager->active_index];
+    /* Keyboard engine path */
+    if (index == manager->active_keyboard_index) {
+        return TYPIO_OK;
+    }
+
+    /* Deactivate current keyboard engine */
+    if (manager->active_keyboard_index != (size_t)-1) {
+        EngineEntry *current = manager->entries[manager->active_keyboard_index];
         if (current->instance) {
             typio_engine_deactivate(current->instance);
         }
     }
 
     /* Get or create engine instance */
-    EngineEntry *entry = manager->entries[index];
     if (!entry->instance) {
         entry->instance = entry->factory();
         if (!entry->instance) {
@@ -472,7 +523,6 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
             return TYPIO_ERROR_ENGINE_LOAD_FAILED;
         }
 
-        /* Set XDG config path */
         char *config_path = get_engine_config_path(manager, entry->name);
         if (config_path) {
             typio_engine_set_config_path(entry->instance, config_path);
@@ -486,8 +536,8 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
         return result;
     }
 
-    manager->prev_active_index = manager->active_index;
-    manager->active_index = index;
+    manager->prev_active_keyboard_index = manager->active_keyboard_index;
+    manager->active_keyboard_index = index;
     manager->last_switch_ms = engine_manager_monotonic_ms();
 
     /* Notify instance */
@@ -497,11 +547,65 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
 }
 
 TypioEngine *typio_engine_manager_get_active(TypioEngineManager *manager) {
-    if (!manager || manager->active_index == (size_t)-1) {
+    if (!manager || manager->active_keyboard_index == (size_t)-1) {
         return nullptr;
     }
 
-    return manager->entries[manager->active_index]->instance;
+    return manager->entries[manager->active_keyboard_index]->instance;
+}
+
+TypioResult typio_engine_manager_set_active_voice(TypioEngineManager *manager,
+                                                   const char *name) {
+    if (!manager || !name) {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    /* Validate that the named engine is actually a voice engine */
+    const TypioEngineInfo *info = typio_engine_manager_get_info(manager, name);
+    if (!info) {
+        return TYPIO_ERROR_NOT_FOUND;
+    }
+    if (info->type != TYPIO_ENGINE_TYPE_VOICE) {
+        typio_log_error("Engine '%s' is not a voice engine", name);
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    return typio_engine_manager_set_active(manager, name);
+}
+
+TypioEngine *typio_engine_manager_get_active_voice(TypioEngineManager *manager) {
+    if (!manager || manager->active_voice_index == (size_t)-1) {
+        return nullptr;
+    }
+
+    return manager->entries[manager->active_voice_index]->instance;
+}
+
+/**
+ * Find next keyboard engine index, wrapping around and skipping voice engines.
+ * Returns (size_t)-1 if no keyboard engine exists.
+ */
+static size_t find_next_keyboard(TypioEngineManager *manager, size_t from) {
+    for (size_t i = 0; i < manager->entry_count; i++) {
+        size_t idx = (from + i) % manager->entry_count;
+        if (manager->entries[idx]->info->type != TYPIO_ENGINE_TYPE_VOICE) {
+            return idx;
+        }
+    }
+    return (size_t)-1;
+}
+
+/**
+ * Find previous keyboard engine index, wrapping around and skipping voice engines.
+ */
+static size_t find_prev_keyboard(TypioEngineManager *manager, size_t from) {
+    for (size_t i = 0; i < manager->entry_count; i++) {
+        size_t idx = (from + manager->entry_count - i) % manager->entry_count;
+        if (manager->entries[idx]->info->type != TYPIO_ENGINE_TYPE_VOICE) {
+            return idx;
+        }
+    }
+    return (size_t)-1;
 }
 
 TypioResult typio_engine_manager_next(TypioEngineManager *manager) {
@@ -510,8 +614,8 @@ TypioResult typio_engine_manager_next(TypioEngineManager *manager) {
     }
 
     size_t next_index;
-    if (manager->active_index == (size_t)-1) {
-        next_index = 0;
+    if (manager->active_keyboard_index == (size_t)-1) {
+        next_index = find_next_keyboard(manager, 0);
     } else {
         uint64_t now_ms = engine_manager_monotonic_ms();
         uint64_t elapsed = now_ms - manager->last_switch_ms;
@@ -519,13 +623,19 @@ TypioResult typio_engine_manager_next(TypioEngineManager *manager) {
         /* MRU: if enough time has passed and we have a previous engine,
          * switch back to it instead of cycling sequentially */
         if (elapsed > TYPIO_MRU_THRESHOLD_MS &&
-            manager->prev_active_index != (size_t)-1 &&
-            manager->prev_active_index != manager->active_index &&
-            manager->prev_active_index < manager->entry_count) {
-            next_index = manager->prev_active_index;
+            manager->prev_active_keyboard_index != (size_t)-1 &&
+            manager->prev_active_keyboard_index != manager->active_keyboard_index &&
+            manager->prev_active_keyboard_index < manager->entry_count &&
+            manager->entries[manager->prev_active_keyboard_index]->info->type != TYPIO_ENGINE_TYPE_VOICE) {
+            next_index = manager->prev_active_keyboard_index;
         } else {
-            next_index = (manager->active_index + 1) % manager->entry_count;
+            size_t start = (manager->active_keyboard_index + 1) % manager->entry_count;
+            next_index = find_next_keyboard(manager, start);
         }
+    }
+
+    if (next_index == (size_t)-1) {
+        return TYPIO_ERROR_ENGINE_NOT_AVAILABLE;
     }
 
     return typio_engine_manager_set_active(manager,
@@ -538,12 +648,20 @@ TypioResult typio_engine_manager_prev(TypioEngineManager *manager) {
     }
 
     size_t prev_index;
-    if (manager->active_index == (size_t)-1) {
-        prev_index = manager->entry_count - 1;
-    } else if (manager->active_index == 0) {
-        prev_index = manager->entry_count - 1;
+    if (manager->active_keyboard_index == (size_t)-1) {
+        prev_index = find_prev_keyboard(manager, manager->entry_count - 1);
     } else {
-        prev_index = manager->active_index - 1;
+        size_t start;
+        if (manager->active_keyboard_index == 0) {
+            start = manager->entry_count - 1;
+        } else {
+            start = manager->active_keyboard_index - 1;
+        }
+        prev_index = find_prev_keyboard(manager, start);
+    }
+
+    if (prev_index == (size_t)-1) {
+        return TYPIO_ERROR_ENGINE_NOT_AVAILABLE;
     }
 
     return typio_engine_manager_set_active(manager,

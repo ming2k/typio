@@ -29,6 +29,9 @@ void typio_voice_service_dispatch(TypioVoiceService *svc,
 bool typio_voice_service_is_available(TypioVoiceService *svc);
 void typio_voice_service_reload(TypioVoiceService *svc);
 
+/** Return a human-readable reason why voice is unavailable, or NULL if ready. */
+const char *typio_voice_service_get_unavail_reason(TypioVoiceService *svc);
+
 #ifdef __cplusplus
 }
 #endif

@@ -109,6 +109,28 @@ static TypioEngine *mock2_create(void) {
     return typio_engine_new(&mock2_engine_info, &mock_engine_ops);
 }
 
+/* Mock voice engine */
+static const TypioEngineInfo mock_voice_info = {
+    .name = "mock-voice",
+    .display_name = "Mock Voice Engine",
+    .description = "A mock voice engine for testing",
+    .version = "1.0.0",
+    .author = "Test",
+    .icon = NULL,
+    .language = NULL,
+    .type = TYPIO_ENGINE_TYPE_VOICE,
+    .capabilities = TYPIO_CAP_VOICE_INPUT,
+    .api_version = TYPIO_API_VERSION,
+};
+
+static const TypioEngineInfo *mock_voice_get_info(void) {
+    return &mock_voice_info;
+}
+
+static TypioEngine *mock_voice_create(void) {
+    return typio_engine_new(&mock_voice_info, &mock_engine_ops);
+}
+
 /* Test: Engine manager creation */
 TEST(manager_create) {
     TypioInstance *instance = typio_instance_new();
@@ -312,6 +334,98 @@ TEST(engine_user_data) {
     typio_engine_free(engine);
 }
 
+/* Test: Voice engine activation uses separate slot */
+TEST(voice_engine_activation) {
+    TypioInstance *instance = typio_instance_new();
+    typio_instance_init(instance);
+
+    TypioEngineManager *manager = typio_instance_get_engine_manager(instance);
+
+    typio_engine_manager_register(manager, mock_create, mock_get_info);
+    typio_engine_manager_register(manager, mock_voice_create, mock_voice_get_info);
+
+    /* Activate keyboard engine */
+    typio_engine_manager_set_active(manager, "mock");
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock");
+
+    /* No voice engine active yet */
+    ASSERT_NULL(typio_engine_manager_get_active_voice(manager));
+
+    /* Activate voice engine - should not change keyboard slot */
+    TypioResult result = typio_engine_manager_set_active_voice(manager, "mock-voice");
+    ASSERT_EQ(result, TYPIO_OK);
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock");
+    ASSERT_NOT_NULL(typio_engine_manager_get_active_voice(manager));
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active_voice(manager)), "mock-voice");
+
+    /* set_active with voice engine name should also route to voice slot */
+    typio_engine_manager_set_active(manager, "mock-voice");
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock");
+
+    /* set_active_voice with keyboard engine should fail */
+    result = typio_engine_manager_set_active_voice(manager, "mock");
+    ASSERT_EQ(result, TYPIO_ERROR_INVALID_ARGUMENT);
+
+    typio_instance_free(instance);
+}
+
+/* Test: next/prev skip voice engines */
+TEST(next_prev_skip_voice) {
+    TypioInstance *instance = typio_instance_new();
+    typio_instance_init(instance);
+
+    TypioEngineManager *manager = typio_instance_get_engine_manager(instance);
+
+    typio_engine_manager_register(manager, mock_create, mock_get_info);
+    typio_engine_manager_register(manager, mock_voice_create, mock_voice_get_info);
+    typio_engine_manager_register(manager, mock2_create, mock2_get_info);
+
+    /* Start at mock, cycle forward: should go mock → mock2 → basic → mock,
+     * never landing on mock-voice */
+    typio_engine_manager_set_active(manager, "mock");
+
+    typio_engine_manager_next(manager);
+    const char *name = typio_engine_get_name(typio_engine_manager_get_active(manager));
+    ASSERT(strcmp(name, "mock-voice") != 0);
+
+    typio_engine_manager_next(manager);
+    name = typio_engine_get_name(typio_engine_manager_get_active(manager));
+    ASSERT(strcmp(name, "mock-voice") != 0);
+
+    typio_engine_manager_next(manager);
+    name = typio_engine_get_name(typio_engine_manager_get_active(manager));
+    ASSERT(strcmp(name, "mock-voice") != 0);
+
+    /* Cycle backward similarly */
+    typio_engine_manager_prev(manager);
+    name = typio_engine_get_name(typio_engine_manager_get_active(manager));
+    ASSERT(strcmp(name, "mock-voice") != 0);
+
+    typio_engine_manager_prev(manager);
+    name = typio_engine_get_name(typio_engine_manager_get_active(manager));
+    ASSERT(strcmp(name, "mock-voice") != 0);
+
+    typio_instance_free(instance);
+}
+
+/* Test: Unload voice engine clears voice slot */
+TEST(unload_voice_engine) {
+    TypioInstance *instance = typio_instance_new();
+    typio_instance_init(instance);
+
+    TypioEngineManager *manager = typio_instance_get_engine_manager(instance);
+
+    typio_engine_manager_register(manager, mock_voice_create, mock_voice_get_info);
+
+    typio_engine_manager_set_active_voice(manager, "mock-voice");
+    ASSERT_NOT_NULL(typio_engine_manager_get_active_voice(manager));
+
+    typio_engine_manager_unload(manager, "mock-voice");
+    ASSERT_NULL(typio_engine_manager_get_active_voice(manager));
+
+    typio_instance_free(instance);
+}
+
 int main(void) {
     printf("Running engine manager tests:\n");
 
@@ -324,6 +438,9 @@ int main(void) {
     run_test_unload_engine();
     run_test_engine_capabilities();
     run_test_engine_user_data();
+    run_test_voice_engine_activation();
+    run_test_next_prev_skip_voice();
+    run_test_unload_voice_engine();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
 

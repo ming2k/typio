@@ -91,7 +91,7 @@ TypioEngine *typio_engine_manager_get_engine(TypioEngineManager *manager,
                                               const char *name);
 
 /**
- * @brief Set the active engine
+ * @brief Set the active engine (keyboard or voice, based on engine type)
  * @param manager Engine manager
  * @param name Engine name to activate
  * @return TYPIO_OK on success, error code on failure
@@ -100,21 +100,37 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
                                              const char *name);
 
 /**
- * @brief Get the currently active engine
+ * @brief Set the active voice engine
  * @param manager Engine manager
- * @return Active engine or nullptr if none
+ * @param name Voice engine name to activate
+ * @return TYPIO_OK on success, error code on failure
+ */
+TypioResult typio_engine_manager_set_active_voice(TypioEngineManager *manager,
+                                                   const char *name);
+
+/**
+ * @brief Get the currently active keyboard engine
+ * @param manager Engine manager
+ * @return Active keyboard engine or nullptr if none
  */
 TypioEngine *typio_engine_manager_get_active(TypioEngineManager *manager);
 
 /**
- * @brief Switch to the next available engine
+ * @brief Get the currently active voice engine
+ * @param manager Engine manager
+ * @return Active voice engine or nullptr if none
+ */
+TypioEngine *typio_engine_manager_get_active_voice(TypioEngineManager *manager);
+
+/**
+ * @brief Switch to the next available keyboard engine
  * @param manager Engine manager
  * @return TYPIO_OK on success, error code on failure
  */
 TypioResult typio_engine_manager_next(TypioEngineManager *manager);
 
 /**
- * @brief Switch to the previous available engine
+ * @brief Switch to the previous available keyboard engine
  * @param manager Engine manager
  * @return TYPIO_OK on success, error code on failure
  */

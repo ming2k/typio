@@ -20,6 +20,7 @@ typedef enum {
     TYPIO_KEY_RELEASED_PENDING,
     TYPIO_KEY_SUPPRESSED_STARTUP,
     TYPIO_KEY_VOICE_PTT,
+    TYPIO_KEY_VOICE_PTT_UNAVAIL,
 } TypioKeyTrackState;
 
 void typio_wl_key_tracking_reset(TypioKeyTrackState *states, size_t count);

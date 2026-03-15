@@ -452,7 +452,7 @@ TypioResult typio_instance_reload_config(TypioInstance *instance) {
         active = typio_engine_manager_get_active(instance->engine_manager);
     }
 
-    /* Notify engines to reload their configs */
+    /* Notify keyboard engine to reload its config */
     if (active && active->ops->reload_config) {
         active->ops->reload_config(active);
     }

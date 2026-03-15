@@ -116,14 +116,20 @@ endif()
 
 # Whisper backend
 if(HAVE_WHISPER)
-    list(APPEND TYPIO_SERVER_SOURCES voice/voice_whisper.c)
+    list(APPEND TYPIO_SERVER_SOURCES
+        voice/voice_whisper.c
+        voice/voice_engine_whisper.c
+    )
     list(APPEND TYPIO_SERVER_SYSTEM_INCLUDE_DIRS ${WHISPER_INCLUDE_DIRS})
     list(APPEND TYPIO_SERVER_LIBRARIES ${WHISPER_LINK_LIBRARIES})
 endif()
 
 # Sherpa-ONNX backend
 if(HAVE_SHERPA_ONNX)
-    list(APPEND TYPIO_SERVER_SOURCES voice/voice_sherpa.c)
+    list(APPEND TYPIO_SERVER_SOURCES
+        voice/voice_sherpa.c
+        voice/voice_engine_sherpa.c
+    )
     list(APPEND TYPIO_SERVER_SYSTEM_INCLUDE_DIRS ${SHERPA_ONNX_INCLUDE_DIRS})
     list(APPEND TYPIO_SERVER_LIBRARIES ${SHERPA_ONNX_LINK_LIBRARIES})
 endif()

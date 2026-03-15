@@ -38,6 +38,17 @@ static const struct wl_seat_listener seat_listener = {
     .name = seat_handle_name,
 };
 
+/**
+ * Reload runtime configuration for all subsystems.
+ *
+ * Ordering contract — each step may depend on the previous:
+ *   1. instance_reload_config — re-reads TOML, switches keyboard engine
+ *   2. shortcuts — re-parse shortcut bindings from new config
+ *   3. voice engine switch — check default_voice_engine, activate if changed
+ *   4. voice engine reload — tell backend to re-read its config section
+ *   5. voice service refresh — re-fetch engine reference, ensure audio infra
+ *   6. status bus — broadcast property change to D-Bus listeners
+ */
 static void frontend_refresh_runtime_config(TypioWlFrontend *frontend) {
     if (!frontend || !frontend->instance) {
         return;
@@ -45,6 +56,7 @@ static void frontend_refresh_runtime_config(TypioWlFrontend *frontend) {
 
     typio_log(TYPIO_LOG_DEBUG, "Config reload: begin");
 
+    /* 1. Core: re-read TOML, switch keyboard engine, reload its config */
     if (typio_instance_reload_config(frontend->instance) != TYPIO_OK) {
         typio_log(TYPIO_LOG_WARNING, "Config reload: failed to reload instance config");
         return;
@@ -52,27 +64,56 @@ static void frontend_refresh_runtime_config(TypioWlFrontend *frontend) {
 
     TypioConfig *config = typio_instance_get_config(frontend->instance);
 
-    /* Reload shortcut bindings */
+    /* 2. Shortcuts */
     typio_shortcut_config_load(&frontend->shortcuts, config);
-    char *sw = typio_shortcut_format(&frontend->shortcuts.switch_engine);
-    char *ptt = typio_shortcut_format(&frontend->shortcuts.voice_ptt);
-    typio_log(TYPIO_LOG_INFO,
-              "Config reload: shortcuts switch_engine=%s voice_ptt=%s",
-              sw ? sw : "(none)", ptt ? ptt : "(none)");
-    free(sw);
-    free(ptt);
+    {
+        char *sw = typio_shortcut_format(&frontend->shortcuts.switch_engine);
+        char *ptt = typio_shortcut_format(&frontend->shortcuts.voice_ptt);
+        typio_log(TYPIO_LOG_INFO,
+                  "Config reload: shortcuts switch_engine=%s voice_ptt=%s",
+                  sw ? sw : "(none)", ptt ? ptt : "(none)");
+        free(sw);
+        free(ptt);
+    }
 
 #ifdef HAVE_VOICE
-    /* Reload voice backend if config changed */
-    if (frontend->voice) {
-        typio_voice_service_reload(frontend->voice);
-        typio_log(TYPIO_LOG_INFO,
-                  "Config reload: voice available=%s",
-                  typio_voice_service_is_available(frontend->voice) ? "yes" : "no");
+    {
+        TypioEngineManager *mgr = typio_instance_get_engine_manager(frontend->instance);
+
+        /* 3. Voice engine switch — check if configured engine changed */
+        const char *configured_voice = typio_config_get_string(config,
+                                                                "default_voice_engine",
+                                                                NULL);
+        if (!configured_voice) {
+            configured_voice = typio_config_get_string(config,
+                                                        "voice.backend", NULL);
+        }
+        if (configured_voice && *configured_voice) {
+            TypioEngine *voice = typio_engine_manager_get_active_voice(mgr);
+            const char *cur = voice ? typio_engine_get_name(voice) : NULL;
+            if (!cur || strcmp(configured_voice, cur) != 0) {
+                typio_engine_manager_set_active_voice(mgr, configured_voice);
+            }
+        }
+
+        /* 4. Voice engine reload — re-read [engines.*] config */
+        TypioEngine *voice = typio_engine_manager_get_active_voice(mgr);
+        if (voice && voice->ops && voice->ops->reload_config) {
+            voice->ops->reload_config(voice);
+        }
+
+        /* 5. Voice service refresh — re-fetch engine ref, ensure audio infra */
+        if (frontend->voice) {
+            typio_voice_service_reload(frontend->voice);
+            typio_log(TYPIO_LOG_INFO,
+                      "Config reload: voice available=%s",
+                      typio_voice_service_is_available(frontend->voice) ? "yes" : "no");
+        }
     }
 #endif
 
 #ifdef HAVE_STATUS_BUS
+    /* 6. Status bus — notify external listeners */
     if (frontend->status_bus) {
         typio_status_bus_emit_properties_changed(frontend->status_bus);
     }
@@ -295,6 +336,42 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
     typio_log(TYPIO_LOG_INFO, "Wayland input method frontend initialized");
 
 #ifdef HAVE_VOICE
+    {
+        TypioEngineManager *mgr = typio_instance_get_engine_manager(instance);
+        TypioConfig *inst_config = typio_instance_get_config(instance);
+
+        /* Register voice engine adapters */
+#ifdef HAVE_WHISPER
+        typio_engine_manager_register(mgr, typio_engine_create_whisper,
+                                      typio_engine_get_info_whisper);
+#endif
+#ifdef HAVE_SHERPA_ONNX
+        typio_engine_manager_register(mgr, typio_engine_create_sherpa,
+                                      typio_engine_get_info_sherpa);
+#endif
+
+        /* Determine which voice engine to activate */
+        const char *voice_engine = typio_config_get_string(inst_config,
+                                                            "default_voice_engine",
+                                                            NULL);
+        if (!voice_engine) {
+            /* Legacy fallback: read voice.backend */
+            voice_engine = typio_config_get_string(inst_config,
+                                                    "voice.backend", NULL);
+        }
+        if (!voice_engine) {
+            /* Default: try whisper, then sherpa-onnx */
+#ifdef HAVE_WHISPER
+            voice_engine = "whisper";
+#elif defined(HAVE_SHERPA_ONNX)
+            voice_engine = "sherpa-onnx";
+#endif
+        }
+        if (voice_engine) {
+            typio_engine_manager_set_active_voice(mgr, voice_engine);
+        }
+    }
+
     frontend->voice = typio_voice_service_new(instance);
     if (frontend->voice && typio_voice_service_is_available(frontend->voice)) {
         typio_log(TYPIO_LOG_INFO, "Voice input service ready");

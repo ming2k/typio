@@ -3,15 +3,17 @@
  * @brief Voice input service - state machine, threading, audio buffering
  *
  * Backend-agnostic: delegates speech-to-text to a TypioVoiceBackend
- * (whisper.cpp, sherpa-onnx, etc.) selected via configuration.
+ * obtained from the active voice engine in engine_manager.
  */
 
 #include "typio_build_config.h"
 #include "voice_service.h"
+#include "voice_engine.h"
 #include "voice_backend.h"
 #include "pw_capture.h"
 #include "typio/config.h"
 #include "typio/instance.h"
+#include "typio/engine_manager.h"
 #include "typio/input_context.h"
 #include "utils/log.h"
 
@@ -24,6 +26,14 @@
 
 #define TYPIO_VOICE_INITIAL_BUFFER_SIZE (16000 * 30) /* 30 seconds at 16kHz */
 
+TypioVoiceBackend *typio_voice_engine_get_backend(TypioEngine *engine) {
+    if (!engine || !engine->info ||
+        engine->info->type != TYPIO_ENGINE_TYPE_VOICE) {
+        return NULL;
+    }
+    return (TypioVoiceBackend *)engine->user_data;
+}
+
 typedef enum {
     TYPIO_VOICE_IDLE = 0,
     TYPIO_VOICE_RECORDING,
@@ -32,7 +42,7 @@ typedef enum {
 
 struct TypioVoiceService {
     TypioInstance *instance;
-    TypioVoiceBackend *backend;
+    TypioEngine *voice_engine;      /* Borrowed from engine_manager */
     TypioPwCapture *capture;
 
     /* State machine */
@@ -50,6 +60,16 @@ struct TypioVoiceService {
     char *result;
     pthread_mutex_t result_mutex;
 };
+
+/**
+ * Get the backend from the current voice engine, or NULL if unavailable.
+ */
+static TypioVoiceBackend *get_backend(TypioVoiceService *svc) {
+    if (!svc || !svc->voice_engine) {
+        return NULL;
+    }
+    return typio_voice_engine_get_backend(svc->voice_engine);
+}
 
 static void audio_callback(const float *samples, size_t count, void *user_data) {
     TypioVoiceService *svc = user_data;
@@ -87,10 +107,14 @@ static void audio_callback(const float *samples, size_t count, void *user_data) 
 static void *inference_thread(void *arg) {
     TypioVoiceService *svc = arg;
 
-    /* Take ownership of the audio data */
+    /* Take ownership of the audio data and snapshot the backend pointer.
+     * Both are read under buffer_mutex to establish happens-before with
+     * the main thread (which only modifies voice_engine while IDLE,
+     * i.e. after joining this thread). */
     pthread_mutex_lock(&svc->buffer_mutex);
     float *audio = svc->audio_buffer;
     size_t audio_len = svc->audio_len;
+    TypioVoiceBackend *backend = get_backend(svc);
     svc->audio_buffer = nullptr;
     svc->audio_len = 0;
     svc->audio_cap = 0;
@@ -98,9 +122,8 @@ static void *inference_thread(void *arg) {
 
     char *result_text = nullptr;
 
-    if (audio && audio_len > 0) {
-        result_text = typio_voice_backend_process(svc->backend,
-                                                   audio, audio_len);
+    if (audio && audio_len > 0 && backend) {
+        result_text = typio_voice_backend_process(backend, audio, audio_len);
     }
 
     free(audio);
@@ -117,69 +140,6 @@ static void *inference_thread(void *arg) {
     }
 
     return nullptr;
-}
-
-/**
- * Try to create a voice backend based on configuration.
- * Falls back through available backends if the configured one fails.
- */
-static TypioVoiceBackend *create_backend(TypioConfig *config,
-                                          const char *data_dir) {
-    const char *backend_name = "whisper";
-    const char *language = nullptr; /* NULL = auto-detect */
-    const char *model = nullptr;
-
-    if (config) {
-        /* New unified [voice] section takes priority */
-        backend_name = typio_config_get_string(config, "voice.backend",
-                                                nullptr);
-        if (backend_name) {
-            language = typio_config_get_string(config, "voice.language",
-                                               nullptr);
-            model = typio_config_get_string(config, "voice.model", nullptr);
-        } else {
-            /* Fall back to legacy [whisper] section */
-            backend_name = "whisper";
-            language = typio_config_get_string(config, "whisper.language",
-                                               nullptr);
-            model = typio_config_get_string(config, "whisper.model", "base");
-        }
-    }
-
-    typio_log(TYPIO_LOG_INFO,
-              "Voice backend: trying '%s' (lang=%s, model=%s)",
-              backend_name, language, model ? model : "(default)");
-
-    TypioVoiceBackend *backend = nullptr;
-
-    if (strcmp(backend_name, "sherpa-onnx") == 0 ||
-        strcmp(backend_name, "sherpa") == 0) {
-#ifdef HAVE_SHERPA_ONNX
-        backend = typio_voice_backend_sherpa_new(data_dir, language, model);
-#else
-        typio_log(TYPIO_LOG_WARNING,
-                  "sherpa-onnx backend requested but not built "
-                  "(rebuild with -DBUILD_SHERPA_ONNX=ON)");
-#endif
-    } else if (strcmp(backend_name, "whisper") == 0) {
-#ifdef HAVE_WHISPER
-        backend = typio_voice_backend_whisper_new(data_dir, language,
-                                                   model ? model : "base");
-#else
-        typio_log(TYPIO_LOG_WARNING,
-                  "whisper backend requested but not built "
-                  "(rebuild with -DBUILD_WHISPER=ON)");
-#endif
-    } else {
-        typio_log(TYPIO_LOG_WARNING,
-                  "Unknown voice backend '%s'", backend_name);
-    }
-
-    if (backend) {
-        typio_log(TYPIO_LOG_INFO, "Voice backend '%s' ready", backend_name);
-    }
-
-    return backend;
 }
 
 TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
@@ -199,12 +159,12 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
     pthread_mutex_init(&svc->buffer_mutex, nullptr);
     pthread_mutex_init(&svc->result_mutex, nullptr);
 
-    /* Create backend */
-    TypioConfig *config = typio_instance_get_config(instance);
-    const char *data_dir = typio_instance_get_data_dir(instance);
+    /* Get voice engine from engine_manager */
+    TypioEngineManager *mgr = typio_instance_get_engine_manager(instance);
+    svc->voice_engine = typio_engine_manager_get_active_voice(mgr);
 
-    svc->backend = create_backend(config, data_dir);
-    if (!svc->backend) {
+    TypioVoiceBackend *backend = get_backend(svc);
+    if (!backend) {
         typio_log(TYPIO_LOG_WARNING,
                   "No voice backend available (voice input disabled)");
         return svc;
@@ -214,8 +174,6 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
     svc->event_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     if (svc->event_fd < 0) {
         typio_log(TYPIO_LOG_ERROR, "Failed to create eventfd");
-        typio_voice_backend_destroy(svc->backend);
-        svc->backend = nullptr;
         pthread_mutex_destroy(&svc->buffer_mutex);
         pthread_mutex_destroy(&svc->result_mutex);
         free(svc);
@@ -227,8 +185,6 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
     if (!svc->capture) {
         typio_log(TYPIO_LOG_ERROR, "Failed to create PipeWire capture");
         close(svc->event_fd);
-        typio_voice_backend_destroy(svc->backend);
-        svc->backend = nullptr;
         pthread_mutex_destroy(&svc->buffer_mutex);
         pthread_mutex_destroy(&svc->result_mutex);
         free(svc);
@@ -262,7 +218,7 @@ void typio_voice_service_free(TypioVoiceService *svc) {
         close(svc->event_fd);
     }
 
-    typio_voice_backend_destroy(svc->backend);
+    /* Don't destroy the backend or engine - engine_manager owns them */
 
     free(svc->audio_buffer);
     free(svc->result);
@@ -272,7 +228,7 @@ void typio_voice_service_free(TypioVoiceService *svc) {
 }
 
 bool typio_voice_service_start(TypioVoiceService *svc) {
-    if (!svc || !svc->backend || svc->state != TYPIO_VOICE_IDLE) {
+    if (!svc || !get_backend(svc) || svc->state != TYPIO_VOICE_IDLE) {
         return false;
     }
 
@@ -370,7 +326,7 @@ void typio_voice_service_dispatch(TypioVoiceService *svc,
 }
 
 bool typio_voice_service_is_available(TypioVoiceService *svc) {
-    return svc && svc->backend && svc->capture;
+    return svc && get_backend(svc) && svc->capture;
 }
 
 void typio_voice_service_reload(TypioVoiceService *svc) {
@@ -385,18 +341,21 @@ void typio_voice_service_reload(TypioVoiceService *svc) {
         return;
     }
 
-    TypioConfig *config = typio_instance_get_config(svc->instance);
-    const char *data_dir = typio_instance_get_data_dir(svc->instance);
+    /* Re-fetch active voice engine from manager (it may have changed).
+     * Engine switching and config reload are handled by the caller
+     * (frontend_refresh_runtime_config) — we only sync our reference
+     * and ensure audio infrastructure is ready.
+     *
+     * Write under buffer_mutex to establish happens-before with the
+     * inference thread's snapshot read of voice_engine. */
+    TypioEngineManager *mgr = typio_instance_get_engine_manager(svc->instance);
+    TypioEngine *new_engine = typio_engine_manager_get_active_voice(mgr);
+    pthread_mutex_lock(&svc->buffer_mutex);
+    svc->voice_engine = new_engine;
+    pthread_mutex_unlock(&svc->buffer_mutex);
 
-    TypioVoiceBackend *new_backend = create_backend(config, data_dir);
-
-    /* Swap backend */
-    if (svc->backend) {
-        typio_voice_backend_destroy(svc->backend);
-    }
-    svc->backend = new_backend;
-
-    if (new_backend) {
+    TypioVoiceBackend *backend = get_backend(svc);
+    if (backend) {
         /* Ensure capture and eventfd exist (may not if initial init had no backend) */
         if (!svc->capture) {
             svc->capture = typio_pw_capture_new(audio_callback, svc);
@@ -409,4 +368,16 @@ void typio_voice_service_reload(TypioVoiceService *svc) {
         typio_log(TYPIO_LOG_WARNING,
                   "Voice service reloaded: no backend available");
     }
+}
+
+const char *typio_voice_service_get_unavail_reason(TypioVoiceService *svc) {
+    if (!svc)
+        return "voice service not created";
+    if (get_backend(svc) && svc->capture)
+        return nullptr;
+    if (!svc->voice_engine)
+        return "no voice engine active";
+    if (!get_backend(svc))
+        return "voice backend failed to initialize";
+    return "audio capture unavailable";
 }

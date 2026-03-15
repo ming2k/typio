@@ -67,6 +67,8 @@ static const char *key_route_state_name(TypioKeyTrackState state) {
         return "suppressed_startup";
     case TYPIO_KEY_VOICE_PTT:
         return "voice_ptt";
+    case TYPIO_KEY_VOICE_PTT_UNAVAIL:
+        return "voice_ptt_unavail";
     default:
         return "unknown";
     }
@@ -249,16 +251,32 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
               "PTT check: keysym=0x%x mods=0x%x ptt_keysym=0x%x ptt_mods=0x%x voice_available=%s",
               keysym, modifiers, ptt->keysym, ptt->modifiers,
               typio_voice_service_is_available(frontend->voice) ? "yes" : "no");
-    if (typio_voice_service_is_available(frontend->voice) &&
-        keysym == ptt->keysym &&
+    if (keysym == ptt->keysym &&
         (modifiers & ptt->modifiers) == ptt->modifiers) {
-        typio_voice_service_start(frontend->voice);
-        key_set_state(frontend, key, TYPIO_KEY_VOICE_PTT);
-        typio_wl_set_preedit(frontend, "[Recording...]", 0, 0);
-        typio_wl_commit(frontend);
-        key_route_trace(keyboard, "press-ptt", key, keysym, modifiers, unicode,
-                        TYPIO_KEY_VOICE_PTT, "voice ptt start");
-        typio_log(TYPIO_LOG_DEBUG, "Voice PTT started: keycode=%u", key);
+        if (typio_voice_service_is_available(frontend->voice)) {
+            typio_voice_service_start(frontend->voice);
+            key_set_state(frontend, key, TYPIO_KEY_VOICE_PTT);
+            typio_wl_set_preedit(frontend, "[Recording...]", 0, 0);
+            typio_wl_commit(frontend);
+            key_route_trace(keyboard, "press-ptt", key, keysym, modifiers, unicode,
+                            TYPIO_KEY_VOICE_PTT, "voice ptt start");
+            typio_log(TYPIO_LOG_DEBUG, "Voice PTT started: keycode=%u", key);
+        } else {
+            const char *reason =
+                typio_voice_service_get_unavail_reason(frontend->voice);
+            char hint[160];
+            snprintf(hint, sizeof(hint), "[Voice unavailable: %s]",
+                     reason ? reason : "unknown");
+            key_set_state(frontend, key, TYPIO_KEY_VOICE_PTT_UNAVAIL);
+            typio_wl_set_preedit(frontend, hint, 0, 0);
+            typio_wl_commit(frontend);
+            key_route_trace(keyboard, "press-ptt-unavail", key, keysym,
+                            modifiers, unicode, TYPIO_KEY_VOICE_PTT_UNAVAIL,
+                            "voice not available");
+            typio_log(TYPIO_LOG_WARNING,
+                      "Voice PTT pressed but unavailable: %s",
+                      reason ? reason : "unknown");
+        }
         return;
     }
 #endif
@@ -360,6 +378,16 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
         typio_wl_commit(frontend);
         key_clear_tracking(frontend, key);
         typio_log(TYPIO_LOG_DEBUG, "Voice PTT released: keycode=%u", key);
+        return;
+
+    case TYPIO_KEY_VOICE_PTT_UNAVAIL:
+        key_route_trace(keyboard, "release-ptt-unavail", key, keysym,
+                        modifiers, unicode, kstate, "voice ptt unavail release");
+        typio_wl_set_preedit(frontend, "", 0, 0);
+        typio_wl_commit(frontend);
+        key_clear_tracking(frontend, key);
+        typio_log(TYPIO_LOG_DEBUG,
+                  "Voice PTT unavail released: keycode=%u", key);
         return;
 #endif
 

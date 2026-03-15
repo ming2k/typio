@@ -31,6 +31,7 @@
 #endif
 #ifdef HAVE_VOICE
 #include "voice/voice_service.h"
+#include "voice/voice_engine.h"
 #endif
 
 #ifdef __cplusplus
