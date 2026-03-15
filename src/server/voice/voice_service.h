@@ -1,6 +1,6 @@
 /**
  * @file voice_service.h
- * @brief Whisper-based voice input service
+ * @brief Voice input service (supports whisper.cpp, sherpa-onnx backends)
  */
 
 #ifndef TYPIO_VOICE_SERVICE_H
@@ -27,6 +27,7 @@ int typio_voice_service_get_fd(TypioVoiceService *svc);
 void typio_voice_service_dispatch(TypioVoiceService *svc,
                                    TypioInputContext *ctx);
 bool typio_voice_service_is_available(TypioVoiceService *svc);
+void typio_voice_service_reload(TypioVoiceService *svc);
 
 #ifdef __cplusplus
 }

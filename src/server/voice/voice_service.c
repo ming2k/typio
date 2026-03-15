@@ -1,16 +1,20 @@
 /**
  * @file voice_service.c
- * @brief Whisper voice input service - state machine, threading, model management
+ * @brief Voice input service - state machine, threading, audio buffering
+ *
+ * Backend-agnostic: delegates speech-to-text to a TypioVoiceBackend
+ * (whisper.cpp, sherpa-onnx, etc.) selected via configuration.
  */
 
+#include "typio_build_config.h"
 #include "voice_service.h"
+#include "voice_backend.h"
 #include "pw_capture.h"
 #include "typio/config.h"
 #include "typio/instance.h"
 #include "typio/input_context.h"
 #include "utils/log.h"
 
-#include <whisper.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,7 +32,7 @@ typedef enum {
 
 struct TypioVoiceService {
     TypioInstance *instance;
-    struct whisper_context *whisper_ctx;
+    TypioVoiceBackend *backend;
     TypioPwCapture *capture;
 
     /* State machine */
@@ -45,9 +49,6 @@ struct TypioVoiceService {
     int event_fd;
     char *result;
     pthread_mutex_t result_mutex;
-
-    /* Config */
-    char language[16];
 };
 
 static void audio_callback(const float *samples, size_t count, void *user_data) {
@@ -98,45 +99,8 @@ static void *inference_thread(void *arg) {
     char *result_text = nullptr;
 
     if (audio && audio_len > 0) {
-        struct whisper_full_params params =
-            whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-        params.print_progress = false;
-        params.print_special = false;
-        params.print_realtime = false;
-        params.print_timestamps = false;
-        params.single_segment = true;
-        params.no_timestamps = true;
-        params.language = svc->language;
-
-        int ret = whisper_full(svc->whisper_ctx, params, audio,
-                               (int)audio_len);
-        if (ret == 0) {
-            int n_segments = whisper_full_n_segments(svc->whisper_ctx);
-            /* Collect all segment text */
-            size_t total_len = 0;
-            for (int i = 0; i < n_segments; i++) {
-                const char *seg =
-                    whisper_full_get_segment_text(svc->whisper_ctx, i);
-                if (seg) {
-                    total_len += strlen(seg);
-                }
-            }
-
-            if (total_len > 0) {
-                result_text = calloc(total_len + 1, sizeof(char));
-                if (result_text) {
-                    for (int i = 0; i < n_segments; i++) {
-                        const char *seg =
-                            whisper_full_get_segment_text(svc->whisper_ctx, i);
-                        if (seg) {
-                            strcat(result_text, seg);
-                        }
-                    }
-                }
-            }
-        } else {
-            typio_log(TYPIO_LOG_ERROR, "Whisper inference failed: %d", ret);
-        }
+        result_text = typio_voice_backend_process(svc->backend,
+                                                   audio, audio_len);
     }
 
     free(audio);
@@ -155,6 +119,69 @@ static void *inference_thread(void *arg) {
     return nullptr;
 }
 
+/**
+ * Try to create a voice backend based on configuration.
+ * Falls back through available backends if the configured one fails.
+ */
+static TypioVoiceBackend *create_backend(TypioConfig *config,
+                                          const char *data_dir) {
+    const char *backend_name = "whisper";
+    const char *language = nullptr; /* NULL = auto-detect */
+    const char *model = nullptr;
+
+    if (config) {
+        /* New unified [voice] section takes priority */
+        backend_name = typio_config_get_string(config, "voice.backend",
+                                                nullptr);
+        if (backend_name) {
+            language = typio_config_get_string(config, "voice.language",
+                                               nullptr);
+            model = typio_config_get_string(config, "voice.model", nullptr);
+        } else {
+            /* Fall back to legacy [whisper] section */
+            backend_name = "whisper";
+            language = typio_config_get_string(config, "whisper.language",
+                                               nullptr);
+            model = typio_config_get_string(config, "whisper.model", "base");
+        }
+    }
+
+    typio_log(TYPIO_LOG_INFO,
+              "Voice backend: trying '%s' (lang=%s, model=%s)",
+              backend_name, language, model ? model : "(default)");
+
+    TypioVoiceBackend *backend = nullptr;
+
+    if (strcmp(backend_name, "sherpa-onnx") == 0 ||
+        strcmp(backend_name, "sherpa") == 0) {
+#ifdef HAVE_SHERPA_ONNX
+        backend = typio_voice_backend_sherpa_new(data_dir, language, model);
+#else
+        typio_log(TYPIO_LOG_WARNING,
+                  "sherpa-onnx backend requested but not built "
+                  "(rebuild with -DBUILD_SHERPA_ONNX=ON)");
+#endif
+    } else if (strcmp(backend_name, "whisper") == 0) {
+#ifdef HAVE_WHISPER
+        backend = typio_voice_backend_whisper_new(data_dir, language,
+                                                   model ? model : "base");
+#else
+        typio_log(TYPIO_LOG_WARNING,
+                  "whisper backend requested but not built "
+                  "(rebuild with -DBUILD_WHISPER=ON)");
+#endif
+    } else {
+        typio_log(TYPIO_LOG_WARNING,
+                  "Unknown voice backend '%s'", backend_name);
+    }
+
+    if (backend) {
+        typio_log(TYPIO_LOG_INFO, "Voice backend '%s' ready", backend_name);
+    }
+
+    return backend;
+}
+
 TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
     if (!instance) {
         return nullptr;
@@ -168,69 +195,18 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
     svc->instance = instance;
     svc->state = TYPIO_VOICE_IDLE;
     svc->event_fd = -1;
-    strncpy(svc->language, "zh", sizeof(svc->language) - 1);
 
     pthread_mutex_init(&svc->buffer_mutex, nullptr);
     pthread_mutex_init(&svc->result_mutex, nullptr);
 
-    /* Read config */
+    /* Create backend */
     TypioConfig *config = typio_instance_get_config(instance);
-    if (config) {
-        const char *lang = typio_config_get_string(config,
-                                                    "whisper.language",
-                                                    "zh");
-        strncpy(svc->language, lang, sizeof(svc->language) - 1);
-        svc->language[sizeof(svc->language) - 1] = '\0';
+    const char *data_dir = typio_instance_get_data_dir(instance);
 
-        const char *model_name = typio_config_get_string(config,
-                                                          "whisper.model",
-                                                          "base");
-
-        const char *data_dir = typio_instance_get_data_dir(instance);
-        char model_path[512] = {};
-        if (data_dir) {
-            snprintf(model_path, sizeof(model_path),
-                     "%s/whisper/ggml-%s.bin", data_dir, model_name);
-        }
-
-        if (model_path[0] != '\0') {
-            struct whisper_context_params cparams =
-                whisper_context_default_params();
-            svc->whisper_ctx =
-                whisper_init_from_file_with_params(model_path, cparams);
-            if (!svc->whisper_ctx) {
-                typio_log(TYPIO_LOG_WARNING,
-                          "Whisper model not found: %s "
-                          "(voice input disabled)", model_path);
-            } else {
-                typio_log(TYPIO_LOG_INFO,
-                          "Whisper model loaded: %s", model_path);
-            }
-        }
-    } else {
-        /* No config loaded yet — try default model path */
-        const char *data_dir = typio_instance_get_data_dir(instance);
-        if (data_dir) {
-            char model_path[512];
-            snprintf(model_path, sizeof(model_path),
-                     "%s/whisper/ggml-base.bin", data_dir);
-            struct whisper_context_params cparams =
-                whisper_context_default_params();
-            svc->whisper_ctx =
-                whisper_init_from_file_with_params(model_path, cparams);
-            if (svc->whisper_ctx) {
-                typio_log(TYPIO_LOG_INFO,
-                          "Whisper model loaded: %s", model_path);
-            } else {
-                typio_log(TYPIO_LOG_WARNING,
-                          "Whisper model not found: %s "
-                          "(voice input disabled)", model_path);
-            }
-        }
-    }
-
-    if (!svc->whisper_ctx) {
-        /* Model not available — service exists but is_available returns false */
+    svc->backend = create_backend(config, data_dir);
+    if (!svc->backend) {
+        typio_log(TYPIO_LOG_WARNING,
+                  "No voice backend available (voice input disabled)");
         return svc;
     }
 
@@ -238,7 +214,8 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
     svc->event_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     if (svc->event_fd < 0) {
         typio_log(TYPIO_LOG_ERROR, "Failed to create eventfd");
-        whisper_free(svc->whisper_ctx);
+        typio_voice_backend_destroy(svc->backend);
+        svc->backend = nullptr;
         pthread_mutex_destroy(&svc->buffer_mutex);
         pthread_mutex_destroy(&svc->result_mutex);
         free(svc);
@@ -250,15 +227,15 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
     if (!svc->capture) {
         typio_log(TYPIO_LOG_ERROR, "Failed to create PipeWire capture");
         close(svc->event_fd);
-        whisper_free(svc->whisper_ctx);
+        typio_voice_backend_destroy(svc->backend);
+        svc->backend = nullptr;
         pthread_mutex_destroy(&svc->buffer_mutex);
         pthread_mutex_destroy(&svc->result_mutex);
         free(svc);
         return nullptr;
     }
 
-    typio_log(TYPIO_LOG_INFO, "Voice service initialized (language=%s)",
-              svc->language);
+    typio_log(TYPIO_LOG_INFO, "Voice service initialized");
     return svc;
 }
 
@@ -285,9 +262,7 @@ void typio_voice_service_free(TypioVoiceService *svc) {
         close(svc->event_fd);
     }
 
-    if (svc->whisper_ctx) {
-        whisper_free(svc->whisper_ctx);
-    }
+    typio_voice_backend_destroy(svc->backend);
 
     free(svc->audio_buffer);
     free(svc->result);
@@ -297,7 +272,7 @@ void typio_voice_service_free(TypioVoiceService *svc) {
 }
 
 bool typio_voice_service_start(TypioVoiceService *svc) {
-    if (!svc || !svc->whisper_ctx || svc->state != TYPIO_VOICE_IDLE) {
+    if (!svc || !svc->backend || svc->state != TYPIO_VOICE_IDLE) {
         return false;
     }
 
@@ -380,7 +355,7 @@ void typio_voice_service_dispatch(TypioVoiceService *svc,
     svc->state = TYPIO_VOICE_IDLE;
 
     if (text && text[0] != '\0' && ctx) {
-        /* Trim leading whitespace (whisper sometimes adds a leading space) */
+        /* Trim leading whitespace (some backends add a leading space) */
         const char *p = text;
         while (*p == ' ') {
             p++;
@@ -395,5 +370,43 @@ void typio_voice_service_dispatch(TypioVoiceService *svc,
 }
 
 bool typio_voice_service_is_available(TypioVoiceService *svc) {
-    return svc && svc->whisper_ctx && svc->capture;
+    return svc && svc->backend && svc->capture;
+}
+
+void typio_voice_service_reload(TypioVoiceService *svc) {
+    if (!svc || !svc->instance) {
+        return;
+    }
+
+    /* Don't reload while recording or processing */
+    if (svc->state != TYPIO_VOICE_IDLE) {
+        typio_log(TYPIO_LOG_INFO,
+                  "Voice reload deferred: service busy (state=%d)", svc->state);
+        return;
+    }
+
+    TypioConfig *config = typio_instance_get_config(svc->instance);
+    const char *data_dir = typio_instance_get_data_dir(svc->instance);
+
+    TypioVoiceBackend *new_backend = create_backend(config, data_dir);
+
+    /* Swap backend */
+    if (svc->backend) {
+        typio_voice_backend_destroy(svc->backend);
+    }
+    svc->backend = new_backend;
+
+    if (new_backend) {
+        /* Ensure capture and eventfd exist (may not if initial init had no backend) */
+        if (!svc->capture) {
+            svc->capture = typio_pw_capture_new(audio_callback, svc);
+        }
+        if (svc->event_fd < 0) {
+            svc->event_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+        }
+        typio_log(TYPIO_LOG_INFO, "Voice service reloaded: backend ready");
+    } else {
+        typio_log(TYPIO_LOG_WARNING,
+                  "Voice service reloaded: no backend available");
+    }
 }
