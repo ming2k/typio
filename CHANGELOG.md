@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-03-15
+
+### Added
+
+- **Key event arbiter**: introduced a buffering arbiter layer between raw
+  keyboard events and engine dispatch so that system shortcut sequences
+  (Ctrl+Shift chord) are fully resolved before any modifier events reach the
+  active engine.  This prevents Rime from misinterpreting Shift release as a
+  Chinese/English toggle during engine switching.
+- **MRU engine switching**: engine cycling now returns to the previously used
+  engine when the switch interval exceeds 1.5 s, matching the common two-engine
+  toggle workflow.  Rapid successive switches still cycle sequentially.
+
+### Changed
+
+- **Physical modifier update reorder**: `kb_handle_key` now updates physical
+  modifier state before dispatching through the arbiter so routing decisions
+  have accurate modifier information.
+- **Chord state consolidation**: replaced the three scattered
+  `shortcut_chord_armed/saw_non_modifier/switch_triggered` bools with the
+  arbiter state machine, removing chord-firing logic from both `key_route.c`
+  and `wl_keyboard.c`.
+
 ## [1.4.1] - 2026-03-15
 
 ### Added
@@ -253,6 +276,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.2.0]: https://github.com/user/typio/releases/tag/v1.2.0
 [1.4.0]: https://github.com/user/typio/releases/tag/v1.4.0
 [1.4.1]: https://github.com/user/typio/releases/tag/v1.4.1
+[1.4.2]: https://github.com/user/typio/releases/tag/v1.4.2
 [1.1.2]: https://github.com/user/typio/releases/tag/v1.1.2
 [1.1.1]: https://github.com/user/typio/releases/tag/v1.1.1
 [1.1.0]: https://github.com/user/typio/releases/tag/v1.1.0
