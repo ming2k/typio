@@ -2,6 +2,7 @@
 
 add_executable(typio-control
     main.c
+    control_config.c
     control_models.c
     control_widgets.c
     control_window.c

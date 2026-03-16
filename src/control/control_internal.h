@@ -112,6 +112,12 @@ void on_display_switch_changed(GObject *object, GParamSpec *pspec, gpointer user
 void on_engine_selected(GObject *object, GParamSpec *pspec, gpointer user_data);
 void control_clear_proxy(TypioControl *control);
 void control_refresh_from_proxy(TypioControl *control);
+gboolean control_has_pending_config_change(TypioControl *control);
+void control_queue_autosave(TypioControl *control,
+                            ControlAutosavePriority priority);
+void control_update_availability_label(TypioControl *control,
+                                       const char *message,
+                                       gboolean visible);
 
 GtkWidget *control_build_window(TypioControl *control, GtkApplication *app);
 GtkWidget *control_wrap_page_scroller(GtkWidget *child);
