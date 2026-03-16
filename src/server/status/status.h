@@ -6,15 +6,12 @@
 #ifndef TYPIO_STATUS_H
 #define TYPIO_STATUS_H
 
+#include "typio/dbus_protocol.h"
 #include "typio/types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define TYPIO_STATUS_DBUS_SERVICE "org.typio.InputMethod1"
-#define TYPIO_STATUS_DBUS_PATH "/org/typio/InputMethod1"
-#define TYPIO_STATUS_DBUS_INTERFACE "org.typio.InputMethod1"
 
 typedef struct TypioStatusBus TypioStatusBus;
 

@@ -5,7 +5,7 @@
 
 #include "control_internal.h"
 #include "control_bind.h"
-#include "status/status.h"
+#include "typio/dbus_protocol.h"
 #include "typio/rime_schema_list.h"
 #include "typio/typio.h"
 

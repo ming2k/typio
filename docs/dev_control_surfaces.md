@@ -95,6 +95,13 @@ other top-level keys.
 - Remove maintenance actions from the main flow if the daemon can refresh
   itself or if the action has no meaningful user decision attached.
 
+## Rime Schema Discovery
+
+Both the tray menu and control center use `typio_rime_schema_list_load()`
+from the core library (`typio/rime_schema_list.h`).  This ensures schema
+lists are always consistent regardless of which surface the user is
+looking at.  Neither surface should implement its own schema file parsing.
+
 ## Tray Menu Rules
 
 - The main engine list should contain keyboard engines only.

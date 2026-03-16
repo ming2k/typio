@@ -208,6 +208,30 @@ bool typio_key_event_is_press(const TypioKeyEvent *event);
 bool typio_key_event_is_release(const TypioKeyEvent *event);
 ```
 
+## D-Bus Protocol Constants
+
+Shared constants for the status bus live in `typio/dbus_protocol.h` so that
+both the server and control surfaces can reference them without cross-layer
+includes:
+
+```c
+#define TYPIO_STATUS_DBUS_SERVICE   "org.typio.InputMethod1"
+#define TYPIO_STATUS_DBUS_PATH      "/org/typio/InputMethod1"
+#define TYPIO_STATUS_DBUS_INTERFACE "org.typio.InputMethod1"
+```
+
+## Rime Schema Discovery
+
+`typio/rime_schema_list.h` provides shared helpers so that every consumer
+(tray menu, control center) discovers Rime schemas identically:
+
+```c
+bool typio_rime_schema_list_load(const TypioConfig *config,
+                                 const char *default_data_dir,
+                                 TypioRimeSchemaList *list);
+void typio_rime_schema_list_clear(TypioRimeSchemaList *list);
+```
+
 ## Authoritative Source
 
 For exact signatures and comments, read the public headers under

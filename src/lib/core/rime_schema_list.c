@@ -4,37 +4,11 @@
  */
 
 #include "typio/rime_schema_list.h"
+#include "../utils/log.h"
 
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static bool rime_schema_log_enabled(void) {
-    const char *messages_debug = getenv("G_MESSAGES_DEBUG");
-    const char *control_verbose = getenv("TYPIO_CONTROL_VERBOSE");
-
-    return (messages_debug && strstr(messages_debug, "all")) ||
-           (control_verbose &&
-            (strcmp(control_verbose, "1") == 0 ||
-             strcmp(control_verbose, "true") == 0 ||
-             strcmp(control_verbose, "yes") == 0 ||
-             strcmp(control_verbose, "on") == 0));
-}
-
-static void rime_schema_log(const char *fmt, ...) {
-    va_list args;
-
-    if (!rime_schema_log_enabled()) {
-        return;
-    }
-
-    va_start(args, fmt);
-    fprintf(stderr, "[typio-control] ");
-    vfprintf(stderr, fmt, args);
-    fputc('\n', stderr);
-    va_end(args);
-}
 
 static char *rime_dup_trimmed_value(const char *text) {
     const char *start;
@@ -97,10 +71,10 @@ static bool rime_parse_schema_list(const char *path, TypioRimeSchemaList *list) 
         return false;
     }
 
-    rime_schema_log("schema probe list path=%s", path);
+    typio_log_debug("schema probe list path=%s", path);
     file = fopen(path, "r");
     if (!file) {
-        rime_schema_log("schema list unreadable path=%s", path);
+        typio_log_debug("schema list unreadable path=%s", path);
         return false;
     }
 
@@ -124,7 +98,7 @@ static bool rime_parse_schema_list(const char *path, TypioRimeSchemaList *list) 
     }
 
     fclose(file);
-    rime_schema_log("schema list loaded count=%zu path=%s",
+    typio_log_debug("schema list loaded count=%zu path=%s",
                     list->schema_count, path);
     return list->schema_count > 0;
 }
@@ -138,7 +112,7 @@ static char *rime_parse_schema_name(const char *path) {
         return NULL;
     }
 
-    rime_schema_log("schema probe name path=%s", path);
+    typio_log_debug("schema probe name path=%s", path);
     file = fopen(path, "r");
     if (!file) {
         return NULL;
@@ -228,7 +202,7 @@ bool typio_rime_schema_list_load(const TypioConfig *config,
     }
 
     rime_fill_schema_names(list);
-    rime_schema_log("schema resolved user_dir=%s current=%s count=%zu",
+    typio_log_debug("schema resolved user_dir=%s current=%s count=%zu",
                     list->user_data_dir ? list->user_data_dir : "(null)",
                     list->current_schema ? list->current_schema : "(null)",
                     list->schema_count);

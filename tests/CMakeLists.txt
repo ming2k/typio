@@ -78,7 +78,6 @@ if(BUILD_CONTROL_PANEL)
         ${CMAKE_BINARY_DIR}
         ${CMAKE_SOURCE_DIR}/src/control
         ${CMAKE_SOURCE_DIR}/src/lib
-        ${CMAKE_SOURCE_DIR}/src/server
         ${GTK4_INCLUDE_DIRS}
     )
     target_compile_options(test_control_config PRIVATE ${GTK4_CFLAGS_OTHER})

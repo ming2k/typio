@@ -1,9 +1,13 @@
 # Typio Server
 
-set(TYPIO_SERVER_SOURCES main.c)
+set(TYPIO_SERVER_SOURCES
+    main.c
+    notify/health.c
+)
 set(TYPIO_SERVER_INCLUDE_DIRS
     ${CMAKE_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/notify
     ${CMAKE_SOURCE_DIR}/src/lib
 )
 set(TYPIO_SERVER_SYSTEM_INCLUDE_DIRS)
@@ -69,6 +73,7 @@ endif()
 if(HAVE_STATUS_BUS)
     list(APPEND TYPIO_SERVER_SOURCES
         status/status.c
+        notify/notifications.c
     )
 
     list(APPEND TYPIO_SERVER_SYSTEM_INCLUDE_DIRS

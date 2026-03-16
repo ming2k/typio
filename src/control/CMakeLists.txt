@@ -10,7 +10,6 @@ add_executable(typio-control
 target_include_directories(typio-control PRIVATE
     ${CMAKE_BINARY_DIR}
     ${CMAKE_SOURCE_DIR}/src/lib
-    ${CMAKE_SOURCE_DIR}/src/server
     ${GTK4_INCLUDE_DIRS}
 )
 

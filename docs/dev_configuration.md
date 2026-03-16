@@ -78,6 +78,11 @@ copied sub-config.
 
 ### 5. Expose Over D-Bus
 
+The D-Bus service, path, and interface constants are defined in
+`typio/dbus_protocol.h` (part of the public library) so that both the
+server and control surfaces use the same values without cross-layer
+include dependencies.
+
 The status bus exposes two config-related properties:
 
 - **`ConfigText`** — the full config serialised to text
