@@ -3,6 +3,8 @@
 add_executable(typio-control
     main.c
     control_models.c
+    control_widgets.c
+    control_window.c
     control_ui.c
     control_bind.c
 )

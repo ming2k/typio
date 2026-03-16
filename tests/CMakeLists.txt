@@ -70,6 +70,8 @@ if(BUILD_CONTROL_PANEL)
         test_control_config.c
         ${CMAKE_SOURCE_DIR}/src/control/main.c
         ${CMAKE_SOURCE_DIR}/src/control/control_ui.c
+        ${CMAKE_SOURCE_DIR}/src/control/control_window.c
+        ${CMAKE_SOURCE_DIR}/src/control/control_widgets.c
         ${CMAKE_SOURCE_DIR}/src/control/control_models.c
         ${CMAKE_SOURCE_DIR}/src/control/control_bind.c
     )

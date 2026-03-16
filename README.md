@@ -55,7 +55,7 @@ cmake --build build
 Run directly from the build tree (no install needed):
 
 ```bash
-./build/src/server/typio --engine-dir ./build/engines --engine rime --verbose
+./build/src/server/typio --engine basic --verbose
 ```
 
 Install is only needed for packaging or verifying the installed layout:
@@ -83,7 +83,6 @@ Installed artifacts:
 
 - `bin/typio`
 - `lib/libtypio-core.so` or `lib/libtypio-core.a`
-- `lib/typio/engines/rime.so`
 - `include/typio/*.h`
 - `lib/pkgconfig/typio.pc`
 - `share/typio/typio.toml.example`
@@ -105,16 +104,16 @@ Installed artifacts:
 
 - Typio currently targets Wayland only.
 - Default CMake options are used unless a command shows a `-D...` override.
-- The default build includes the `rime` plugin.
-- If you want a smaller build without Rime, configure with `-DBUILD_RIME_ENGINE=OFF`.
+- The default build includes the built-in `basic` engine and no external engine plugins.
+- Enable the optional `rime` plugin with `-DBUILD_RIME_ENGINE=ON`.
 - Tray support is a separate compile-time feature. Disable it with `-DENABLE_SYSTRAY=OFF`.
 - The session D-Bus status/control interface is also a separate feature. Disable it with `-DENABLE_STATUS_BUS=OFF`.
 - The optional GTK4 control panel is built with `-DBUILD_CONTROL_PANEL=ON`.
 - Only one input method can own the Wayland input-method seat at a time.
 - Typio directly implements the Wayland input-method side and depends on the compositor/application text-input-v3 path for end-to-end text input.
 - The built-in `basic` engine does not provide candidate UI.
-- The `rime` engine renders candidates through `zwp_input_popup_surface_v2`. If popup rendering is unavailable in the current session, Typio keeps candidate state visible inline in preedit.
-- The Rime popup defaults to a horizontal layout and can follow common desktop light/dark theme hints, with `typio.toml` overrides under `[engines.rime]` when needed.
+- When enabled, the `rime` engine renders candidates through `zwp_input_popup_surface_v2`. If popup rendering is unavailable in the current session, Typio keeps candidate state visible inline in preedit.
+- When enabled, the Rime popup defaults to a horizontal layout and can follow common desktop light/dark theme hints, with `typio.toml` overrides under `[engines.rime]` when needed.
 - Tray hosts that ignore themed icon paths can still render the current engine icon through the exported `IconPixmap` fallback.
 - When the active engine is `rime`, the tray menu exposes a dedicated submenu with the current schema and schema-switch actions.
 - Typio also exports a D-Bus status object at `org.typio.InputMethod1` so shells

@@ -441,6 +441,37 @@ extern void typio_engine_deactivate(TypioEngine *engine);
 extern void typio_instance_notify_engine_changed(TypioInstance *instance,
                                                   const TypioEngineInfo *engine);
 
+static void engine_manager_rebind_focused_context(TypioEngineManager *manager,
+                                                  TypioEngine *old_engine,
+                                                  TypioEngine *new_engine) {
+    TypioInputContext *ctx;
+
+    if (!manager || !manager->instance) {
+        return;
+    }
+
+    ctx = typio_instance_get_focused_context(manager->instance);
+    if (!ctx) {
+        return;
+    }
+
+    if (old_engine && old_engine->ops && old_engine->ops->focus_out) {
+        old_engine->ops->focus_out(old_engine, ctx);
+    }
+    if (new_engine && new_engine->ops && new_engine->ops->reset) {
+        new_engine->ops->reset(new_engine, ctx);
+    }
+    if (new_engine && new_engine->ops && new_engine->ops->focus_in) {
+        new_engine->ops->focus_in(new_engine, ctx);
+    }
+    if (new_engine && new_engine->ops && new_engine->ops->get_status_icon) {
+        const char *icon = new_engine->ops->get_status_icon(new_engine, ctx);
+        if (icon) {
+            typio_instance_notify_status_icon(manager->instance, icon);
+        }
+    }
+}
+
 TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
                                              const char *name) {
     if (!manager || !name) {
@@ -508,8 +539,9 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
     }
 
     /* Deactivate current keyboard engine */
+    EngineEntry *current = nullptr;
     if (manager->active_keyboard_index != (size_t)-1) {
-        EngineEntry *current = manager->entries[manager->active_keyboard_index];
+        current = manager->entries[manager->active_keyboard_index];
         if (current->instance) {
             typio_engine_deactivate(current->instance);
         }
@@ -539,6 +571,10 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
     manager->prev_active_keyboard_index = manager->active_keyboard_index;
     manager->active_keyboard_index = index;
     manager->last_switch_ms = engine_manager_monotonic_ms();
+
+    engine_manager_rebind_focused_context(manager,
+                                          current ? current->instance : nullptr,
+                                          entry->instance);
 
     /* Notify instance */
     typio_instance_notify_engine_changed(manager->instance, entry->info);

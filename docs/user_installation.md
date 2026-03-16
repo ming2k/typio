@@ -11,12 +11,9 @@
 - a Wayland compositor that exposes `zwp_input_method_manager_v2`
 - Wayland applications in that session must use a working `zwp_text_input_manager_v3` path
 
-Also required for the default build:
-
-- `librime` development files
-
 Optional:
 
+- `librime` development files if you want to build with `BUILD_RIME_ENGINE=ON`
 - `dbus-1` development files if you want to build with `ENABLE_SYSTRAY=ON`
 
 ## Build
@@ -33,7 +30,7 @@ cmake --build build
 You can run Typio directly from the build tree:
 
 ```bash
-./build/src/server/typio --engine-dir ./build/engines --engine rime --verbose
+./build/src/server/typio --engine basic --verbose
 ```
 
 ## Install
@@ -62,23 +59,22 @@ Installed paths (with `/usr/local` prefix):
 - `/usr/local/lib/pkgconfig/typio.pc`
 - `/usr/local/share/typio/typio.toml.example`
 
-When `BUILD_SERVER=ON`, install also places a desktop autostart entry at
-`/etc/xdg/autostart/typio.desktop` by default so Typio starts with the desktop
-session. Override that location with `-DTYPIO_AUTOSTART_DIR=/some/path` if you
-need a different autostart target for packaging or testing.
+Install also places a desktop autostart entry at `/etc/xdg/autostart/typio.desktop`
+by default so Typio starts with the desktop session. Override that location
+with `-DTYPIO_AUTOSTART_DIR=/some/path` if you need a different autostart
+target for packaging or testing.
 
 ## Useful Build Options
 
 | Option | Default | Purpose |
 |--------|---------|---------|
 | `BUILD_SHARED_LIBS` | `ON` | Build `typio-core` as a shared library |
-| `BUILD_SERVER` | `ON` | Build the Wayland daemon |
 | `BUILD_TESTS` | `ON` | Build the automated tests |
 | `BUILD_BASIC_ENGINE` | `ON` | Build the built-in basic keyboard engine |
-| `BUILD_RIME_ENGINE` | `ON` | Build the default Rime engine plugin |
+| `BUILD_RIME_ENGINE` | `OFF` | Build the optional Rime engine plugin |
 | `ENABLE_WAYLAND` | `ON` | Enable the Wayland frontend |
-| `ENABLE_SYSTRAY` | `ON` | Enable StatusNotifierItem tray support |
-| `BUILD_EXAMPLES` | `OFF` | Reserved for future maintained examples |
+| `ENABLE_STATUS_BUS` | `ON` | Enable the D-Bus runtime status/control interface |
+| `ENABLE_SYSTRAY` | `OFF` | Enable StatusNotifierItem tray support |
 
 Example:
 
@@ -87,14 +83,14 @@ cmake -S . -B build
 cmake --build build
 ```
 
-Example without Rime:
+Example with Rime enabled:
 
 ```bash
-cmake -S . -B build -DBUILD_RIME_ENGINE=OFF
+cmake -S . -B build -DBUILD_RIME_ENGINE=ON
 cmake --build build
 ```
 
-Use that override only if you intentionally want to drop the default Chinese engine plugin from the build.
+Use that override only if you want the optional Chinese engine plugin in addition to the built-in `basic` engine.
 
 ## Verify the Install
 

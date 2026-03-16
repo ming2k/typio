@@ -27,7 +27,6 @@ typedef struct TypioTrayRimeSchemaInfo {
 typedef struct TypioTrayRimeMenuInfo {
     bool available;
     char *current_schema;
-    int page_size;
     char *user_data_dir;
     TypioTrayRimeSchemaInfo schemas[TYPIO_TRAY_RIME_MENU_MAX_SCHEMAS];
     size_t schema_count;
@@ -105,7 +104,6 @@ static bool tray_load_rime_menu_info(TypioTray *tray, TypioTrayRimeMenuInfo *inf
         return false;
     }
 
-    info->page_size = config ? typio_config_get_int(config, "page_size", 9) : 9;
     if (shared_list.current_schema) {
         info->current_schema = typio_strdup(shared_list.current_schema);
     }
@@ -613,20 +611,6 @@ static void build_rime_submenu(DBusMessageIter *parent, TypioTray *tray) {
 
     begin_menu_item(parent, &var, &st, &dict, &children, 20, "Rime", TRUE, TRUE);
 
-    if (info.current_schema) {
-        snprintf(label, sizeof(label), "Schema: %s", info.current_schema);
-    } else {
-        snprintf(label, sizeof(label), "Schema: (default)");
-    }
-    build_menu_item(&children, 21, label, nullptr, FALSE);
-
-    snprintf(label, sizeof(label), "Page size: %d", info.page_size);
-    build_menu_item(&children, 22, label, nullptr, FALSE);
-
-    if (info.schema_count > 0) {
-        build_menu_item(&children, 23, nullptr, "separator", TRUE);
-    }
-
     for (size_t i = 0; i < info.schema_count; ++i) {
         bool is_current = info.current_schema &&
                           strcmp(info.current_schema, info.schemas[i].id) == 0;
@@ -710,30 +694,32 @@ static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
     int32_t item_id = 1;
     char label[256];
 
-    /* Get available engines from instance */
+    /* Get available keyboard engines from instance (skip voice engines) */
     TypioEngineManager *manager = typio_instance_get_engine_manager(tray->instance);
     if (manager) {
         size_t engine_count;
         const char **engines = typio_engine_manager_list(manager, &engine_count);
+        size_t shown = 0;
 
         for (size_t i = 0; i < engine_count && i < 10; i++) {
             const TypioEngineInfo *info = typio_engine_manager_get_info(manager, engines[i]);
-            if (info) {
-                /* Mark current engine with a bullet */
-                bool is_current = tray->engine_name &&
-                                  strcmp(engines[i], tray->engine_name) == 0;
-                if (is_current) {
-                    snprintf(label, sizeof(label), "● %s", info->display_name);
-                } else {
-                    snprintf(label, sizeof(label), "  %s", info->display_name);
-                }
-                /* Store engine index: IDs 100+ are engine selections */
-                build_menu_item(&children, 100 + (int32_t)i, label, nullptr, TRUE);
+            if (!info || info->type == TYPIO_ENGINE_TYPE_VOICE) {
+                continue;
             }
+
+            bool is_current = tray->engine_name &&
+                              strcmp(engines[i], tray->engine_name) == 0;
+            if (is_current) {
+                snprintf(label, sizeof(label), "● %s", info->display_name);
+            } else {
+                snprintf(label, sizeof(label), "  %s", info->display_name);
+            }
+            /* Store engine index: IDs 100+ are engine selections */
+            build_menu_item(&children, 100 + (int32_t)i, label, nullptr, TRUE);
+            shown++;
         }
 
-        /* Separator before quit */
-        if (engine_count > 0) {
+        if (shown > 0) {
             build_menu_item(&children, item_id++, nullptr, "separator", TRUE);
         }
     }

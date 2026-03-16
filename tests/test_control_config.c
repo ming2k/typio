@@ -100,6 +100,31 @@ static void cleanup_control(TypioControl *control) {
     g_free(control->committed_config_text);
 }
 
+TEST(window_builds_summary_and_actions) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    GtkApplication *app;
+    GtkWidget *window;
+
+    setup_control(&control, root);
+    app = gtk_application_new("org.typio.ControlTest", G_APPLICATION_NON_UNIQUE);
+    ASSERT_NOT_NULL(app);
+
+    window = control_build_window(&control, app);
+    ASSERT_NOT_NULL(window);
+    ASSERT(control.window == NULL);
+    ASSERT_NOT_NULL(control.service_status_label);
+    ASSERT_NOT_NULL(control.engine_label);
+    ASSERT_NOT_NULL(control.apply_config_button);
+    ASSERT_NOT_NULL(control.cancel_config_button);
+    ASSERT_STR_EQ(gtk_label_get_text(control.service_status_label), "Connected");
+    ASSERT_STR_EQ(gtk_label_get_text(control.engine_label), "None");
+
+    gtk_window_destroy(GTK_WINDOW(window));
+    g_object_unref(app);
+    cleanup_control(&control);
+}
+
 TEST(dirty_banner_and_cancel_restore_state) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
@@ -292,6 +317,7 @@ int main(void) {
     }
 
     printf("Running control config tests:\n");
+    run_test_window_builds_summary_and_actions();
     run_test_dirty_banner_and_cancel_restore_state();
     run_test_voice_model_selection_follows_staged_config();
     run_test_voice_backend_sync_writes_default_engine_only();

@@ -11,6 +11,10 @@
 
 static int tests_run = 0;
 static int tests_passed = 0;
+static int mock_focus_in_count = 0;
+static int mock_focus_out_count = 0;
+static int mock2_focus_in_count = 0;
+static int mock2_focus_out_count = 0;
 
 #define TEST(name) \
     static void test_##name(void); \
@@ -60,6 +64,22 @@ static TypioKeyProcessResult mock_process_key([[maybe_unused]] TypioEngine *engi
     return TYPIO_KEY_NOT_HANDLED;
 }
 
+static void mock_focus_in(TypioEngine *engine, [[maybe_unused]] TypioInputContext *ctx) {
+    if (strcmp(typio_engine_get_name(engine), "mock") == 0) {
+        mock_focus_in_count++;
+    } else if (strcmp(typio_engine_get_name(engine), "mock2") == 0) {
+        mock2_focus_in_count++;
+    }
+}
+
+static void mock_focus_out(TypioEngine *engine, [[maybe_unused]] TypioInputContext *ctx) {
+    if (strcmp(typio_engine_get_name(engine), "mock") == 0) {
+        mock_focus_out_count++;
+    } else if (strcmp(typio_engine_get_name(engine), "mock2") == 0) {
+        mock2_focus_out_count++;
+    }
+}
+
 static const TypioEngineInfo mock_engine_info = {
     .name = "mock",
     .display_name = "Mock Engine",
@@ -76,6 +96,8 @@ static const TypioEngineInfo mock_engine_info = {
 static const TypioEngineOps mock_engine_ops = {
     .init = mock_init,
     .destroy = mock_destroy,
+    .focus_in = mock_focus_in,
+    .focus_out = mock_focus_out,
     .process_key = mock_process_key,
 };
 
@@ -267,6 +289,37 @@ TEST(switch_engines) {
     typio_instance_free(instance);
 }
 
+TEST(switch_engine_rebinds_focused_context) {
+    TypioInstance *instance = typio_instance_new();
+    TypioInputContext *ctx;
+    TypioEngineManager *manager;
+
+    mock_focus_in_count = 0;
+    mock_focus_out_count = 0;
+    mock2_focus_in_count = 0;
+    mock2_focus_out_count = 0;
+
+    typio_instance_init(instance);
+    manager = typio_instance_get_engine_manager(instance);
+    typio_engine_manager_register(manager, mock_create, mock_get_info);
+    typio_engine_manager_register(manager, mock2_create, mock2_get_info);
+
+    ctx = typio_instance_create_context(instance);
+    ASSERT_NOT_NULL(ctx);
+    typio_input_context_focus_in(ctx);
+
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock"), TYPIO_OK);
+    ASSERT_EQ(mock_focus_in_count, 1);
+    ASSERT_EQ(mock_focus_out_count, 0);
+
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock2"), TYPIO_OK);
+    ASSERT_EQ(mock_focus_out_count, 1);
+    ASSERT_EQ(mock2_focus_in_count, 1);
+    ASSERT_EQ(mock2_focus_out_count, 0);
+
+    typio_instance_free(instance);
+}
+
 /* Test: Unload engine */
 TEST(unload_engine) {
     TypioInstance *instance = typio_instance_new();
@@ -435,6 +488,7 @@ int main(void) {
     run_test_get_info();
     run_test_activate_engine();
     run_test_switch_engines();
+    run_test_switch_engine_rebinds_focused_context();
     run_test_unload_engine();
     run_test_engine_capabilities();
     run_test_engine_user_data();

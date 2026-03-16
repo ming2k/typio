@@ -55,6 +55,10 @@ typedef struct TypioRimeSession {
     RimeSessionId session_id;
 } TypioRimeSession;
 
+static bool typio_rime_is_shift_keysym(uint32_t keysym) {
+    return keysym == TYPIO_KEY_Shift_L || keysym == TYPIO_KEY_Shift_R;
+}
+
 static void typio_rime_free_config(TypioRimeConfig *config) {
     if (!config) {
         return;
@@ -279,6 +283,14 @@ static uint32_t typio_rime_modifiers_to_mask(uint32_t modifiers) {
 static void typio_rime_clear_state(TypioInputContext *ctx) {
     typio_input_context_clear_preedit(ctx);
     typio_input_context_clear_candidates(ctx);
+}
+
+static void typio_rime_discard_session(TypioInputContext *ctx) {
+    if (!ctx) {
+        return;
+    }
+
+    typio_input_context_set_property(ctx, TYPIO_RIME_SESSION_KEY, nullptr, nullptr);
 }
 
 static bool typio_rime_apply_schema(TypioRimeSession *session) {
@@ -589,6 +601,7 @@ static void typio_rime_reset(TypioEngine *engine, TypioInputContext *ctx) {
 
 static void typio_rime_focus_out(TypioEngine *engine, TypioInputContext *ctx) {
     typio_rime_reset(engine, ctx);
+    typio_rime_discard_session(ctx);
 }
 
 static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
@@ -599,13 +612,19 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
     bool committed;
     bool composing;
     bool is_release;
+    bool is_shift;
     uint32_t rime_mask;
+    int ascii_before;
+    int ascii_after;
 
     if (!engine || !ctx || !event) {
         return TYPIO_KEY_NOT_HANDLED;
     }
 
     is_release = (event->type == TYPIO_EVENT_KEY_RELEASE);
+    is_shift = typio_rime_is_shift_keysym(event->keysym);
+    ascii_before = -1;
+    ascii_after = -1;
 
     /* Handle Escape on press only */
     if (!is_release && typio_key_event_is_escape(event)) {
@@ -631,10 +650,29 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
         rime_mask |= TYPIO_RIME_RELEASE_MASK;
     }
 
+    if (is_shift && session->state->api->get_option) {
+        ascii_before = session->state->api->get_option(session->session_id, "ascii_mode");
+    }
+
     handled = session->state->api->process_key(
         session->session_id,
         (int)event->keysym,
         (int)rime_mask);
+
+    if (is_shift && session->state->api->get_option) {
+        ascii_after = session->state->api->get_option(session->session_id, "ascii_mode");
+        typio_log(TYPIO_LOG_DEBUG,
+                  "Rime Shift diagnostic: state=%s handled=%s keysym=0x%x mods=0x%x mask=0x%x ascii_before=%d ascii_after=%d session=%u",
+                  is_release ? "release" : "press",
+                  handled ? "yes" : "no",
+                  event->keysym,
+                  event->modifiers,
+                  rime_mask,
+                  ascii_before,
+                  ascii_after,
+                  (unsigned int)session->session_id);
+    }
+
     if (!handled) {
         return TYPIO_KEY_NOT_HANDLED;
     }
@@ -767,12 +805,18 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
 static const char *typio_rime_get_status_icon(TypioEngine *engine,
                                                TypioInputContext *ctx) {
     TypioRimeSession *session = typio_rime_get_session(engine, ctx, false);
+    Bool ascii;
 
     if (!session || !session->state->api->get_option) {
         return "typio-rime";
     }
 
-    Bool ascii = session->state->api->get_option(session->session_id, "ascii_mode");
+    ascii = session->state->api->get_option(session->session_id, "ascii_mode");
+    typio_log(TYPIO_LOG_DEBUG,
+              "Rime status icon diagnostic: ascii_mode=%d icon=%s session=%u",
+              ascii ? 1 : 0,
+              ascii ? "typio-rime-latin" : "typio-rime",
+              (unsigned int)session->session_id);
     return ascii ? "typio-rime-latin" : "typio-rime";
 }
 

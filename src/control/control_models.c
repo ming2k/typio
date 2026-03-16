@@ -1,4 +1,5 @@
 #include "control_internal.h"
+#include "control_widgets.h"
 
 #include <glib/gstdio.h>
 #include <sys/stat.h>
@@ -49,21 +50,6 @@ static const ModelInfo sherpa_models[] = {
       "sherpa-onnx-whisper-small.tar.bz2",
       "sherpa-onnx-whisper-small" },
 };
-
-static GtkWidget *create_section_title(const char *text) {
-    GtkWidget *label = gtk_label_new(text);
-    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
-    gtk_widget_add_css_class(label, "section-title");
-    gtk_widget_set_margin_top(label, 12);
-    gtk_widget_set_margin_bottom(label, 4);
-    return label;
-}
-
-static GtkWidget *create_surface_box(gint spacing) {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, spacing);
-    gtk_widget_add_css_class(box, "surface");
-    return box;
-}
 
 const char *control_voice_backend_id(TypioControl *control, guint idx) {
     const char *value;
@@ -407,31 +393,40 @@ static void model_row_cleanup(ModelRow *row) {
 }
 
 static GtkWidget *create_model_row_widget(ModelRow *row) {
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    GtkWidget *text_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
     GtkWidget *name_label;
+    GtkWidget *meta_label;
 
-    gtk_widget_set_margin_top(hbox, 2);
-    gtk_widget_set_margin_bottom(hbox, 2);
+    gtk_widget_add_css_class(hbox, "preference-row");
     row->row_box = hbox;
 
     name_label = gtk_label_new(row->info->display_name);
     gtk_label_set_xalign(GTK_LABEL(name_label), 0.0f);
-    gtk_widget_set_hexpand(name_label, TRUE);
-    gtk_box_append(GTK_BOX(hbox), name_label);
+    gtk_widget_add_css_class(name_label, "preference-title");
+
+    meta_label = gtk_label_new(row->info->size_label);
+    gtk_label_set_xalign(GTK_LABEL(meta_label), 0.0f);
+    gtk_widget_add_css_class(meta_label, "preference-description");
+    gtk_widget_set_hexpand(text_box, TRUE);
+    gtk_box_append(GTK_BOX(text_box), name_label);
+    gtk_box_append(GTK_BOX(text_box), meta_label);
+    gtk_box_append(GTK_BOX(hbox), text_box);
 
     row->status_label = GTK_LABEL(gtk_label_new(""));
     gtk_label_set_xalign(row->status_label, 0.0f);
-    gtk_widget_set_size_request(GTK_WIDGET(row->status_label), 90, -1);
+    gtk_widget_add_css_class(GTK_WIDGET(row->status_label), "muted-label");
+    gtk_widget_set_size_request(GTK_WIDGET(row->status_label), 96, -1);
     gtk_box_append(GTK_BOX(hbox), GTK_WIDGET(row->status_label));
 
     row->progress = GTK_PROGRESS_BAR(gtk_progress_bar_new());
     gtk_progress_bar_set_show_text(row->progress, TRUE);
-    gtk_widget_set_hexpand(GTK_WIDGET(row->progress), TRUE);
+    gtk_widget_set_size_request(GTK_WIDGET(row->progress), 140, -1);
     gtk_widget_set_visible(GTK_WIDGET(row->progress), FALSE);
     gtk_box_append(GTK_BOX(hbox), GTK_WIDGET(row->progress));
 
     row->action_button = GTK_BUTTON(gtk_button_new_with_label(""));
-    gtk_widget_set_size_request(GTK_WIDGET(row->action_button), 90, -1);
+    gtk_widget_set_size_request(GTK_WIDGET(row->action_button), 110, -1);
     g_signal_connect(row->action_button, "clicked",
                      G_CALLBACK(on_model_action_clicked), row);
     gtk_box_append(GTK_BOX(hbox), GTK_WIDGET(row->action_button));
@@ -440,11 +435,12 @@ static GtkWidget *create_model_row_widget(ModelRow *row) {
 }
 
 GtkWidget *control_build_whisper_model_section(TypioControl *control) {
-    GtkWidget *section = create_surface_box(6);
-    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    GtkWidget *section = control_create_panel_box(10);
+    GtkWidget *list = control_create_preferences_list();
 
-    gtk_box_append(GTK_BOX(section), create_section_title("Whisper Models"));
-    gtk_widget_set_margin_bottom(vbox, 8);
+    gtk_box_append(GTK_BOX(section),
+                   control_create_section_header("Whisper models",
+                                                 "Local `whisper.cpp` models available for download and removal."));
 
     for (size_t i = 0; i < WHISPER_MODEL_COUNT; i++) {
         ModelRow *row = &control->whisper_rows[i];
@@ -457,20 +453,21 @@ GtkWidget *control_build_whisper_model_section(TypioControl *control) {
         row->installed_path = g_build_filename(control->whisper_dir, filename, nullptr);
         g_free(filename);
 
-        gtk_box_append(GTK_BOX(vbox), create_model_row_widget(row));
+        gtk_list_box_append(GTK_LIST_BOX(list), create_model_row_widget(row));
         model_update_row_state(row);
     }
 
-    gtk_box_append(GTK_BOX(section), vbox);
+    gtk_box_append(GTK_BOX(section), list);
     return section;
 }
 
 GtkWidget *control_build_sherpa_model_section(TypioControl *control) {
-    GtkWidget *section = create_surface_box(6);
-    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    GtkWidget *section = control_create_panel_box(10);
+    GtkWidget *list = control_create_preferences_list();
 
-    gtk_box_append(GTK_BOX(section), create_section_title("Sherpa-ONNX Models"));
-    gtk_widget_set_margin_bottom(vbox, 8);
+    gtk_box_append(GTK_BOX(section),
+                   control_create_section_header("Sherpa-ONNX models",
+                                                 "Packaged speech models extracted into the local Typio data directory."));
 
     for (size_t i = 0; i < SHERPA_MODEL_COUNT; i++) {
         ModelRow *row = &control->sherpa_rows[i];
@@ -482,11 +479,11 @@ GtkWidget *control_build_sherpa_model_section(TypioControl *control) {
                                                row->info->extract_dir,
                                                nullptr);
 
-        gtk_box_append(GTK_BOX(vbox), create_model_row_widget(row));
+        gtk_list_box_append(GTK_LIST_BOX(list), create_model_row_widget(row));
         model_update_row_state(row);
     }
 
-    gtk_box_append(GTK_BOX(section), vbox);
+    gtk_box_append(GTK_BOX(section), list);
     return section;
 }
 

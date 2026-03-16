@@ -53,6 +53,10 @@ static uint32_t key_route_xkb_modifiers(TypioWlKeyboard *keyboard) {
     return mods;
 }
 
+static bool key_route_is_shift_keysym(uint32_t keysym) {
+    return keysym == XKB_KEY_Shift_L || keysym == XKB_KEY_Shift_R;
+}
+
 static const char *key_route_state_name(TypioKeyTrackState state) {
     switch (state) {
     case TYPIO_KEY_IDLE:
@@ -305,6 +309,20 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         bool is_modifier = typio_key_event_is_modifier_only(&event);
         bool handled = typio_input_context_process_key(session->ctx, &event);
 
+        if (is_modifier && key_route_is_shift_keysym(keysym)) {
+            TypioEngineManager *manager =
+                typio_instance_get_engine_manager(frontend->instance);
+            TypioEngine *active_engine =
+                manager ? typio_engine_manager_get_active(manager) : nullptr;
+            typio_log(TYPIO_LOG_DEBUG,
+                      "Shift press diagnostic: handled=%s engine=%s mods=0x%x phys=0x%x xkb=0x%x",
+                      handled ? "yes" : "no",
+                      active_engine ? typio_engine_get_name(active_engine) : "(none)",
+                      modifiers,
+                      keyboard->physical_modifiers,
+                      key_route_xkb_modifiers(keyboard));
+        }
+
         if (!handled || is_modifier) {
             typio_wl_vk_forward_key(keyboard, time, key, WL_KEYBOARD_KEY_STATE_PRESSED, unicode);
             key_set_state(frontend, key, TYPIO_KEY_FORWARDED);
@@ -461,7 +479,21 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                 .time      = time,
                 .is_repeat = false,
             };
-            typio_input_context_process_key(session->ctx, &ev);
+            bool handled = typio_input_context_process_key(session->ctx, &ev);
+            if (typio_key_event_is_modifier_only(&ev) &&
+                key_route_is_shift_keysym(keysym)) {
+                TypioEngineManager *manager =
+                    typio_instance_get_engine_manager(frontend->instance);
+                TypioEngine *active_engine =
+                    manager ? typio_engine_manager_get_active(manager) : nullptr;
+                typio_log(TYPIO_LOG_DEBUG,
+                          "Shift release diagnostic: handled=%s engine=%s mods=0x%x phys=0x%x xkb=0x%x",
+                          handled ? "yes" : "no",
+                          active_engine ? typio_engine_get_name(active_engine) : "(none)",
+                          modifiers,
+                          keyboard->physical_modifiers,
+                          key_route_xkb_modifiers(keyboard));
+            }
         }
         key_clear_tracking(frontend, key);
         return;
@@ -477,7 +509,21 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
             .time      = time,
             .is_repeat = false,
         };
-        typio_input_context_process_key(session->ctx, &event);
+        bool handled = typio_input_context_process_key(session->ctx, &event);
+        if (typio_key_event_is_modifier_only(&event) &&
+            key_route_is_shift_keysym(keysym)) {
+            TypioEngineManager *manager =
+                typio_instance_get_engine_manager(frontend->instance);
+            TypioEngine *active_engine =
+                manager ? typio_engine_manager_get_active(manager) : nullptr;
+            typio_log(TYPIO_LOG_DEBUG,
+                      "Shift release diagnostic: handled=%s engine=%s mods=0x%x phys=0x%x xkb=0x%x",
+                      handled ? "yes" : "no",
+                      active_engine ? typio_engine_get_name(active_engine) : "(none)",
+                      modifiers,
+                      keyboard->physical_modifiers,
+                      key_route_xkb_modifiers(keyboard));
+        }
     }
 
     typio_wl_vk_forward_key(keyboard, time, key, WL_KEYBOARD_KEY_STATE_RELEASED, unicode);

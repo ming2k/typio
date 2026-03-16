@@ -80,9 +80,19 @@ static bool rime_parse_schema_list(const char *path, TypioRimeSchemaList *list) 
 
     while (fgets(line, sizeof(line), file) &&
            list->schema_count < TYPIO_RIME_SCHEMA_LIST_MAX_SCHEMAS) {
-        char *schema_marker = strstr(line, "- schema:");
+        const char *p = line;
+        char *schema_marker;
         char *id;
 
+        /* Skip leading whitespace and check for YAML comment */
+        while (*p == ' ' || *p == '\t') {
+            ++p;
+        }
+        if (*p == '#') {
+            continue;
+        }
+
+        schema_marker = strstr(line, "- schema:");
         if (!schema_marker) {
             continue;
         }

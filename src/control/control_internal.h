@@ -40,6 +40,7 @@ typedef struct ModelRow {
 typedef struct TypioControl {
     GtkApplication *app;
     GtkWidget *window;
+    GtkLabel *service_status_label;
     GtkLabel *availability_label;
     GtkLabel *config_status_label;
     GtkLabel *engine_label;
@@ -70,7 +71,6 @@ typedef struct TypioControl {
     GtkButton *shortcut_switch_engine_btn;
     GtkButton *shortcut_voice_ptt_btn;
     GtkButton *shortcut_recording_btn;
-    GtkTextBuffer *state_buffer;
     GtkTextBuffer *config_buffer;
     GtkButton *apply_config_button;
     GtkButton *cancel_config_button;
@@ -114,7 +114,7 @@ void on_engine_selected(GObject *object, GParamSpec *pspec, gpointer user_data);
 void control_clear_proxy(TypioControl *control);
 void control_refresh_from_proxy(TypioControl *control);
 
-void control_apply_css(void);
+GtkWidget *control_build_window(TypioControl *control, GtkApplication *app);
 GtkWidget *control_wrap_page_scroller(GtkWidget *child);
 GtkWidget *control_build_display_page(TypioControl *control);
 GtkWidget *control_build_shortcuts_page(TypioControl *control);

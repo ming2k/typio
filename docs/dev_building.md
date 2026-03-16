@@ -9,12 +9,9 @@
 - `xkbcommon`
 - `wayland-scanner`
 
-Also required for the default build:
-
-- `librime`
-
 Optional:
 
+- `librime` for `BUILD_RIME_ENGINE=ON`
 - `gtk4` for `BUILD_CONTROL_PANEL=ON`
 - `dbus-1` for `ENABLE_STATUS_BUS=ON`
 - `dbus-1` for `ENABLE_SYSTRAY=ON`
@@ -40,7 +37,7 @@ Individual binaries:
 ./build/tests/test_engine_manager
 ```
 
-The default build also includes:
+When `BUILD_RIME_ENGINE=ON`, the build also includes:
 
 ```bash
 ./build/tests/test_rime_engine
@@ -51,7 +48,7 @@ The default build also includes:
 During development, run directly from the build tree without installing:
 
 ```bash
-./build/src/server/typio --engine-dir ./build/engines --engine rime --verbose
+./build/src/server/typio --engine basic --verbose
 ```
 
 `BUILD_RPATH` is configured so that all shared libraries are found automatically.
@@ -79,15 +76,13 @@ sudo cmake --install build --prefix /usr/local
 | Option | Default | Meaning |
 |--------|---------|---------|
 | `BUILD_SHARED_LIBS` | `ON` | Build `typio-core` as a shared library for plugin use |
-| `BUILD_SERVER` | `ON` | Build the `typio` daemon |
 | `BUILD_CONTROL_PANEL` | `OFF` | Build the `typio-control` GTK4 control panel |
 | `BUILD_TESTS` | `ON` | Build unit tests |
 | `BUILD_BASIC_ENGINE` | `ON` | Build the built-in basic keyboard engine |
 | `ENABLE_WAYLAND` | `ON` | Enable the Wayland frontend |
 | `ENABLE_STATUS_BUS` | `ON` | Enable the D-Bus runtime status/control interface |
-| `ENABLE_SYSTRAY` | `ON` | Enable D-Bus StatusNotifierItem support |
-| `BUILD_EXAMPLES` | `OFF` | Reserved for future maintained examples |
-| `BUILD_RIME_ENGINE` | `ON` | Build the default `librime` engine plugin |
+| `ENABLE_SYSTRAY` | `OFF` | Enable D-Bus StatusNotifierItem support |
+| `BUILD_RIME_ENGINE` | `OFF` | Build the optional `librime` engine plugin |
 
 ## Suggested Developer Invocations
 
@@ -113,10 +108,10 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_CONTROL_PANEL=ON -DENABLE_S
 cmake --build build
 ```
 
-Run from build tree with Rime:
+Run from build tree with the built-in engine:
 
 ```bash
-./build/src/server/typio --engine-dir ./build/engines --engine rime --verbose
+./build/src/server/typio --engine basic --verbose
 ```
 
 ## Distro Packages
@@ -141,4 +136,4 @@ sudo dnf install gcc cmake pkgconf-pkg-config wayland-devel libxkbcommon-devel w
 
 If you enable the D-Bus status bus or systray support, also install the `dbus-1` development package for your distribution.
 If you build the control panel, also install the `gtk4` development package for your distribution.
-If you intentionally build with `-DBUILD_RIME_ENGINE=OFF`, the `librime` package is no longer required.
+If you build with `-DBUILD_RIME_ENGINE=ON`, install the `librime` development package for your distribution.

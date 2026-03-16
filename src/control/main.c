@@ -42,10 +42,6 @@ static void control_print_help(const char *program_name) {
 }
 #endif
 
-static char *variant_value_to_text(GVariant *value) {
-    return g_variant_print(value, TRUE);
-}
-
 static char *control_dup_buffer_text(TypioControl *control) {
     GtkTextIter start;
     GtkTextIter end;
@@ -186,33 +182,6 @@ static void control_set_committed_config_text(TypioControl *control,
 
     g_free(control->committed_config_text);
     control->committed_config_text = g_strdup(control_resolve_config_text(text));
-}
-
-static void control_set_state_text(TypioControl *control, GVariant *state) {
-    GString *text;
-    GVariantIter iter;
-    const char *key;
-    GVariant *value;
-
-    if (!control || !control->state_buffer) {
-        return;
-    }
-
-    text = g_string_new("");
-    if (state && g_variant_is_of_type(state, G_VARIANT_TYPE_VARDICT)) {
-        g_variant_iter_init(&iter, state);
-        while (g_variant_iter_next(&iter, "{&sv}", &key, &value)) {
-            char *rendered = variant_value_to_text(value);
-            g_string_append_printf(text, "%s: %s\n", key, rendered ? rendered : "");
-            g_free(rendered);
-            g_variant_unref(value);
-        }
-    } else {
-        g_string_assign(text, "No engine state available.\n");
-    }
-
-    gtk_text_buffer_set_text(control->state_buffer, text->str, -1);
-    g_string_free(text, TRUE);
 }
 
 static void control_update_engine_config_panel(TypioControl *control,
@@ -475,8 +444,19 @@ static void control_update_availability_label(TypioControl *control,
         return;
     }
 
-    gtk_label_set_text(control->availability_label, message ? message : "");
-    gtk_widget_set_visible(GTK_WIDGET(control->availability_label), visible);
+    if (control->service_status_label) {
+        gtk_label_set_text(control->service_status_label, visible ? "Offline" : "Connected");
+        gtk_widget_remove_css_class(GTK_WIDGET(control->service_status_label), "status-online");
+        gtk_widget_remove_css_class(GTK_WIDGET(control->service_status_label), "status-offline");
+        gtk_widget_add_css_class(GTK_WIDGET(control->service_status_label),
+                                 visible ? "status-offline" : "status-online");
+    }
+
+    gtk_label_set_text(control->availability_label,
+                       (message && *message) ? message
+                                             : (visible ? "Typio service unavailable"
+                                                        : "Typio service is available on the session bus."));
+    gtk_widget_set_visible(GTK_WIDGET(control->availability_label), TRUE);
 }
 
 void control_sync_form_from_buffer(TypioControl *control) {
@@ -733,14 +713,13 @@ void control_refresh_from_proxy(TypioControl *control) {
         g_warning("control_refresh_from_proxy: Typio service unavailable");
         control_update_availability_label(control, "Typio service unavailable", TRUE);
         if (control->engine_label) {
-            gtk_widget_set_visible(GTK_WIDGET(control->engine_label), FALSE);
+            gtk_label_set_text(control->engine_label, "Unavailable");
         }
         control_clear_rime_schema_model(control);
         control_set_engine_model(control, nullptr, nullptr);
         preferred_voice_backend = control_dup_preferred_voice_backend(control, NULL);
         control_set_voice_backend_model(control, nullptr, preferred_voice_backend);
         g_free(preferred_voice_backend);
-        control_set_state_text(control, nullptr);
         gtk_widget_set_sensitive(GTK_WIDGET(control->engine_dropdown), FALSE);
         gtk_widget_set_sensitive(GTK_WIDGET(control->voice_backend_dropdown), FALSE);
         control_update_config_actions(control);
@@ -761,7 +740,8 @@ void control_refresh_from_proxy(TypioControl *control) {
         active_name = g_variant_get_string(active_engine, nullptr);
     }
     if (control->engine_label) {
-        gtk_widget_set_visible(GTK_WIDGET(control->engine_label), FALSE);
+        gtk_label_set_text(control->engine_label,
+                           (active_name && *active_name) ? active_name : "None");
     }
 
     if (config_text && g_variant_is_of_type(config_text, G_VARIANT_TYPE_STRING)) {
@@ -798,7 +778,6 @@ void control_refresh_from_proxy(TypioControl *control) {
     control_set_voice_backend_model(control, available_engines, preferred_voice_backend);
     g_free(preferred_voice_backend);
     control_update_engine_config_panel(control, active_name);
-    control_set_state_text(control, engine_state);
     control_set_config_text(control, config_text);
 
     if (engine_state) {
@@ -1094,123 +1073,13 @@ static void on_window_destroy([[maybe_unused]] GtkWidget *widget, gpointer user_
 static void activate(GtkApplication *app, gpointer user_data) {
     TypioControl *control = user_data;
     GtkWidget *window;
-    GtkWidget *root;
-    GtkWidget *nav_shell;
-    GtkWidget *content_shell;
-    GtkWidget *window_shell;
-    GtkWidget *page_stack;
-    GtkWidget *sidebar;
-    GtkWidget *action_bar;
-    GtkWidget *spacer;
 
     control->app = app;
     control->whisper_dir = g_build_filename(g_get_user_data_dir(), "typio", "whisper", nullptr);
     control->sherpa_dir = g_build_filename(g_get_user_data_dir(), "typio", "sherpa-onnx", nullptr);
-
-    window = gtk_application_window_new(app);
-    gtk_window_set_title(GTK_WINDOW(window), "Typio Control");
-    gtk_window_set_default_size(GTK_WINDOW(window), 760, 520);
-    gtk_widget_set_size_request(window, 560, 400);
-    gtk_widget_add_css_class(window, "control-root");
-    control_apply_css();
-
     control->config_buffer = gtk_text_buffer_new(nullptr);
-
-    window_shell = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    root = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    nav_shell = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    content_shell = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_add_css_class(window_shell, "window-shell");
-    gtk_widget_add_css_class(window_shell, "background");
-    gtk_widget_add_css_class(root, "control-root");
-    gtk_widget_add_css_class(nav_shell, "nav-shell");
-    gtk_widget_add_css_class(content_shell, "content-shell");
-    gtk_widget_set_hexpand(window_shell, TRUE);
-    gtk_widget_set_vexpand(window_shell, TRUE);
-    gtk_widget_set_hexpand(root, TRUE);
-    gtk_widget_set_vexpand(root, TRUE);
-    gtk_widget_set_size_request(nav_shell, 168, -1);
-    gtk_widget_set_vexpand(nav_shell, TRUE);
-    gtk_widget_set_hexpand(content_shell, TRUE);
-    gtk_widget_set_vexpand(content_shell, TRUE);
-    gtk_box_append(GTK_BOX(root), nav_shell);
-    gtk_box_append(GTK_BOX(root), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
-    gtk_box_append(GTK_BOX(root), content_shell);
-
-    page_stack = gtk_stack_new();
-    gtk_stack_set_transition_type(GTK_STACK(page_stack), GTK_STACK_TRANSITION_TYPE_CROSSFADE);
-    gtk_widget_set_hexpand(page_stack, TRUE);
-    gtk_widget_set_vexpand(page_stack, TRUE);
-
-    sidebar = gtk_stack_sidebar_new();
-    gtk_stack_sidebar_set_stack(GTK_STACK_SIDEBAR(sidebar), GTK_STACK(page_stack));
-    gtk_widget_add_css_class(sidebar, "nav-sidebar");
-    gtk_widget_set_margin_top(sidebar, 16);
-    gtk_widget_set_margin_bottom(sidebar, 16);
-    gtk_widget_set_margin_start(sidebar, 12);
-    gtk_widget_set_margin_end(sidebar, 12);
-    gtk_widget_set_vexpand(sidebar, TRUE);
-    gtk_widget_set_valign(sidebar, GTK_ALIGN_FILL);
-    gtk_box_append(GTK_BOX(nav_shell), sidebar);
-
-    control->availability_label = GTK_LABEL(gtk_label_new(""));
-    gtk_label_set_xalign(control->availability_label, 0.0f);
-    gtk_widget_add_css_class(GTK_WIDGET(control->availability_label), "status-banner");
-    gtk_widget_set_margin_top(GTK_WIDGET(control->availability_label), 16);
-    gtk_widget_set_margin_start(GTK_WIDGET(control->availability_label), 16);
-    gtk_widget_set_margin_end(GTK_WIDGET(control->availability_label), 16);
-    gtk_widget_set_visible(GTK_WIDGET(control->availability_label), FALSE);
-    gtk_box_append(GTK_BOX(content_shell), GTK_WIDGET(control->availability_label));
-
-    control->engine_label = nullptr;
-
-    gtk_stack_add_titled(GTK_STACK(page_stack),
-                         control_wrap_page_scroller(control_build_display_page(control)),
-                         "display", "Display");
-    gtk_stack_add_titled(GTK_STACK(page_stack),
-                         control_build_engines_page(control),
-                         "engines", "Engines");
-    gtk_stack_add_titled(GTK_STACK(page_stack),
-                         control_wrap_page_scroller(control_build_shortcuts_page(control)),
-                         "shortcuts", "Shortcuts");
-    gtk_box_append(GTK_BOX(content_shell), page_stack);
-
-    action_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_set_valign(action_bar, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_top(action_bar, 8);
-    gtk_widget_set_margin_bottom(action_bar, 16);
-    gtk_widget_set_margin_start(action_bar, 16);
-    gtk_widget_set_margin_end(action_bar, 16);
-
-    control->config_status_label = GTK_LABEL(gtk_label_new(""));
-    gtk_label_set_xalign(control->config_status_label, 0.0f);
-    gtk_label_set_wrap(control->config_status_label, TRUE);
-    gtk_widget_add_css_class(GTK_WIDGET(control->config_status_label), "inline-status");
-    gtk_widget_set_halign(GTK_WIDGET(control->config_status_label), GTK_ALIGN_START);
-    gtk_widget_set_valign(GTK_WIDGET(control->config_status_label), GTK_ALIGN_CENTER);
-    gtk_widget_set_hexpand(GTK_WIDGET(control->config_status_label), FALSE);
-    gtk_widget_set_visible(GTK_WIDGET(control->config_status_label), FALSE);
-    gtk_box_append(GTK_BOX(action_bar), GTK_WIDGET(control->config_status_label));
-
-    spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_set_hexpand(spacer, TRUE);
-    gtk_box_append(GTK_BOX(action_bar), spacer);
-
-    control->cancel_config_button = GTK_BUTTON(gtk_button_new_with_label("Cancel"));
-    g_signal_connect(control->cancel_config_button, "clicked",
-                     G_CALLBACK(on_cancel_config_clicked), control);
-    gtk_box_append(GTK_BOX(action_bar), GTK_WIDGET(control->cancel_config_button));
-
-    control->apply_config_button = GTK_BUTTON(gtk_button_new_with_label("Apply"));
-    g_signal_connect(control->apply_config_button, "clicked",
-                     G_CALLBACK(on_apply_config_clicked), control);
-    gtk_box_append(GTK_BOX(action_bar), GTK_WIDGET(control->apply_config_button));
-
-    gtk_box_append(GTK_BOX(content_shell), action_bar);
+    window = control_build_window(control, app);
     control_update_config_actions(control);
-
-    gtk_box_append(GTK_BOX(window_shell), root);
-    gtk_window_set_child(GTK_WINDOW(window), window_shell);
     control->window = window;
     control_update_window_title(control);
 

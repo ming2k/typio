@@ -21,11 +21,10 @@ include(CMakePackageConfigHelpers)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(BUILD_SHARED_LIBS "Build shared Typio libraries" ON)
-option(BUILD_SERVER "Build the Typio Wayland input method daemon" ON)
 option(BUILD_CONTROL_PANEL "Build the GTK4 control panel" OFF)
 option(BUILD_TESTS "Build Typio test programs" ON)
 option(BUILD_BASIC_ENGINE "Build the built-in basic keyboard engine" ON)
-option(BUILD_RIME_ENGINE "Build the Rime engine" ON)
+option(BUILD_RIME_ENGINE "Build the Rime engine" OFF)
 option(BUILD_MOZC_ENGINE "Build the Mozc Japanese input engine" OFF)
 option(ENABLE_WAYLAND "Enable Wayland input-method frontend support" ON)
 option(ENABLE_STATUS_BUS "Enable D-Bus runtime status/control interface" ON)
@@ -149,10 +148,7 @@ configure_file(
 
 add_subdirectory(src/lib)
 add_subdirectory(src/engines)
-
-if(BUILD_SERVER)
-    add_subdirectory(src/server)
-endif()
+add_subdirectory(src/server)
 
 if(BUILD_CONTROL_PANEL)
     add_subdirectory(src/control)
@@ -185,12 +181,10 @@ if(BUILD_CONTROL_PANEL)
     )
 endif()
 
-if(BUILD_SERVER)
-    install(
-        FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/autostart/typio.desktop"
-        DESTINATION "${TYPIO_AUTOSTART_DIR}"
-    )
-endif()
+install(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/autostart/typio.desktop"
+    DESTINATION "${TYPIO_AUTOSTART_DIR}"
+)
 
 install(
     EXPORT typio-targets
