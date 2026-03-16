@@ -7,7 +7,7 @@ pipeline. Its goal is to keep the implementation safe, robust, predictable,
 and easy to extend without reintroducing stale-key bugs or asymmetric key
 sequences.
 
-Use this document together with [Architecture](dev_architecture.md) when
+Use this document together with [Architecture](architecture.md) when
 changing keyboard handling, engine interaction, or focus lifecycle code.
 
 ## Design Goals

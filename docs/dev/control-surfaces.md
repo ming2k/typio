@@ -15,7 +15,7 @@ editing rules in one place.
 Control surfaces have two jobs:
 
 - present runtime state coming from `typio-server`
-- let the user stage and apply persistent configuration changes safely
+- let the user edit persistent configuration safely
 
 They must not become a second source of truth for runtime or config state.
 
@@ -27,8 +27,9 @@ Every control surface must keep these layers separate:
   Data exposed by the daemon, primarily over the D-Bus status interface.
 - `persisted config`
   The authoritative `typio.toml` as seen by the daemon.
-- `local draft`
-  Unsaved edits staged in a specific UI.
+- `local stage`
+  The most recent client-side representation of edits not yet confirmed by the
+  daemon.
 - `view state`
   Widget state such as dropdown selections, switches, and spin buttons.
 
@@ -38,23 +39,28 @@ Rules:
   guesses.
 - Persistent edits must start from the daemon's current `ConfigText`.
 - Widget state is never authoritative by itself.
-- Programmatic refresh must not mutate the local draft or mark it dirty.
+- Programmatic refresh must not overwrite newer local staged edits.
 
 ## Editing Model
 
-`typio-control` uses a seeded-draft model:
+`typio-control` now uses an instant-apply model with background autosave:
 
 1. wait for the first `ConfigText` from the status bus
-2. seed the local draft from that config text
-3. let user edits mutate the local draft
-4. submit the full staged draft only on `Apply`
+2. seed the local stage from that config text
+3. let user edits update widget state immediately
+4. mirror the edited form back into the staged full config text
+5. schedule an automatic `SetConfigText` submission after a short debounce
 
 Required invariants:
 
-- Before the first successful seed, widget initialization must not write draft
+- Before the first successful seed, widget initialization must not write staged
   config.
 - During programmatic refresh, all change handlers must be suppressed.
-- `Apply` must only submit a seeded draft.
+- UI response must be immediate; persistence is allowed a short async debounce.
+- Only one config write may be in flight at a time.
+- If the user edits again while a write is in flight, the newest staged config
+  must win once the current write finishes.
+- Old daemon replies must not overwrite newer local staged edits.
 - Default values belong to schema application and daemon-side config reload,
   not to control-surface startup.
 
@@ -64,9 +70,9 @@ This class of bug is easy to reintroduce:
 
 1. the control surface starts before the daemon is ready
 2. widget setup emits change signals
-3. the UI writes a local draft based on widget defaults
-4. the user edits one unrelated setting and clicks `Apply`
-5. the whole polluted draft overwrites unrelated daemon config
+3. the UI writes a local stage based on widget defaults
+4. the user edits one unrelated setting
+5. the whole polluted staged config overwrites unrelated daemon config
 
 This is how a Rime-schema edit can accidentally reset `default_engine` or
 other top-level keys.
@@ -74,24 +80,36 @@ other top-level keys.
 ## Information Architecture
 
 - Top-level navigation should represent stable product areas such as
-  `Display`, `Engines`, and `Shortcuts`.
+  `Appearance`, `Engines`, and `Shortcuts`.
 - Avoid mixing categories and concrete instances in the same navigation layer.
 - Engine/backend/model choices belong in dropdowns, not in extra tabs.
 - Use at most two navigation levels in the control center.
 
 ## Visual Hierarchy
 
-- Treat runtime problems as banners or alerts near the top of the content area.
-- Treat unsaved-change state as an action-local hint near `Apply` / `Cancel`,
-  not as page content.
+- Follow the native GTK/GNOME preference-window pattern instead of building a
+  dialog-like form workflow.
+- Prefer one clear content column with grouped sections over nested sidebars or
+  multiple competing surfaces.
+- Use the header bar for navigation only; avoid putting `Apply` / `Cancel`
+  actions in the title bar.
+- Runtime problems should be subtle inline feedback and should only be shown
+  for real failures. Successful saves and retries stay silent.
 - Use page titles sparingly; do not repeat obvious navigation labels.
 - Prefer spacing and grouping over extra frames or helper text.
+- Let one container own the shape language. In practice, the outer panel owns
+  rounded corners and inner list rows stay flat, matching a boxed-list style.
 
 ## Component Rules
 
-- Sidebars are for durable navigation.
-- Stack switchers are for tightly related sibling views only.
+- Header-bar stack switchers are for tightly related sibling views only.
+- Preference rows should use native widgets directly; avoid wrapping standard
+  controls in extra decorative containers.
 - Buttons are for explicit actions, not for passive refreshes.
+- Avoid locking switches or dropdowns while async saves are in flight.
+- Use optimistic UI with short debounced autosave:
+  `switch` / dropdown-style controls can use a shorter delay than spin/text
+  inputs.
 - Remove maintenance actions from the main flow if the daemon can refresh
   itself or if the action has no meaningful user decision attached.
 
@@ -120,7 +138,9 @@ Any change to control-surface behavior should update:
 
 Minimum regression coverage to keep:
 
-- startup before the daemon appears must not dirty the local draft
+- startup before the daemon appears must not dirty the local stage
 - programmatic dropdown refresh must not rewrite config
 - changing one field must not rewrite unrelated top-level settings
+- fast repeated switch toggles must preserve the newest local state
+- delayed daemon replies must not overwrite newer staged edits
 - Rime and voice settings must round-trip through daemon `ConfigText`

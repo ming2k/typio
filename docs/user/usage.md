@@ -84,12 +84,28 @@ contains:
 
 The control panel reads Typio state from `org.typio.InputMethod1` and can:
 
-- show the current engine
-- list available engines
-- display structured engine/config state
-- switch engines
-- edit the root `typio.toml` text
-- reload Typio configuration
+- switch the active keyboard engine
+- edit appearance settings such as popup theme, candidate layout, and font size
+- edit notification settings
+- configure engine-specific options such as the active Rime schema or Mozc page size
+- pick the voice backend and installed model
+- record shortcut bindings directly from the keyboard
+
+The current layout is split into three top-level pages:
+
+- `Appearance`
+- `Engines`
+- `Shortcuts`
+
+The control panel follows an instant-apply model:
+
+- widget changes take effect in the UI immediately
+- Typio saves them automatically in the background
+- successful saves are silent
+- temporary retries are silent
+- only real save failures surface a short inline error message
+
+This means there is no global `Apply` / `Cancel` flow in the current UI.
 
 ## Built-In `basic` Engine
 

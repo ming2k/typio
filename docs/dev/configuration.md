@@ -100,13 +100,13 @@ Both emit `PropertiesChanged` after completing.
 
 ### 6. Edit From Control Surfaces
 
-Control surfaces follow the seeded-draft model documented in
-`dev_control_surfaces.md`:
+Control surfaces follow the instant-apply model documented in
+`control-surfaces.md`:
 
 1. Read `ConfigText` from the daemon
-2. Seed a local draft
+2. Seed a local stage
 3. Let the user edit
-4. Submit the full draft via `SetConfigText`
+4. Submit the full staged config via `SetConfigText`
 
 Control surfaces never write `typio.toml` directly.
 
@@ -143,7 +143,7 @@ Fields without `ui_label` are internal (no UI representation).
    `config_schema.c`.
 2. If it replaces an old key, set `legacy_key`.
 3. If it should appear in `typio-control`, set the `ui_*` fields.
-4. Update `docs/user_configuration.md` with the user-facing description.
+4. Update `docs/user/configuration.md` with the user-facing description.
 5. No other code changes are needed for the field to be parsed, defaulted,
    migrated, serialised, and exposed over D-Bus.
 
@@ -157,4 +157,4 @@ Fields without `ui_label` are internal (no UI representation).
 - `apply_defaults` never overwrites a user-set value.
 - Control surfaces must not write config state before receiving the first
   `ConfigText` from the daemon (see the known failure pattern in
-  `dev_control_surfaces.md`).
+  `control-surfaces.md`).

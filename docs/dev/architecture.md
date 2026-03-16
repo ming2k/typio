@@ -133,9 +133,9 @@ the virtual keyboard modifier state in sync. Modifier changes must not trigger
 synthetic releases for unrelated non-modifier keys in the main key path.
 
 The maintenance rules for this state machine live in
-[Developer Maintenance Manual](dev_maintenance.md). Any change to keyboard
+[Developer Maintenance Manual](maintenance.md). Any change to keyboard
 grab lifecycle or suppression behavior should update that document and the
-[Timing Model](dev_timing_model.md) alongside the code.
+[Timing Model](timing-model.md) alongside the code.
 
 ## Current Scope
 

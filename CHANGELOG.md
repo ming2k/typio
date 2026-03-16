@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Control-surface documentation refresh**: updated the control-panel
+  documentation to match the current GTK layout, native styling direction, and
+  instant-apply autosave behavior. The old `Apply` / `Cancel` seeded-draft
+  model is no longer documented as current behavior.
+
 ## [1.5.0] - 2026-03-16
 
 ### Added

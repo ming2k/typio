@@ -2,6 +2,8 @@
 
 set(TYPIO_SERVER_SOURCES
     main.c
+    server_app.c
+    server_cli.c
     notify/health.c
 )
 set(TYPIO_SERVER_INCLUDE_DIRS

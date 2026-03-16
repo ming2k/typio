@@ -52,6 +52,10 @@ cmake --build build
 ./build/src/control/typio-control
 ```
 
+The control panel uses a native GTK-style preferences layout with
+`Appearance`, `Engines`, and `Shortcuts` pages. Changes are saved
+automatically in the background; there is no global `Apply` / `Cancel` flow.
+
 Run directly from the build tree (no install needed):
 
 ```bash
@@ -90,15 +94,16 @@ Installed artifacts:
 ## Documentation
 
 - [Documentation Index](docs/README.md)
-- [User Installation](docs/user_installation.md)
-- [User Configuration](docs/user_configuration.md)
-- [User Usage](docs/user_usage.md)
-- [Troubleshooting](docs/user_troubleshooting.md)
-- [Developer Building Guide](docs/dev_building.md)
-- [Architecture](docs/dev_architecture.md)
-- [Developer Maintenance Manual](docs/dev_maintenance.md)
-- [Developer Timing Model](docs/dev_timing_model.md)
-- [Creating Engines](docs/dev_creating_engines.md)
+- [User Installation](docs/user/installation.md)
+- [User Configuration](docs/user/configuration.md)
+- [User Usage](docs/user/usage.md)
+- [Troubleshooting](docs/user/troubleshooting.md)
+- [Developer Building Guide](docs/dev/building.md)
+- [Architecture](docs/dev/architecture.md)
+- [Developer Maintenance Manual](docs/dev/maintenance.md)
+- [Developer Timing Model](docs/dev/timing-model.md)
+- [Control Surfaces](docs/dev/control-surfaces.md)
+- [Creating Engines](docs/dev/creating-engines.md)
 
 ## Notes
 
