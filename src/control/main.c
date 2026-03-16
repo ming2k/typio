@@ -86,55 +86,6 @@ static char *control_dup_preferred_voice_backend(TypioControl *control,
     return result;
 }
 
-static void control_update_window_title(TypioControl *control) {
-    const char *title;
-
-    if (!control || !control->window) {
-        return;
-    }
-
-    title = control->config_dirty ? "Typio Control - Unsaved Changes"
-                                  : "Typio Control";
-    gtk_window_set_title(GTK_WINDOW(control->window), title);
-}
-
-static void control_update_config_actions(TypioControl *control) {
-    gboolean service_available;
-    gboolean can_apply;
-    gboolean can_cancel;
-
-    if (!control) {
-        return;
-    }
-
-    service_available = control->proxy && g_dbus_proxy_get_name_owner(control->proxy);
-    can_apply = service_available && control->config_dirty && !control->submitting_config;
-    can_cancel = control->config_dirty && !control->submitting_config;
-
-    if (control->apply_config_button) {
-        gtk_widget_set_sensitive(GTK_WIDGET(control->apply_config_button), can_apply);
-    }
-    if (control->cancel_config_button) {
-        gtk_widget_set_sensitive(GTK_WIDGET(control->cancel_config_button), can_cancel);
-    }
-}
-
-static void control_set_dirty_state(TypioControl *control, gboolean dirty) {
-    if (!control) {
-        return;
-    }
-
-    control->config_dirty = dirty;
-    if (control->config_status_label) {
-        gtk_label_set_text(control->config_status_label,
-                           dirty ? "Unsaved local changes. Apply to save or Cancel to discard."
-                                 : "");
-        gtk_widget_set_visible(GTK_WIDGET(control->config_status_label), dirty);
-    }
-    control_update_window_title(control);
-    control_update_config_actions(control);
-}
-
 static gboolean control_is_ui_syncing(TypioControl *control) {
     return control && control->updating_ui;
 }
@@ -155,9 +106,11 @@ static const char *control_resolve_config_text(const char *text) {
     return text ? text : "";
 }
 
+static void control_queue_autosave(TypioControl *control,
+                                   ControlAutosavePriority priority);
+
 static void control_replace_staged_config_text(TypioControl *control,
-                                               const char *text,
-                                               gboolean mark_clean) {
+                                               const char *text) {
     const char *resolved = control_resolve_config_text(text);
 
     if (!control || !control->config_buffer) {
@@ -168,10 +121,6 @@ static void control_replace_staged_config_text(TypioControl *control,
     gtk_text_buffer_set_text(control->config_buffer, resolved, -1);
     control_sync_form_from_buffer(control);
     control_end_ui_sync(control);
-
-    if (mark_clean) {
-        control_set_dirty_state(control, FALSE);
-    }
 }
 
 static void control_set_committed_config_text(TypioControl *control,
@@ -182,6 +131,67 @@ static void control_set_committed_config_text(TypioControl *control,
 
     g_free(control->committed_config_text);
     control->committed_config_text = g_strdup(control_resolve_config_text(text));
+}
+
+static void control_set_inline_status(TypioControl *control,
+                                      const char *text,
+                                      gboolean visible) {
+    if (!control || !control->config_status_label) {
+        return;
+    }
+
+    gtk_label_set_text(control->config_status_label, text ? text : "");
+    gtk_widget_set_visible(GTK_WIDGET(control->config_status_label), visible);
+}
+
+static gboolean control_clear_status_timeout_cb(gpointer user_data) {
+    TypioControl *control = user_data;
+
+    if (!control) {
+        return G_SOURCE_REMOVE;
+    }
+
+    control->status_clear_source_id = 0;
+    control_set_inline_status(control, "", FALSE);
+    return G_SOURCE_REMOVE;
+}
+
+static void control_schedule_status_clear(TypioControl *control, guint delay_ms) {
+    if (!control) {
+        return;
+    }
+
+    if (control->status_clear_source_id != 0) {
+        g_source_remove(control->status_clear_source_id);
+        control->status_clear_source_id = 0;
+    }
+
+    if (delay_ms == 0) {
+        control_set_inline_status(control, "", FALSE);
+        return;
+    }
+
+    control->status_clear_source_id =
+        g_timeout_add(delay_ms, control_clear_status_timeout_cb, control);
+}
+
+static G_GNUC_UNUSED gboolean control_has_pending_config_change(TypioControl *control) {
+    char *content;
+    gboolean pending = FALSE;
+
+    if (!control || !control->config_buffer) {
+        return FALSE;
+    }
+
+    content = control_dup_buffer_text(control);
+    if (!content) {
+        return FALSE;
+    }
+
+    pending = !control->committed_config_text ||
+              g_strcmp0(content, control->committed_config_text) != 0;
+    g_free(content);
+    return pending;
 }
 
 static void control_update_engine_config_panel(TypioControl *control,
@@ -207,6 +217,8 @@ static void control_update_engine_config_panel(TypioControl *control,
 static void control_set_config_text(TypioControl *control, GVariant *config_text) {
     const char *text = "";
     gboolean should_replace_stage;
+    gboolean has_pending_local_changes;
+    char *staged_text;
     char *preferred_voice_backend;
 
     if (!control || !control->config_buffer) {
@@ -217,15 +229,19 @@ static void control_set_config_text(TypioControl *control, GVariant *config_text
         text = g_variant_get_string(config_text, nullptr);
     }
 
-    should_replace_stage = !control->config_dirty ||
-        (control->committed_config_text &&
-         g_strcmp0(control->committed_config_text, text) != 0);
+    staged_text = control_dup_buffer_text(control);
+    has_pending_local_changes = staged_text &&
+        (!control->committed_config_text ||
+         g_strcmp0(staged_text, control->committed_config_text) != 0);
+    should_replace_stage = !has_pending_local_changes ||
+        (staged_text && g_strcmp0(staged_text, text) == 0);
 
-    g_debug("control_set_config_text: dirty=%d committed_matches=%d replace_stage=%d",
-            control->config_dirty,
+    g_debug("control_set_config_text: submitting=%d committed_matches=%d replace_stage=%d",
+            control->submitting_config,
             control->committed_config_text &&
                 g_strcmp0(control->committed_config_text, text) == 0,
             should_replace_stage);
+    g_free(staged_text);
     preferred_voice_backend = control_dup_preferred_voice_backend(control, text);
     g_debug("control_set_config_text: incoming default_voice_engine=%s",
             preferred_voice_backend ? preferred_voice_backend : "(unset)");
@@ -235,11 +251,9 @@ static void control_set_config_text(TypioControl *control, GVariant *config_text
 
     control_set_committed_config_text(control, text);
     if (should_replace_stage) {
-        control_replace_staged_config_text(control, text, TRUE);
+        control_replace_staged_config_text(control, text);
         return;
     }
-
-    control_update_config_actions(control);
 }
 
 static guint control_find_model_index(GtkStringList *model, const char *value) {
@@ -440,23 +454,12 @@ void control_refresh_voice_models_from_stage(TypioControl *control) {
 static void control_update_availability_label(TypioControl *control,
                                               const char *message,
                                               gboolean visible) {
-    if (!control || !control->availability_label) {
+    if (!control) {
         return;
     }
 
-    if (control->service_status_label) {
-        gtk_label_set_text(control->service_status_label, visible ? "Offline" : "Connected");
-        gtk_widget_remove_css_class(GTK_WIDGET(control->service_status_label), "status-online");
-        gtk_widget_remove_css_class(GTK_WIDGET(control->service_status_label), "status-offline");
-        gtk_widget_add_css_class(GTK_WIDGET(control->service_status_label),
-                                 visible ? "status-offline" : "status-online");
-    }
-
-    gtk_label_set_text(control->availability_label,
-                       (message && *message) ? message
-                                             : (visible ? "Typio service unavailable"
-                                                        : "Typio service is available on the session bus."));
-    gtk_widget_set_visible(GTK_WIDGET(control->availability_label), TRUE);
+    (void)message;
+    (void)visible;
 }
 
 void control_sync_form_from_buffer(TypioControl *control) {
@@ -488,7 +491,6 @@ void control_sync_form_from_buffer(TypioControl *control) {
 
     /* Special cases that are not simple schema bindings */
     control_select_rime_schema_from_config(control, config);
-
     if (control->voice_backend_dropdown) {
         const char *voice_backend = typio_config_get_string(config,
                                                             "default_voice_engine",
@@ -609,8 +611,6 @@ void control_sync_buffer_from_form(TypioControl *control) {
     control_begin_ui_sync(control);
     gtk_text_buffer_set_text(control->config_buffer, rendered, -1);
     control_end_ui_sync(control);
-    control_set_dirty_state(control,
-                            g_strcmp0(rendered, control->committed_config_text) != 0);
     free(rendered);
 }
 
@@ -712,9 +712,6 @@ void control_refresh_from_proxy(TypioControl *control) {
     if (!control->proxy || !g_dbus_proxy_get_name_owner(control->proxy)) {
         g_warning("control_refresh_from_proxy: Typio service unavailable");
         control_update_availability_label(control, "Typio service unavailable", TRUE);
-        if (control->engine_label) {
-            gtk_label_set_text(control->engine_label, "Unavailable");
-        }
         control_clear_rime_schema_model(control);
         control_set_engine_model(control, nullptr, nullptr);
         preferred_voice_backend = control_dup_preferred_voice_backend(control, NULL);
@@ -722,14 +719,12 @@ void control_refresh_from_proxy(TypioControl *control) {
         g_free(preferred_voice_backend);
         gtk_widget_set_sensitive(GTK_WIDGET(control->engine_dropdown), FALSE);
         gtk_widget_set_sensitive(GTK_WIDGET(control->voice_backend_dropdown), FALSE);
-        control_update_config_actions(control);
         return;
     }
 
     control_update_availability_label(control, "", FALSE);
     gtk_widget_set_sensitive(GTK_WIDGET(control->engine_dropdown), TRUE);
     gtk_widget_set_sensitive(GTK_WIDGET(control->voice_backend_dropdown), TRUE);
-    control_update_config_actions(control);
 
     active_engine = g_dbus_proxy_get_cached_property(control->proxy, "ActiveEngine");
     available_engines = g_dbus_proxy_get_cached_property(control->proxy, "AvailableEngines");
@@ -738,10 +733,6 @@ void control_refresh_from_proxy(TypioControl *control) {
 
     if (active_engine) {
         active_name = g_variant_get_string(active_engine, nullptr);
-    }
-    if (control->engine_label) {
-        gtk_label_set_text(control->engine_label,
-                           (active_name && *active_name) ? active_name : "None");
     }
 
     if (config_text && g_variant_is_of_type(config_text, G_VARIANT_TYPE_STRING)) {
@@ -841,11 +832,15 @@ static void on_set_config_text_finished(GObject *source,
         g_warning("on_set_config_text_finished: failed: %s",
                   error ? error->message : "Failed to apply configuration");
         control->submitting_config = FALSE;
-        control_update_config_actions(control);
+        control_set_inline_status(control,
+                                  "Unable to apply changes right now.",
+                                  TRUE);
+        control_schedule_status_clear(control, 3000);
         control_update_availability_label(control,
                                           error ? error->message
                                                 : "Failed to apply configuration",
                                           TRUE);
+        control_queue_autosave(control, CONTROL_AUTOSAVE_NORMAL);
         g_clear_error(&error);
         return;
     }
@@ -853,46 +848,43 @@ static void on_set_config_text_finished(GObject *source,
     g_variant_unref(reply);
     control->submitting_config = FALSE;
     g_debug("on_set_config_text_finished: success, refreshing from proxy");
-    control_update_config_actions(control);
+    control_schedule_status_clear(control, 0);
     control_refresh_from_proxy(control);
 }
 
-void control_stage_form_change(TypioControl *control) {
-    if (!control || !control->config_seeded) {
-        return;
-    }
-
-    control_sync_buffer_from_form(control);
-}
-
-void on_apply_config_clicked([[maybe_unused]] GtkButton *button, gpointer user_data) {
+static gboolean control_autosave_timeout_cb(gpointer user_data) {
     TypioControl *control = user_data;
     char *content;
-    TypioConfig *config;
-    const char *voice_backend;
 
-    if (!control || !control->proxy || !control->config_buffer ||
-        control->submitting_config || !control->config_dirty) {
-        return;
+    if (!control) {
+        return G_SOURCE_REMOVE;
+    }
+
+    control->autosave_source_id = 0;
+
+    if (!control->proxy || !g_dbus_proxy_get_name_owner(control->proxy)) {
+        control_queue_autosave(control, CONTROL_AUTOSAVE_NORMAL);
+        return G_SOURCE_REMOVE;
+    }
+
+    if (control->submitting_config || !control->config_buffer) {
+        control_queue_autosave(control, CONTROL_AUTOSAVE_NORMAL);
+        return G_SOURCE_REMOVE;
     }
 
     content = control_dup_buffer_text(control);
     if (!content) {
-        return;
+        return G_SOURCE_REMOVE;
     }
 
-    config = typio_config_load_string(content);
-    voice_backend = config
-        ? typio_config_get_string(config, "default_voice_engine", NULL)
-        : NULL;
-    g_message("Control apply: default_voice_engine=%s",
-              voice_backend && *voice_backend ? voice_backend : "(unset)");
-    if (config) {
-        typio_config_free(config);
+    if (control->committed_config_text &&
+        g_strcmp0(content, control->committed_config_text) == 0) {
+        g_free(content);
+        control_schedule_status_clear(control, 0);
+        return G_SOURCE_REMOVE;
     }
 
     control->submitting_config = TRUE;
-    control_update_config_actions(control);
     g_dbus_proxy_call(control->proxy,
                       "SetConfigText",
                       g_variant_new("(s)", content),
@@ -902,20 +894,44 @@ void on_apply_config_clicked([[maybe_unused]] GtkButton *button, gpointer user_d
                       on_set_config_text_finished,
                       control);
     g_free(content);
+    return G_SOURCE_REMOVE;
 }
 
-void on_cancel_config_clicked([[maybe_unused]] GtkButton *button, gpointer user_data) {
-    TypioControl *control = user_data;
+static void control_queue_autosave(TypioControl *control,
+                                   ControlAutosavePriority priority) {
+    guint delay_ms;
 
-    if (!control || control->submitting_config) {
+    if (!control) {
         return;
     }
 
-    control_replace_staged_config_text(control, control->committed_config_text, TRUE);
+    if (control->autosave_source_id != 0) {
+        g_source_remove(control->autosave_source_id);
+    }
+
+    delay_ms = (priority == CONTROL_AUTOSAVE_FAST) ? 75 : 250;
+
+    if (control->submitting_config ||
+        !control->proxy ||
+        !g_dbus_proxy_get_name_owner(control->proxy)) {
+        delay_ms = 1000;
+    }
+
+    control->autosave_source_id = g_timeout_add(delay_ms, control_autosave_timeout_cb, control);
+}
+
+void control_stage_form_change(TypioControl *control,
+                               ControlAutosavePriority priority) {
+    if (!control || !control->config_seeded) {
+        return;
+    }
+
+    control_sync_buffer_from_form(control);
+    control_queue_autosave(control, priority);
 }
 
 void on_form_spin_changed([[maybe_unused]] GtkSpinButton *spin, gpointer user_data) {
-    control_stage_form_change((TypioControl *)user_data);
+    control_stage_form_change((TypioControl *)user_data, CONTROL_AUTOSAVE_NORMAL);
 }
 
 void on_voice_backend_changed(GObject *object,
@@ -928,7 +944,7 @@ void on_voice_backend_changed(GObject *object,
                 sel, control_voice_backend_id(control, sel));
         voice_update_model_sections(control);
         control_refresh_voice_models_from_stage(control);
-        control_stage_form_change(control);
+        control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
     }
 }
 
@@ -944,14 +960,14 @@ void on_display_dropdown_changed(GObject *object,
             schema = gtk_string_list_get_string(control->rime_schema_model, selected);
             g_debug("on_display_dropdown_changed: rime_schema_selected=%s", schema ? schema : "(null)");
         }
-        control_stage_form_change(control);
+        control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
     }
 }
 
 void on_display_spin_changed([[maybe_unused]] GtkSpinButton *spin, gpointer user_data) {
     TypioControl *control = user_data;
     if (!control_is_ui_syncing(control)) {
-        control_stage_form_change(control);
+        control_stage_form_change(control, CONTROL_AUTOSAVE_NORMAL);
     }
 }
 
@@ -960,7 +976,7 @@ void on_display_switch_changed(GObject *object,
                                gpointer user_data) {
     TypioControl *control = user_data;
     if (!control_is_ui_syncing(control) && GTK_IS_SWITCH(object)) {
-        control_stage_form_change(control);
+        control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
     }
 }
 
@@ -1044,6 +1060,9 @@ static void on_name_appeared(GDBusConnection *connection,
                      G_CALLBACK(on_proxy_properties_changed),
                      control);
     control_refresh_from_proxy(control);
+    if (control_has_pending_config_change(control)) {
+        control_queue_autosave(control, CONTROL_AUTOSAVE_NORMAL);
+    }
 }
 
 static void on_name_vanished([[maybe_unused]] GDBusConnection *connection,
@@ -1064,6 +1083,12 @@ static void on_window_destroy([[maybe_unused]] GtkWidget *widget, gpointer user_
     if (control->name_watch_id != 0) {
         g_bus_unwatch_name(control->name_watch_id);
     }
+    if (control->autosave_source_id != 0) {
+        g_source_remove(control->autosave_source_id);
+    }
+    if (control->status_clear_source_id != 0) {
+        g_source_remove(control->status_clear_source_id);
+    }
     control_clear_proxy(control);
     control_models_cleanup(control);
     g_free(control->committed_config_text);
@@ -1079,9 +1104,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     control->sherpa_dir = g_build_filename(g_get_user_data_dir(), "typio", "sherpa-onnx", nullptr);
     control->config_buffer = gtk_text_buffer_new(nullptr);
     window = control_build_window(control, app);
-    control_update_config_actions(control);
     control->window = window;
-    control_update_window_title(control);
 
     g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), control);
 

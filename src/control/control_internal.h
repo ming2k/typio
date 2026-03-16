@@ -13,6 +13,11 @@ enum {
 
 struct TypioControl;
 
+typedef enum ControlAutosavePriority {
+    CONTROL_AUTOSAVE_NORMAL = 0,
+    CONTROL_AUTOSAVE_FAST = 1,
+} ControlAutosavePriority;
+
 typedef struct ModelInfo {
     const char *name;
     const char *display_name;
@@ -40,10 +45,7 @@ typedef struct ModelRow {
 typedef struct TypioControl {
     GtkApplication *app;
     GtkWidget *window;
-    GtkLabel *service_status_label;
-    GtkLabel *availability_label;
     GtkLabel *config_status_label;
-    GtkLabel *engine_label;
     GtkDropDown *engine_dropdown;
     GtkStringList *engine_model;
     GtkDropDown *popup_theme_dropdown;
@@ -60,7 +62,6 @@ typedef struct TypioControl {
     GtkWidget *engine_config_title;
     GtkDropDown *rime_schema_dropdown;
     GtkStringList *rime_schema_model;
-    GtkSpinButton *rime_page_size_spin;
     GtkSpinButton *mozc_page_size_spin;
     GtkDropDown *voice_backend_dropdown;
     GtkStringList *voice_backend_model;
@@ -72,13 +73,12 @@ typedef struct TypioControl {
     GtkButton *shortcut_voice_ptt_btn;
     GtkButton *shortcut_recording_btn;
     GtkTextBuffer *config_buffer;
-    GtkButton *apply_config_button;
-    GtkButton *cancel_config_button;
     GDBusProxy *proxy;
     guint name_watch_id;
+    guint autosave_source_id;
+    guint status_clear_source_id;
     gboolean updating_ui;
     gboolean config_seeded;
-    gboolean config_dirty;
     gboolean submitting_config;
     char *committed_config_text;
     ControlBinding bindings[20];
@@ -100,11 +100,10 @@ void control_models_cleanup(TypioControl *control);
 
 void control_sync_form_from_buffer(TypioControl *control);
 void control_sync_buffer_from_form(TypioControl *control);
-void control_stage_form_change(TypioControl *control);
+void control_stage_form_change(TypioControl *control,
+                               ControlAutosavePriority priority);
 void control_refresh_voice_models_from_stage(TypioControl *control);
 
-void on_apply_config_clicked(GtkButton *button, gpointer user_data);
-void on_cancel_config_clicked(GtkButton *button, gpointer user_data);
 void on_form_spin_changed(GtkSpinButton *spin, gpointer user_data);
 void on_voice_backend_changed(GObject *object, GParamSpec *pspec, gpointer user_data);
 void on_display_dropdown_changed(GObject *object, GParamSpec *pspec, gpointer user_data);

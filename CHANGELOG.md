@@ -293,7 +293,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Startup key suppression**: Keys held before the keyboard grab activates are
   suppressed until released, preventing ghost input.
 - **Configuration**: INI-style per-engine config files with hot-reload support.
-  Rime engine options: `schema`, `page_size`, `popup_theme`, `candidate_layout`,
+  Rime engine options: `schema`, `popup_theme`, `candidate_layout`,
   `font_size`, `shared_data_dir`, `user_data_dir`.
 - **Test suite**: 8 unit/integration tests covering core API, configuration,
   engine manager, inline UI formatting, tray icon pixmap generation, startup

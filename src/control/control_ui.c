@@ -4,6 +4,10 @@
 
 #include <gdk/gdkkeysyms.h>
 
+static char *control_name_from_key(const char *prefix, const char *key) {
+    return control_build_debug_name(prefix, key);
+}
+
 static void connect_binding_change_signal(GtkWidget *widget, gpointer user_data) {
     if (GTK_IS_SWITCH(widget)) {
         g_signal_connect(widget, "notify::active",
@@ -35,98 +39,110 @@ static GtkWidget *create_bound_widget(TypioControl *control,
                                       const char *key) {
     const TypioConfigField *field = typio_config_schema_find(key);
     GtkWidget *widget = control_binding_create_widget(field);
+    char *name;
 
     if (!widget) {
-        return gtk_label_new("Unavailable");
+        GtkWidget *fallback = gtk_label_new("Unavailable");
+        control_name_widget(fallback, "field-unavailable");
+        return fallback;
     }
 
+    name = control_name_from_key("field", key);
+    control_name_widget(widget, name);
+    g_free(name);
     connect_binding_change_signal(widget, control);
     control_register_binding(control, key, widget);
     return widget;
 }
 
 static GtkWidget *build_rime_config(TypioControl *control) {
-    GtkWidget *box = control_create_panel_box(12);
-    GtkWidget *list = control_create_preferences_list();
+    GtkWidget *box = control_create_panel_box_named("rime-config-section", 12);
+    GtkWidget *list = control_create_preferences_list_named("rime-config-list");
     const TypioConfigField *schema_field = typio_config_schema_find("engines.rime.schema");
 
     gtk_box_append(GTK_BOX(box),
-                   control_create_section_header("Rime", "Optional Chinese input settings and schema tuning."));
+                   control_create_section_header_named("rime-config-header",
+                                                       "Rime",
+                                                       "Optional Chinese input settings and schema tuning."));
 
     control->rime_schema_model = gtk_string_list_new(nullptr);
     control->rime_schema_dropdown = GTK_DROP_DOWN(
         gtk_drop_down_new(G_LIST_MODEL(control->rime_schema_model), nullptr));
+    control_name_widget(GTK_WIDGET(control->rime_schema_dropdown), "rime-schema-dropdown");
     g_signal_connect(control->rime_schema_dropdown, "notify::selected",
                      G_CALLBACK(on_display_dropdown_changed), control);
     gtk_list_box_append(GTK_LIST_BOX(list),
-                        control_create_preference_row(schema_field && schema_field->ui_label
-                                                  ? schema_field->ui_label
-                                                  : "Schema",
-                                              "Choose the active schema exposed by the Rime installation.",
-                                              GTK_WIDGET(control->rime_schema_dropdown)));
-
-    control->rime_page_size_spin = GTK_SPIN_BUTTON(
-        create_bound_widget(control, "engines.rime.page_size"));
-    gtk_list_box_append(GTK_LIST_BOX(list),
-                        control_create_preference_row("Candidate page size",
-                                              "Limit how many candidates appear in each popup page.",
-                                              GTK_WIDGET(control->rime_page_size_spin)));
+                        control_create_preference_row_named("rime-schema-row",
+                                                            schema_field && schema_field->ui_label
+                                                                ? schema_field->ui_label
+                                                                : "Schema",
+                                                            "Choose the active schema exposed by the Rime installation.",
+                                                            GTK_WIDGET(control->rime_schema_dropdown)));
 
     gtk_box_append(GTK_BOX(box), list);
     return box;
 }
 
 static GtkWidget *build_mozc_config(TypioControl *control) {
-    GtkWidget *box = control_create_panel_box(12);
-    GtkWidget *list = control_create_preferences_list();
+    GtkWidget *box = control_create_panel_box_named("mozc-config-section", 12);
+    GtkWidget *list = control_create_preferences_list_named("mozc-config-list");
 
     gtk_box_append(GTK_BOX(box),
-                   control_create_section_header("Mozc", "Japanese candidate paging and engine-specific settings."));
+                   control_create_section_header_named("mozc-config-header",
+                                                       "Mozc",
+                                                       "Japanese candidate paging and engine-specific settings."));
 
     control->mozc_page_size_spin = GTK_SPIN_BUTTON(
         create_bound_widget(control, "engines.mozc.page_size"));
     gtk_list_box_append(GTK_LIST_BOX(list),
-                        control_create_preference_row("Candidate page size",
-                                              "Limit how many candidates appear in each page.",
-                                              GTK_WIDGET(control->mozc_page_size_spin)));
+                        control_create_preference_row_named("mozc-page-size-row",
+                                                            "Candidate page size",
+                                                            "Limit how many candidates appear in each page.",
+                                                            GTK_WIDGET(control->mozc_page_size_spin)));
 
     gtk_box_append(GTK_BOX(box), list);
     return box;
 }
 
 static GtkWidget *build_keyboard_section(TypioControl *control) {
-    GtkWidget *box = control_create_panel_box(14);
-    GtkWidget *list = control_create_preferences_list();
+    GtkWidget *box = control_create_panel_box_named("keyboard-section", 14);
+    GtkWidget *list = control_create_preferences_list_named("keyboard-list");
 
     gtk_box_append(GTK_BOX(box),
-                   control_create_section_header("Input engine",
-                                         "Switch between the built-in engine and installed plugins."));
+                   control_create_section_header_named("keyboard-header",
+                                                       "Input engine",
+                                                       "Switch between the built-in engine and installed plugins."));
 
     control->engine_model = gtk_string_list_new(nullptr);
     control->engine_dropdown = GTK_DROP_DOWN(
         gtk_drop_down_new(G_LIST_MODEL(control->engine_model), nullptr));
+    control_name_widget(GTK_WIDGET(control->engine_dropdown), "keyboard-engine-dropdown");
     g_signal_connect(control->engine_dropdown, "notify::selected",
                      G_CALLBACK(on_engine_selected), control);
     gtk_list_box_append(GTK_LIST_BOX(list),
-                        control_create_preference_row("Keyboard engine",
-                                              "Changes the active engine for new input sessions.",
-                                              GTK_WIDGET(control->engine_dropdown)));
+                        control_create_preference_row_named("keyboard-engine-row",
+                                                            "Keyboard engine",
+                                                            "Changes the active engine for new input sessions.",
+                                                            GTK_WIDGET(control->engine_dropdown)));
     gtk_box_append(GTK_BOX(box), list);
 
-    control->engine_config_title = control_create_section_header(
-        "Engine settings", "Only engines that expose settings show editable options here.");
+    control->engine_config_title = control_create_section_header_named(
+        "engine-config-title", "Engine settings", "Only engines that expose settings show editable options here.");
     gtk_widget_set_visible(control->engine_config_title, FALSE);
     gtk_box_append(GTK_BOX(box), control->engine_config_title);
 
     control->engine_config_stack = GTK_STACK(gtk_stack_new());
+    control_name_widget(GTK_WIDGET(control->engine_config_stack), "engine-config-stack");
     gtk_widget_add_css_class(GTK_WIDGET(control->engine_config_stack), "engine-config");
     gtk_stack_set_transition_type(control->engine_config_stack,
                                   GTK_STACK_TRANSITION_TYPE_CROSSFADE);
     gtk_stack_add_named(control->engine_config_stack,
-                        control_create_empty_note("This engine has no configurable options."),
+                        control_create_empty_note_named("engine-config-empty-note",
+                                                        "This engine has no configurable options."),
                         "empty");
     gtk_stack_add_named(control->engine_config_stack,
-                        control_create_empty_note("The built-in basic engine has no extra settings."),
+                        control_create_empty_note_named("engine-config-basic-note",
+                                                        "The built-in basic engine has no extra settings."),
                         "basic");
     gtk_stack_add_named(control->engine_config_stack, build_rime_config(control), "rime");
     gtk_stack_add_named(control->engine_config_stack, build_mozc_config(control), "mozc");
@@ -137,32 +153,37 @@ static GtkWidget *build_keyboard_section(TypioControl *control) {
 }
 
 static GtkWidget *build_voice_section(TypioControl *control) {
-    GtkWidget *box = control_create_panel_box(14);
-    GtkWidget *list = control_create_preferences_list();
+    GtkWidget *box = control_create_panel_box_named("voice-section", 14);
+    GtkWidget *list = control_create_preferences_list_named("voice-list");
 
     gtk_box_append(GTK_BOX(box),
-                   control_create_section_header("Voice input",
-                                         "Pick a backend, select an installed model, and manage local downloads."));
+                   control_create_section_header_named("voice-header",
+                                                       "Voice input",
+                                                       "Pick a backend, select an installed model, and manage local downloads."));
 
     control->voice_backend_model = gtk_string_list_new(nullptr);
     control->voice_backend_dropdown = GTK_DROP_DOWN(
         gtk_drop_down_new(G_LIST_MODEL(control->voice_backend_model), nullptr));
+    control_name_widget(GTK_WIDGET(control->voice_backend_dropdown), "voice-backend-dropdown");
     g_signal_connect(control->voice_backend_dropdown, "notify::selected",
                      G_CALLBACK(on_voice_backend_changed), control);
     gtk_list_box_append(GTK_LIST_BOX(list),
-                        control_create_preference_row("Voice backend",
-                                              "Switch between Whisper and sherpa-onnx when both are available.",
-                                              GTK_WIDGET(control->voice_backend_dropdown)));
+                        control_create_preference_row_named("voice-backend-row",
+                                                            "Voice backend",
+                                                            "Switch between Whisper and sherpa-onnx when both are available.",
+                                                            GTK_WIDGET(control->voice_backend_dropdown)));
 
     control->voice_model_list = gtk_string_list_new(nullptr);
     control->voice_model_dropdown = GTK_DROP_DOWN(
         gtk_drop_down_new(G_LIST_MODEL(control->voice_model_list), nullptr));
+    control_name_widget(GTK_WIDGET(control->voice_model_dropdown), "voice-model-dropdown");
     g_signal_connect(control->voice_model_dropdown, "notify::selected",
                      G_CALLBACK(on_display_dropdown_changed), control);
     gtk_list_box_append(GTK_LIST_BOX(list),
-                        control_create_preference_row("Installed model",
-                                              "Choose the local voice model used by the selected backend.",
-                                              GTK_WIDGET(control->voice_model_dropdown)));
+                        control_create_preference_row_named("voice-model-row",
+                                                            "Installed model",
+                                                            "Choose the local voice model used by the selected backend.",
+                                                            GTK_WIDGET(control->voice_model_dropdown)));
 
     gtk_box_append(GTK_BOX(box), list);
 
@@ -272,7 +293,7 @@ static gboolean shortcut_key_pressed([[maybe_unused]] GtkEventControllerKey *ec,
     g_free(shortcut);
 
     control->shortcut_recording_btn = NULL;
-    control_stage_form_change(control);
+    control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
     return TRUE;
 }
 
@@ -321,40 +342,48 @@ static void shortcut_key_released([[maybe_unused]] GtkEventControllerKey *ec,
     g_free(shortcut);
 
     control->shortcut_recording_btn = NULL;
-    control_stage_form_change(control);
+    control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
 }
 
 GtkWidget *control_build_shortcuts_page(TypioControl *control) {
-    GtkWidget *page = control_create_page_shell();
-    GtkWidget *box = control_create_panel_box(14);
-    GtkWidget *list = control_create_preferences_list();
+    GtkWidget *page = control_create_page_shell_named("shortcuts-page");
+    GtkWidget *box = control_create_panel_box_named("shortcuts-panel", 14);
+    GtkWidget *list = control_create_preferences_list_named("shortcuts-list");
     GtkEventController *key_ec;
 
     gtk_box_append(GTK_BOX(page),
-                   control_create_section_header("Shortcuts",
-                                         "Record combinations directly from the keyboard. Press Esc to cancel."));
+                   control_create_section_header_named("shortcuts-header",
+                                                       "Shortcuts",
+                                                       "Record combinations directly from the keyboard. Press Esc to cancel."));
 
     control->shortcut_switch_engine_btn = GTK_BUTTON(
         gtk_button_new_with_label("Ctrl+Shift"));
+    control_name_widget(GTK_WIDGET(control->shortcut_switch_engine_btn), "shortcut-switch-engine-button");
+    gtk_widget_add_css_class(GTK_WIDGET(control->shortcut_switch_engine_btn), "control-button");
     g_signal_connect(control->shortcut_switch_engine_btn, "clicked",
                      G_CALLBACK(shortcut_btn_clicked), control);
     gtk_list_box_append(GTK_LIST_BOX(list),
-                        control_create_preference_row("Switch engine",
-                                              "Cycle the active engine without opening the panel.",
-                                              GTK_WIDGET(control->shortcut_switch_engine_btn)));
+                        control_create_preference_row_named("shortcut-switch-engine-row",
+                                                            "Switch engine",
+                                                            "Cycle the active engine without opening the panel.",
+                                                            GTK_WIDGET(control->shortcut_switch_engine_btn)));
 
     control->shortcut_voice_ptt_btn = GTK_BUTTON(
         gtk_button_new_with_label("Super+v"));
+    control_name_widget(GTK_WIDGET(control->shortcut_voice_ptt_btn), "shortcut-voice-ptt-button");
+    gtk_widget_add_css_class(GTK_WIDGET(control->shortcut_voice_ptt_btn), "control-button");
     g_signal_connect(control->shortcut_voice_ptt_btn, "clicked",
                      G_CALLBACK(shortcut_btn_clicked), control);
     gtk_list_box_append(GTK_LIST_BOX(list),
-                        control_create_preference_row("Voice push-to-talk",
-                                              "Hold the shortcut to activate the configured voice backend.",
-                                              GTK_WIDGET(control->shortcut_voice_ptt_btn)));
+                        control_create_preference_row_named("shortcut-voice-ptt-row",
+                                                            "Voice push-to-talk",
+                                                            "Hold the shortcut to activate the configured voice backend.",
+                                                            GTK_WIDGET(control->shortcut_voice_ptt_btn)));
 
     gtk_box_append(GTK_BOX(box), list);
     gtk_box_append(GTK_BOX(box),
-                   control_create_empty_note("Click a shortcut button, then press the new key combination."));
+                   control_create_empty_note_named("shortcuts-note",
+                                                   "Click a shortcut button, then press the new key combination."));
     gtk_box_append(GTK_BOX(page), box);
 
     key_ec = gtk_event_controller_key_new();
@@ -365,78 +394,88 @@ GtkWidget *control_build_shortcuts_page(TypioControl *control) {
 }
 
 GtkWidget *control_build_display_page(TypioControl *control) {
-    GtkWidget *page = control_create_page_shell();
-    GtkWidget *appearance_box = control_create_panel_box(14);
-    GtkWidget *appearance_list = control_create_preferences_list();
-    GtkWidget *notifications_box = control_create_panel_box(14);
-    GtkWidget *notifications_list = control_create_preferences_list();
+    GtkWidget *page = control_create_page_shell_named("display-page");
+    GtkWidget *appearance_box = control_create_panel_box_named("display-appearance-section", 14);
+    GtkWidget *appearance_list = control_create_preferences_list_named("display-appearance-list");
+    GtkWidget *notifications_box = control_create_panel_box_named("display-notifications-section", 14);
+    GtkWidget *notifications_list = control_create_preferences_list_named("display-notifications-list");
 
     gtk_box_append(GTK_BOX(page),
-                   control_create_section_header("Appearance",
-                                         "Tune the popup layout and panel notifications without leaving the session."));
+                   control_create_section_header_named("display-appearance-header",
+                                                       "Appearance",
+                                                       "Tune the popup layout and panel notifications without leaving the session."));
 
     control->popup_theme_dropdown = GTK_DROP_DOWN(
         create_bound_widget(control, "engines.rime.popup_theme"));
     gtk_list_box_append(GTK_LIST_BOX(appearance_list),
-                        control_create_preference_row("Popup theme",
-                                              "Choose whether the candidate popup follows the desktop theme or a fixed appearance.",
-                                              GTK_WIDGET(control->popup_theme_dropdown)));
+                        control_create_preference_row_named("popup-theme-row",
+                                                            "Popup theme",
+                                                            "Choose whether the candidate popup follows the desktop theme or a fixed appearance.",
+                                                            GTK_WIDGET(control->popup_theme_dropdown)));
 
     control->candidate_layout_dropdown = GTK_DROP_DOWN(
         create_bound_widget(control, "engines.rime.candidate_layout"));
     gtk_list_box_append(GTK_LIST_BOX(appearance_list),
-                        control_create_preference_row("Candidate layout",
-                                              "Select horizontal or vertical candidate arrangement for popup rendering.",
-                                              GTK_WIDGET(control->candidate_layout_dropdown)));
+                        control_create_preference_row_named("candidate-layout-row",
+                                                            "Candidate layout",
+                                                            "Select horizontal or vertical candidate arrangement for popup rendering.",
+                                                            GTK_WIDGET(control->candidate_layout_dropdown)));
 
     control->font_size_spin = GTK_SPIN_BUTTON(
         create_bound_widget(control, "engines.rime.font_size"));
     gtk_list_box_append(GTK_LIST_BOX(appearance_list),
-                        control_create_preference_row("Font size",
-                                              "Adjust the popup text size for candidate and preedit content.",
-                                              GTK_WIDGET(control->font_size_spin)));
+                        control_create_preference_row_named("font-size-row",
+                                                            "Font size",
+                                                            "Adjust the popup text size for candidate and preedit content.",
+                                                            GTK_WIDGET(control->font_size_spin)));
 
     gtk_box_append(GTK_BOX(appearance_box), appearance_list);
     gtk_box_append(GTK_BOX(page), appearance_box);
 
     gtk_box_append(GTK_BOX(page),
-                   control_create_section_header("Notifications",
-                                         "Keep runtime alerts useful without turning the panel into a dashboard."));
+                   control_create_section_header_named("display-notifications-header",
+                                                       "Notifications",
+                                                       "Keep runtime alerts useful without turning the panel into a dashboard."));
 
     control->notifications_enable_switch = GTK_SWITCH(
         create_bound_widget(control, "notifications.enable"));
     gtk_list_box_append(GTK_LIST_BOX(notifications_list),
-                        control_create_preference_row("Enable notifications",
-                                              "Master switch for panel-managed notification behavior.",
-                                              GTK_WIDGET(control->notifications_enable_switch)));
+                        control_create_preference_row_named("notifications-enable-row",
+                                                            "Enable notifications",
+                                                            "Master switch for panel-managed notification behavior.",
+                                                            GTK_WIDGET(control->notifications_enable_switch)));
 
     control->notifications_startup_switch = GTK_SWITCH(
         create_bound_widget(control, "notifications.startup_checks"));
     gtk_list_box_append(GTK_LIST_BOX(notifications_list),
-                        control_create_preference_row("Startup checks",
-                                              "Show startup warnings when Typio detects missing runtime prerequisites.",
-                                              GTK_WIDGET(control->notifications_startup_switch)));
+                        control_create_preference_row_named("notifications-startup-row",
+                                                            "Startup checks",
+                                                            "Show startup warnings when Typio detects missing runtime prerequisites.",
+                                                            GTK_WIDGET(control->notifications_startup_switch)));
 
     control->notifications_runtime_switch = GTK_SWITCH(
         create_bound_widget(control, "notifications.runtime"));
     gtk_list_box_append(GTK_LIST_BOX(notifications_list),
-                        control_create_preference_row("Runtime alerts",
-                                              "Show alerts for service or backend issues during normal operation.",
-                                              GTK_WIDGET(control->notifications_runtime_switch)));
+                        control_create_preference_row_named("notifications-runtime-row",
+                                                            "Runtime alerts",
+                                                            "Show alerts for service or backend issues during normal operation.",
+                                                            GTK_WIDGET(control->notifications_runtime_switch)));
 
     control->notifications_voice_switch = GTK_SWITCH(
         create_bound_widget(control, "notifications.voice"));
     gtk_list_box_append(GTK_LIST_BOX(notifications_list),
-                        control_create_preference_row("Voice alerts",
-                                              "Show voice-backend model and microphone related notifications.",
-                                              GTK_WIDGET(control->notifications_voice_switch)));
+                        control_create_preference_row_named("notifications-voice-row",
+                                                            "Voice alerts",
+                                                            "Show voice-backend model and microphone related notifications.",
+                                                            GTK_WIDGET(control->notifications_voice_switch)));
 
     control->notifications_cooldown_spin = GTK_SPIN_BUTTON(
         create_bound_widget(control, "notifications.cooldown_ms"));
     gtk_list_box_append(GTK_LIST_BOX(notifications_list),
-                        control_create_preference_row("Cooldown (ms)",
-                                              "Debounce repeated notifications so transient issues do not spam the desktop.",
-                                              GTK_WIDGET(control->notifications_cooldown_spin)));
+                        control_create_preference_row_named("notifications-cooldown-row",
+                                                            "Cooldown (ms)",
+                                                            "Debounce repeated notifications so transient issues do not spam the desktop.",
+                                                            GTK_WIDGET(control->notifications_cooldown_spin)));
 
     gtk_box_append(GTK_BOX(notifications_box), notifications_list);
     gtk_box_append(GTK_BOX(page), notifications_box);
@@ -445,20 +484,28 @@ GtkWidget *control_build_display_page(TypioControl *control) {
 
 GtkWidget *control_wrap_page_scroller(GtkWidget *child) {
     GtkWidget *scroller = gtk_scrolled_window_new();
+    const char *child_name = gtk_widget_get_name(child);
+    char *scroller_name = NULL;
 
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), child);
     gtk_widget_set_vexpand(scroller, TRUE);
+    if (child_name && *child_name) {
+        scroller_name = g_strdup_printf("%s-scroller", child_name);
+        control_name_widget(scroller, scroller_name);
+    }
+    g_free(scroller_name);
     return scroller;
 }
 
 GtkWidget *control_build_engines_page(TypioControl *control) {
-    GtkWidget *page = control_create_page_shell();
+    GtkWidget *page = control_create_page_shell_named("engines-page");
 
     gtk_box_append(GTK_BOX(page),
-                   control_create_section_header("Engines",
-                                                 "Keep keyboard and voice backends in one place. Each section stays focused on a single job."));
+                   control_create_section_header_named("engines-header",
+                                                       "Engines",
+                                                       "Keep keyboard and voice backends in one place. Each section stays focused on a single job."));
     gtk_box_append(GTK_BOX(page), build_keyboard_section(control));
     gtk_box_append(GTK_BOX(page), build_voice_section(control));
     return page;

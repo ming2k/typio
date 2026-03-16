@@ -25,15 +25,17 @@ static guint find_string_in_options(const char *const *options, const char *valu
 /* ---------- create ---------- */
 
 GtkWidget *control_binding_create_widget(const TypioConfigField *field) {
+    GtkWidget *widget = NULL;
+
     if (!field) {
         return NULL;
     }
 
     switch (field->type) {
     case TYPIO_FIELD_BOOL: {
-        GtkWidget *sw = gtk_switch_new();
-        gtk_switch_set_active(GTK_SWITCH(sw), field->def.b);
-        return sw;
+        widget = gtk_switch_new();
+        gtk_switch_set_active(GTK_SWITCH(widget), field->def.b);
+        break;
     }
     case TYPIO_FIELD_INT: {
         double min = field->ui_min;
@@ -45,34 +47,48 @@ GtkWidget *control_binding_create_widget(const TypioConfigField *field) {
         }
         GtkAdjustment *adj = gtk_adjustment_new(
             (double)field->def.i, min, max, step, step, 0.0);
-        GtkWidget *spin = gtk_spin_button_new(adj, step, 0);
-        return spin;
+        widget = gtk_spin_button_new(adj, step, 0);
+        break;
     }
     case TYPIO_FIELD_STRING:
         if (field->ui_options) {
             GtkStringList *model = gtk_string_list_new(field->ui_options);
-            GtkWidget *dd = gtk_drop_down_new(G_LIST_MODEL(model), NULL);
+            widget = gtk_drop_down_new(G_LIST_MODEL(model), NULL);
             guint idx = find_string_in_options(field->ui_options, field->def.s);
             if (idx != GTK_INVALID_LIST_POSITION) {
-                gtk_drop_down_set_selected(GTK_DROP_DOWN(dd), idx);
+                gtk_drop_down_set_selected(GTK_DROP_DOWN(widget), idx);
             }
-            return dd;
         } else {
-            GtkWidget *entry = gtk_entry_new();
+            widget = gtk_entry_new();
             if (field->def.s) {
-                gtk_editable_set_text(GTK_EDITABLE(entry), field->def.s);
+                gtk_editable_set_text(GTK_EDITABLE(widget), field->def.s);
             }
-            return entry;
         }
+        break;
     case TYPIO_FIELD_FLOAT: {
         GtkAdjustment *adj = gtk_adjustment_new(
             field->def.f, -999999.0, 999999.0, 0.1, 1.0, 0.0);
-        GtkWidget *spin = gtk_spin_button_new(adj, 0.1, 2);
-        return spin;
+        widget = gtk_spin_button_new(adj, 0.1, 2);
+        break;
     }
     }
 
-    return NULL;
+    if (!widget) {
+        return NULL;
+    }
+
+    gtk_widget_add_css_class(widget, "control-field");
+    if (GTK_IS_DROP_DOWN(widget)) {
+        gtk_widget_add_css_class(widget, "control-dropdown");
+    } else if (GTK_IS_SPIN_BUTTON(widget)) {
+        gtk_widget_add_css_class(widget, "control-spin");
+    } else if (GTK_IS_ENTRY(widget)) {
+        gtk_widget_add_css_class(widget, "control-entry");
+    } else if (GTK_IS_SWITCH(widget)) {
+        gtk_widget_add_css_class(widget, "control-switch");
+    }
+
+    return widget;
 }
 
 /* ---------- load ---------- */

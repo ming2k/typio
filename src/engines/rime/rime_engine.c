@@ -22,8 +22,6 @@
 
 #define TYPIO_RIME_SESSION_KEY "rime.session"
 #define TYPIO_RIME_DEFAULT_SCHEMA "luna_pinyin"
-#define TYPIO_RIME_DEFAULT_PAGE_SIZE 9
-
 enum {
     TYPIO_RIME_SHIFT_MASK = (1 << 0),
     TYPIO_RIME_LOCK_MASK = (1 << 1),
@@ -38,7 +36,6 @@ typedef struct TypioRimeConfig {
     char *schema;
     char *shared_data_dir;
     char *user_data_dir;
-    int page_size;
     bool full_check;
 } TypioRimeConfig;
 
@@ -141,7 +138,6 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
     data_dir = typio_instance_get_data_dir(instance);
     default_user_dir = typio_rime_path_join(data_dir, "rime");
     config->user_data_dir = default_user_dir;
-    config->page_size = TYPIO_RIME_DEFAULT_PAGE_SIZE;
 
     if (!config->schema || !config->shared_data_dir || !config->user_data_dir) {
         typio_rime_free_config(config);
@@ -156,7 +152,6 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
     const char *schema = typio_config_get_string(engine_config, "schema", nullptr);
     const char *shared_data_dir = typio_config_get_string(engine_config, "shared_data_dir", nullptr);
     const char *user_data_dir = typio_config_get_string(engine_config, "user_data_dir", nullptr);
-    const int page_size = typio_config_get_int(engine_config, "page_size", config->page_size);
     const bool full_check = typio_config_get_bool(engine_config, "full_check", false);
 
     if (schema && *schema) {
@@ -172,9 +167,6 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
         char *expanded = typio_rime_expand_path(user_data_dir);
         free(config->user_data_dir);
         config->user_data_dir = expanded;
-    }
-    if (page_size > 0) {
-        config->page_size = page_size;
     }
     config->full_check = full_check;
 
@@ -436,14 +428,10 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
                 .candidates = items,
                 .count = (size_t)count,
                 .page = rime_context.menu.page_no,
-                .page_size = rime_context.menu.page_size > 0 ?
-                             rime_context.menu.page_size : state->config.page_size,
-                .total = rime_context.menu.page_no *
-                         (rime_context.menu.page_size > 0 ?
-                          rime_context.menu.page_size : state->config.page_size) +
+                .page_size = rime_context.menu.page_size,
+                .total = rime_context.menu.page_no * rime_context.menu.page_size +
                          count + (rime_context.menu.is_last_page ? 0 :
-                                  (rime_context.menu.page_size > 0 ?
-                                   rime_context.menu.page_size : state->config.page_size)),
+                                  rime_context.menu.page_size),
                 .selected = rime_context.menu.highlighted_candidate_index,
                 .has_prev = rime_context.menu.page_no > 0,
                 .has_next = !rime_context.menu.is_last_page,
@@ -766,7 +754,6 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
     TypioRimeState *state = typio_engine_get_user_data(engine);
     TypioConfig *engine_config;
     const char *schema;
-    int page_size;
 
     if (!state) {
         return TYPIO_ERROR_NOT_INITIALIZED;
@@ -782,14 +769,10 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
     }
 
     schema = typio_config_get_string(engine_config, "schema", nullptr);
-    page_size = typio_config_get_int(engine_config, "page_size", state->config.page_size);
 
     if (schema && *schema) {
         free(state->config.schema);
         state->config.schema = typio_strdup(schema);
-    }
-    if (page_size > 0) {
-        state->config.page_size = page_size;
     }
 
     if (typio_config_has_key(engine_config, "shared_data_dir") ||

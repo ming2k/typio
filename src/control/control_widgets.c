@@ -1,121 +1,113 @@
 #include "control_widgets.h"
 
-static const char *control_css =
-    "window.control-root,\n"
-    ".control-root {\n"
-    "  background: linear-gradient(180deg, alpha(@headerbar_bg_color, 0.96), alpha(@window_bg_color, 1.0) 180px);\n"
-    "  color: @window_fg_color;\n"
-    "}\n"
-    ".control-shell {\n"
-    "  background: transparent;\n"
-    "}\n"
-    ".control-headerbar {\n"
-    "  background: alpha(@headerbar_bg_color, 0.92);\n"
-    "  box-shadow: none;\n"
-    "}\n"
-    ".view-switcher button {\n"
-    "  min-height: 34px;\n"
-    "  padding: 0 16px;\n"
-    "  border-radius: 999px;\n"
-    "}\n"
-    ".summary-strip {\n"
-    "  margin: 18px 20px 12px 20px;\n"
-    "  padding: 18px 20px;\n"
-    "  border-radius: 18px;\n"
-    "  background: alpha(@card_bg_color, 0.96);\n"
-    "}\n"
-    ".summary-title {\n"
-    "  font-size: 1.15rem;\n"
-    "  font-weight: 700;\n"
-    "}\n"
-    ".muted-label {\n"
-    "  opacity: 0.72;\n"
-    "}\n"
-    ".metric-value {\n"
-    "  font-size: 1.05rem;\n"
-    "  font-weight: 700;\n"
-    "}\n"
-    ".status-pill {\n"
-    "  padding: 4px 10px;\n"
-    "  border-radius: 999px;\n"
-    "  font-weight: 700;\n"
-    "}\n"
-    ".status-pill.status-online {\n"
-    "  background: alpha(@success_color, 0.16);\n"
-    "  color: shade(@success_color, 0.8);\n"
-    "}\n"
-    ".status-pill.status-offline {\n"
-    "  background: alpha(@warning_color, 0.18);\n"
-    "  color: shade(@warning_color, 0.75);\n"
-    "}\n"
-    ".page-shell {\n"
-    "  padding: 0 20px 20px 20px;\n"
-    "}\n"
-    ".section {\n"
-    "  margin-top: 6px;\n"
-    "}\n"
-    ".section-title {\n"
-    "  font-size: 1rem;\n"
-    "  font-weight: 700;\n"
-    "}\n"
-    ".section-description {\n"
-    "  opacity: 0.72;\n"
-    "}\n"
-    ".panel {\n"
-    "  padding: 14px;\n"
-    "  border-radius: 18px;\n"
-    "  background: alpha(@card_bg_color, 0.96);\n"
-    "}\n"
-    ".preferences {\n"
-    "  background: transparent;\n"
-    "}\n"
-    ".preferences row {\n"
-    "  background: transparent;\n"
-    "  border-radius: 14px;\n"
-    "  margin: 0 0 8px 0;\n"
-    "}\n"
-    ".preferences row:last-child {\n"
-    "  margin-bottom: 0;\n"
-    "}\n"
-    ".preference-row {\n"
-    "  padding: 14px 16px;\n"
-    "  border-radius: 14px;\n"
-    "  background: alpha(@view_bg_color, 0.72);\n"
-    "}\n"
-    ".preference-title {\n"
-    "  font-weight: 650;\n"
-    "}\n"
-    ".preference-description {\n"
-    "  opacity: 0.72;\n"
-    "}\n"
-    ".engine-config {\n"
-    "  margin-top: 10px;\n"
-    "}\n"
-    ".empty-note {\n"
-    "  opacity: 0.72;\n"
-    "}\n"
-    ".inline-status {\n"
-    "  opacity: 0.78;\n"
-    "  font-weight: 600;\n"
-    "}\n"
-    ".footer-bar {\n"
-    "  padding: 12px 20px 20px 20px;\n"
-    "}\n";
+#include <glib/gstdio.h>
+#include <glib.h>
+
+static void control_sync_css_color_scheme(GtkCssProvider *provider) {
+    GtkSettings *settings;
+    GtkInterfaceColorScheme scheme = GTK_INTERFACE_COLOR_SCHEME_DEFAULT;
+
+    if (!provider) {
+        return;
+    }
+
+    settings = gtk_settings_get_default();
+    if (!settings) {
+        return;
+    }
+
+    g_object_get(settings, "gtk-interface-color-scheme", &scheme, nullptr);
+    g_object_set(provider, "prefers-color-scheme", scheme, nullptr);
+    g_debug("control_apply_css: prefers-color-scheme=%d", (int)scheme);
+}
 
 void control_apply_css(void) {
     GtkCssProvider *provider = gtk_css_provider_new();
+    const char *css_path = nullptr;
 
-    gtk_css_provider_load_from_string(provider, control_css);
-    gtk_style_context_add_provider_for_display(gdk_display_get_default(),
-                                               GTK_STYLE_PROVIDER(provider),
-                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    if (g_file_test(TYPIO_CONTROL_CSS_INSTALL_PATH, G_FILE_TEST_EXISTS)) {
+        css_path = TYPIO_CONTROL_CSS_INSTALL_PATH;
+    } else if (g_file_test(TYPIO_CONTROL_CSS_SOURCE_PATH, G_FILE_TEST_EXISTS)) {
+        css_path = TYPIO_CONTROL_CSS_SOURCE_PATH;
+    }
+
+    if (css_path) {
+        g_debug("control_apply_css: loading css from %s", css_path);
+        gtk_css_provider_load_from_path(provider, css_path);
+        control_sync_css_color_scheme(provider);
+        gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+                                                   GTK_STYLE_PROVIDER(provider),
+                                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    } else {
+        g_warning("control_apply_css: no CSS file found (install=%s source=%s)",
+                  TYPIO_CONTROL_CSS_INSTALL_PATH,
+                  TYPIO_CONTROL_CSS_SOURCE_PATH);
+    }
+
     g_object_unref(provider);
 }
 
-GtkWidget *control_create_section_header(const char *title, const char *description) {
+void control_name_widget(GtkWidget *widget, const char *name) {
+    if (!widget || !name || !*name) {
+        return;
+    }
+
+    gtk_widget_set_name(widget, name);
+    g_object_set_data_full(G_OBJECT(widget), "typio-debug-name", g_strdup(name), g_free);
+}
+
+static char *control_slugify(const char *text) {
+    GString *slug;
+    gboolean last_dash = FALSE;
+
+    if (!text || !*text) {
+        return g_strdup("unnamed");
+    }
+
+    slug = g_string_new(NULL);
+    for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
+        if (g_ascii_isalnum(*p)) {
+            g_string_append_c(slug, (char)g_ascii_tolower(*p));
+            last_dash = FALSE;
+        } else if (!last_dash && slug->len > 0) {
+            g_string_append_c(slug, '-');
+            last_dash = TRUE;
+        }
+    }
+
+    while (slug->len > 0 && slug->str[slug->len - 1] == '-') {
+        g_string_truncate(slug, slug->len - 1);
+    }
+
+    if (slug->len == 0) {
+        g_string_assign(slug, "unnamed");
+    }
+
+    return g_string_free(slug, FALSE);
+}
+
+char *control_build_debug_name(const char *prefix, const char *token) {
+    char *slug = control_slugify(token);
+    char *name;
+
+    if (prefix && *prefix) {
+        name = g_strdup_printf("%s-%s", prefix, slug);
+    } else {
+        name = g_strdup(slug);
+    }
+
+    g_free(slug);
+    return name;
+}
+
+GtkWidget *control_create_section_header_named(const char *name,
+                                               const char *title,
+                                               const char *description) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     GtkWidget *title_label = gtk_label_new(title);
     GtkWidget *description_label = gtk_label_new(description);
+    char *title_name = NULL;
+    char *description_name = NULL;
 
     gtk_widget_add_css_class(box, "section");
     gtk_label_set_xalign(GTK_LABEL(title_label), 0.0f);
@@ -123,47 +115,86 @@ GtkWidget *control_create_section_header(const char *title, const char *descript
     gtk_label_set_wrap(GTK_LABEL(description_label), TRUE);
     gtk_widget_add_css_class(title_label, "section-title");
     gtk_widget_add_css_class(description_label, "section-description");
+    control_name_widget(box, name);
+    if (name && *name) {
+        title_name = g_strdup_printf("%s-title", name);
+        description_name = g_strdup_printf("%s-description", name);
+        control_name_widget(title_label, title_name);
+        control_name_widget(description_label, description_name);
+    }
 
     gtk_box_append(GTK_BOX(box), title_label);
     gtk_box_append(GTK_BOX(box), description_label);
+    g_free(title_name);
+    g_free(description_name);
+    return box;
+}
+
+GtkWidget *control_create_section_header(const char *title, const char *description) {
+    return control_create_section_header_named(NULL, title, description);
+}
+
+GtkWidget *control_create_panel_box_named(const char *name, gint spacing) {
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, spacing);
+    gtk_widget_add_css_class(box, "panel");
+    control_name_widget(box, name);
     return box;
 }
 
 GtkWidget *control_create_panel_box(gint spacing) {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, spacing);
-    gtk_widget_add_css_class(box, "panel");
+    return control_create_panel_box_named(NULL, spacing);
+}
+
+GtkWidget *control_create_page_shell_named(const char *name) {
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 18);
+    gtk_widget_add_css_class(box, "page-shell");
+    control_name_widget(box, name);
     return box;
 }
 
 GtkWidget *control_create_page_shell(void) {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 18);
-    gtk_widget_add_css_class(box, "page-shell");
-    return box;
+    return control_create_page_shell_named(NULL);
 }
 
-GtkWidget *control_create_preferences_list(void) {
+GtkWidget *control_create_preferences_list_named(const char *name) {
     GtkWidget *list = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(list), GTK_SELECTION_NONE);
     gtk_widget_add_css_class(list, "preferences");
+    control_name_widget(list, name);
     return list;
 }
 
-GtkWidget *control_create_empty_note(const char *text) {
+GtkWidget *control_create_preferences_list(void) {
+    return control_create_preferences_list_named(NULL);
+}
+
+GtkWidget *control_create_empty_note_named(const char *name, const char *text) {
     GtkWidget *label = gtk_label_new(text);
     gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
     gtk_label_set_wrap(GTK_LABEL(label), TRUE);
     gtk_widget_add_css_class(label, "empty-note");
+    control_name_widget(label, name);
     return label;
 }
 
-GtkWidget *control_create_preference_row(const char *title,
-                                         const char *description,
-                                         GtkWidget *suffix) {
+GtkWidget *control_create_empty_note(const char *text) {
+    return control_create_empty_note_named(NULL, text);
+}
+
+GtkWidget *control_create_preference_row_named(const char *name,
+                                               const char *title,
+                                               const char *description,
+                                               GtkWidget *suffix) {
     GtkWidget *row = gtk_list_box_row_new();
     GtkWidget *shell = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 18);
     GtkWidget *text_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     GtkWidget *title_label = gtk_label_new(title);
     GtkWidget *description_label = gtk_label_new(description);
+    char *shell_name = NULL;
+    char *text_name = NULL;
+    char *title_name = NULL;
+    char *description_name = NULL;
+    char *suffix_name = NULL;
 
     gtk_widget_add_css_class(shell, "preference-row");
     gtk_label_set_xalign(GTK_LABEL(title_label), 0.0f);
@@ -172,6 +203,17 @@ GtkWidget *control_create_preference_row(const char *title,
     gtk_widget_add_css_class(title_label, "preference-title");
     gtk_widget_add_css_class(description_label, "preference-description");
     gtk_widget_set_hexpand(text_box, TRUE);
+    control_name_widget(row, name);
+    if (name && *name) {
+        shell_name = g_strdup_printf("%s-shell", name);
+        text_name = g_strdup_printf("%s-text", name);
+        title_name = g_strdup_printf("%s-title", name);
+        description_name = g_strdup_printf("%s-description", name);
+        control_name_widget(shell, shell_name);
+        control_name_widget(text_box, text_name);
+        control_name_widget(title_label, title_name);
+        control_name_widget(description_label, description_name);
+    }
 
     gtk_box_append(GTK_BOX(text_box), title_label);
     gtk_box_append(GTK_BOX(text_box), description_label);
@@ -183,9 +225,25 @@ GtkWidget *control_create_preference_row(const char *title,
         if (!GTK_IS_SWITCH(suffix)) {
             gtk_widget_set_size_request(suffix, 190, -1);
         }
+        if (name && *name &&
+            !g_object_get_data(G_OBJECT(suffix), "typio-debug-name")) {
+            suffix_name = g_strdup_printf("%s-suffix", name);
+            control_name_widget(suffix, suffix_name);
+        }
         gtk_box_append(GTK_BOX(shell), suffix);
     }
 
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), shell);
+    g_free(shell_name);
+    g_free(text_name);
+    g_free(title_name);
+    g_free(description_name);
+    g_free(suffix_name);
     return row;
+}
+
+GtkWidget *control_create_preference_row(const char *title,
+                                         const char *description,
+                                         GtkWidget *suffix) {
+    return control_create_preference_row_named(NULL, title, description, suffix);
 }

@@ -397,18 +397,29 @@ static GtkWidget *create_model_row_widget(ModelRow *row) {
     GtkWidget *text_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
     GtkWidget *name_label;
     GtkWidget *meta_label;
+    char *row_name = control_build_debug_name("model-row", row->info->name);
+    char *text_name = g_strdup_printf("%s-text", row_name);
+    char *title_name = g_strdup_printf("%s-title", row_name);
+    char *meta_name = g_strdup_printf("%s-meta", row_name);
+    char *status_name = g_strdup_printf("%s-status", row_name);
+    char *progress_name = g_strdup_printf("%s-progress", row_name);
+    char *action_name = g_strdup_printf("%s-action", row_name);
 
     gtk_widget_add_css_class(hbox, "preference-row");
     row->row_box = hbox;
+    control_name_widget(hbox, row_name);
 
     name_label = gtk_label_new(row->info->display_name);
     gtk_label_set_xalign(GTK_LABEL(name_label), 0.0f);
     gtk_widget_add_css_class(name_label, "preference-title");
+    control_name_widget(name_label, title_name);
 
     meta_label = gtk_label_new(row->info->size_label);
     gtk_label_set_xalign(GTK_LABEL(meta_label), 0.0f);
     gtk_widget_add_css_class(meta_label, "preference-description");
     gtk_widget_set_hexpand(text_box, TRUE);
+    control_name_widget(text_box, text_name);
+    control_name_widget(meta_label, meta_name);
     gtk_box_append(GTK_BOX(text_box), name_label);
     gtk_box_append(GTK_BOX(text_box), meta_label);
     gtk_box_append(GTK_BOX(hbox), text_box);
@@ -417,30 +428,42 @@ static GtkWidget *create_model_row_widget(ModelRow *row) {
     gtk_label_set_xalign(row->status_label, 0.0f);
     gtk_widget_add_css_class(GTK_WIDGET(row->status_label), "muted-label");
     gtk_widget_set_size_request(GTK_WIDGET(row->status_label), 96, -1);
+    control_name_widget(GTK_WIDGET(row->status_label), status_name);
     gtk_box_append(GTK_BOX(hbox), GTK_WIDGET(row->status_label));
 
     row->progress = GTK_PROGRESS_BAR(gtk_progress_bar_new());
     gtk_progress_bar_set_show_text(row->progress, TRUE);
     gtk_widget_set_size_request(GTK_WIDGET(row->progress), 140, -1);
     gtk_widget_set_visible(GTK_WIDGET(row->progress), FALSE);
+    control_name_widget(GTK_WIDGET(row->progress), progress_name);
     gtk_box_append(GTK_BOX(hbox), GTK_WIDGET(row->progress));
 
     row->action_button = GTK_BUTTON(gtk_button_new_with_label(""));
+    gtk_widget_add_css_class(GTK_WIDGET(row->action_button), "control-button");
     gtk_widget_set_size_request(GTK_WIDGET(row->action_button), 110, -1);
+    control_name_widget(GTK_WIDGET(row->action_button), action_name);
     g_signal_connect(row->action_button, "clicked",
                      G_CALLBACK(on_model_action_clicked), row);
     gtk_box_append(GTK_BOX(hbox), GTK_WIDGET(row->action_button));
 
+    g_free(row_name);
+    g_free(text_name);
+    g_free(title_name);
+    g_free(meta_name);
+    g_free(status_name);
+    g_free(progress_name);
+    g_free(action_name);
     return hbox;
 }
 
 GtkWidget *control_build_whisper_model_section(TypioControl *control) {
-    GtkWidget *section = control_create_panel_box(10);
-    GtkWidget *list = control_create_preferences_list();
+    GtkWidget *section = control_create_panel_box_named("whisper-models-section", 10);
+    GtkWidget *list = control_create_preferences_list_named("whisper-models-list");
 
     gtk_box_append(GTK_BOX(section),
-                   control_create_section_header("Whisper models",
-                                                 "Local `whisper.cpp` models available for download and removal."));
+                   control_create_section_header_named("whisper-models-header",
+                                                       "Whisper models",
+                                                       "Local `whisper.cpp` models available for download and removal."));
 
     for (size_t i = 0; i < WHISPER_MODEL_COUNT; i++) {
         ModelRow *row = &control->whisper_rows[i];
@@ -462,12 +485,13 @@ GtkWidget *control_build_whisper_model_section(TypioControl *control) {
 }
 
 GtkWidget *control_build_sherpa_model_section(TypioControl *control) {
-    GtkWidget *section = control_create_panel_box(10);
-    GtkWidget *list = control_create_preferences_list();
+    GtkWidget *section = control_create_panel_box_named("sherpa-models-section", 10);
+    GtkWidget *list = control_create_preferences_list_named("sherpa-models-list");
 
     gtk_box_append(GTK_BOX(section),
-                   control_create_section_header("Sherpa-ONNX models",
-                                                 "Packaged speech models extracted into the local Typio data directory."));
+                   control_create_section_header_named("sherpa-models-header",
+                                                       "Sherpa-ONNX models",
+                                                       "Packaged speech models extracted into the local Typio data directory."));
 
     for (size_t i = 0; i < SHERPA_MODEL_COUNT; i++) {
         ModelRow *row = &control->sherpa_rows[i];

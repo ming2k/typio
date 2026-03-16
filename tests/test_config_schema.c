@@ -68,7 +68,6 @@ TEST(apply_defaults_empty_config) {
 
     /* Check that defaults were applied */
     ASSERT_EQ(typio_config_get_int(config, "engines.rime.font_size", 0), 11);
-    ASSERT_EQ(typio_config_get_int(config, "engines.rime.page_size", 0), 9);
     ASSERT_EQ(typio_config_get_int(config, "engines.mozc.page_size", 0), 9);
     ASSERT(typio_config_get_bool(config, "notifications.enable", false));
     ASSERT(typio_config_get_bool(config, "notifications.startup_checks", false));
@@ -87,13 +86,11 @@ TEST(apply_defaults_preserves_existing) {
 
     /* Set a non-default value */
     typio_config_set_int(config, "engines.rime.font_size", 14);
-    typio_config_set_int(config, "engines.rime.page_size", 5);
 
     typio_config_apply_defaults(config);
 
     /* Existing values should NOT be overwritten */
     ASSERT_EQ(typio_config_get_int(config, "engines.rime.font_size", 0), 14);
-    ASSERT_EQ(typio_config_get_int(config, "engines.rime.page_size", 0), 5);
 
     /* Missing values should get defaults */
     ASSERT(typio_config_get_bool(config, "notifications.enable", false));
@@ -220,13 +217,10 @@ TEST(migrate_shared_voice_model_no_backend_defaults_whisper) {
     typio_config_free(config);
 }
 
-/* Test: page_size default is unified to 9 */
-TEST(page_size_default_unified) {
-    const TypioConfigField *rime = typio_config_schema_find("engines.rime.page_size");
+/* Test: mozc page_size default stays available */
+TEST(mozc_page_size_default) {
     const TypioConfigField *mozc = typio_config_schema_find("engines.mozc.page_size");
-    ASSERT_NOT_NULL(rime);
     ASSERT_NOT_NULL(mozc);
-    ASSERT_EQ(rime->def.i, 9);
     ASSERT_EQ(mozc->def.i, 9);
 }
 
@@ -269,7 +263,6 @@ TEST(full_lifecycle) {
     ASSERT(!typio_config_has_key(config, "voice.language"));
 
     /* Defaults applied */
-    ASSERT_EQ(typio_config_get_int(config, "engines.rime.page_size", 0), 9);
     ASSERT_EQ(typio_config_get_int(config, "engines.rime.font_size", 0), 11);
     ASSERT_STR_EQ(typio_config_get_string(config, "engines.rime.popup_theme", ""), "auto");
 
@@ -294,7 +287,7 @@ int main(void) {
     run_test_migrate_shared_voice_model_routes_to_sherpa();
     run_test_migrate_shared_voice_model_routes_to_whisper();
     run_test_migrate_shared_voice_model_no_backend_defaults_whisper();
-    run_test_page_size_default_unified();
+    run_test_mozc_page_size_default();
     run_test_schema_fields_enumeration();
     run_test_full_lifecycle();
 

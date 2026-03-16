@@ -1,8 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <!-- Typio Rime icon — Latin/ASCII mode -->
-  <!-- Rounded blue background -->
-  <rect x="12" y="12" width="104" height="104" rx="24" fill="#3b6eb5"/>
-  <!-- White "A" letter -->
-  <text x="64" y="84" font-family="Sans" font-weight="bold" font-size="68"
-        fill="#ffffff" text-anchor="middle" dominant-baseline="central">A</text>
+  <rect width="128" height="128" rx="28" fill="#2157a5"/>
+  <rect x="24" y="28" width="80" height="72" rx="18" fill="#ffffff"/>
+  <path d="M43 86V42h12l18 23V42h12v44H73L55 63v23H43z" fill="#2157a5"/>
+  <path d="M91 42h-6v44h6c7 0 13-6 13-13V55c0-7-6-13-13-13z" fill="#38a169"/>
 </svg>

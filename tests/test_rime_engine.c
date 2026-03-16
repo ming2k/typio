@@ -159,8 +159,7 @@ TEST(load_and_compose) {
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
-                      "schema = \"luna_pinyin\"\n"
-                      "page_size = 5\n"));
+                      "schema = \"luna_pinyin\"\n"));
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;
@@ -228,8 +227,7 @@ TEST(switch_to_rime_first_shift_toggles_latin_mode) {
     ASSERT(write_file(config_path,
                       "default_engine = \"basic\"\n"
                       "[engines.rime]\n"
-                      "schema = \"luna_pinyin\"\n"
-                      "page_size = 5\n"));
+                      "schema = \"luna_pinyin\"\n"));
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;
@@ -286,8 +284,7 @@ TEST(switch_back_to_rime_first_shift_toggles_latin_mode) {
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
-                      "schema = \"luna_pinyin\"\n"
-                      "page_size = 5\n"));
+                      "schema = \"luna_pinyin\"\n"));
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;

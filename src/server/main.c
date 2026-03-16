@@ -92,9 +92,6 @@ static bool write_rime_schema_config(const char *schema_name) {
     }
 
     typio_config_set_string(config, "engines.rime.schema", schema_name);
-    if (!typio_config_has_key(config, "engines.rime.page_size")) {
-        typio_config_set_int(config, "engines.rime.page_size", 10);
-    }
     if (!typio_config_has_key(config, "engines.rime.user_data_dir")) {
         typio_config_set_string(config, "engines.rime.user_data_dir", user_data_dir);
     }

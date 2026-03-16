@@ -98,14 +98,6 @@ static const TypioConfigField schema_fields[] = {
         .ui_section = "rime",
     },
     {
-        .key = "engines.rime.page_size",
-        .type = TYPIO_FIELD_INT,
-        .def.i = 9,
-        .ui_label = "Page size",
-        .ui_section = "rime",
-        .ui_min = 1, .ui_max = 20, .ui_step = 1,
-    },
-    {
         .key = "engines.rime.shared_data_dir",
         .type = TYPIO_FIELD_STRING,
         .def.s = "",

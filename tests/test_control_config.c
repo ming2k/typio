@@ -76,10 +76,8 @@ static void setup_control(TypioControl *control, char *root_template) {
     ASSERT(ensure_dir(sherpa_dir));
 
     control->config_buffer = gtk_text_buffer_new(NULL);
-    control->availability_label = GTK_LABEL(gtk_label_new(""));
+    control->window = gtk_window_new();
     control->config_status_label = GTK_LABEL(gtk_label_new(""));
-    control->apply_config_button = GTK_BUTTON(gtk_button_new());
-    control->cancel_config_button = GTK_BUTTON(gtk_button_new());
     control->whisper_dir = g_strdup(whisper_dir);
     control->sherpa_dir = g_strdup(sherpa_dir);
     control->config_seeded = FALSE;
@@ -92,7 +90,6 @@ static void setup_control(TypioControl *control, char *root_template) {
     gtk_drop_down_set_selected(control->voice_backend_dropdown, 0);
 
     control->config_seeded = TRUE;
-    control->config_dirty = FALSE;
 }
 
 static void cleanup_control(TypioControl *control) {
@@ -100,7 +97,7 @@ static void cleanup_control(TypioControl *control) {
     g_free(control->committed_config_text);
 }
 
-TEST(window_builds_summary_and_actions) {
+TEST(window_builds_actions) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
     GtkApplication *app;
@@ -113,47 +110,52 @@ TEST(window_builds_summary_and_actions) {
     window = control_build_window(&control, app);
     ASSERT_NOT_NULL(window);
     ASSERT(control.window == NULL);
-    ASSERT_NOT_NULL(control.service_status_label);
-    ASSERT_NOT_NULL(control.engine_label);
-    ASSERT_NOT_NULL(control.apply_config_button);
-    ASSERT_NOT_NULL(control.cancel_config_button);
-    ASSERT_STR_EQ(gtk_label_get_text(control.service_status_label), "Connected");
-    ASSERT_STR_EQ(gtk_label_get_text(control.engine_label), "None");
+    ASSERT_NOT_NULL(control.config_status_label);
 
     gtk_window_destroy(GTK_WINDOW(window));
     g_object_unref(app);
     cleanup_control(&control);
 }
 
-TEST(dirty_banner_and_cancel_restore_state) {
+TEST(widget_debug_names_are_stable) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
-    const char *committed =
-        "default_engine = \"basic\"\n"
-        "[engines.rime]\n"
-        "popup_theme = \"auto\"\n"
-        "candidate_layout = \"horizontal\"\n"
-        "font_size = 11\n";
 
     setup_control(&control, root);
-    control.committed_config_text = g_strdup(committed);
-    write_buffer(control.config_buffer, committed);
+
+    ASSERT_STR_EQ(gtk_widget_get_name(GTK_WIDGET(control.popup_theme_dropdown)),
+                  "field-engines-rime-popup-theme");
+    ASSERT_STR_EQ(gtk_widget_get_name(GTK_WIDGET(control.notifications_enable_switch)),
+                  "field-notifications-enable");
+    ASSERT_STR_EQ(gtk_widget_get_name(GTK_WIDGET(control.shortcut_switch_engine_btn)),
+                  "shortcut-switch-engine-button");
+    ASSERT_STR_EQ(gtk_widget_get_name(GTK_WIDGET(control.rime_schema_dropdown)),
+                  "rime-schema-dropdown");
+
+    cleanup_control(&control);
+}
+
+TEST(form_changes_update_buffer_immediately) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    char *rendered;
+
+    setup_control(&control, root);
+    write_buffer(control.config_buffer,
+                 "default_engine = \"basic\"\n"
+                 "[engines.rime]\n"
+                 "popup_theme = \"auto\"\n"
+                 "candidate_layout = \"horizontal\"\n"
+                 "font_size = 11\n");
     control_sync_form_from_buffer(&control);
 
     gtk_spin_button_set_value(control.font_size_spin, 13.0);
     on_display_spin_changed(control.font_size_spin, &control);
 
-    ASSERT(control.config_dirty);
-    ASSERT(gtk_widget_get_visible(GTK_WIDGET(control.config_status_label)));
-    ASSERT_STR_EQ(gtk_label_get_text(control.config_status_label),
-                  "Unsaved local changes. Apply to save or Cancel to discard.");
-    ASSERT(gtk_widget_get_sensitive(GTK_WIDGET(control.cancel_config_button)));
-
-    on_cancel_config_clicked(NULL, &control);
-
-    ASSERT(!control.config_dirty);
-    ASSERT(!gtk_widget_get_visible(GTK_WIDGET(control.config_status_label)));
-    ASSERT(gtk_spin_button_get_value_as_int(control.font_size_spin) == 11);
+    rendered = buffer_text(control.config_buffer);
+    ASSERT(rendered != NULL);
+    ASSERT(strstr(rendered, "font_size = 13") != NULL);
+    g_free(rendered);
 
     cleanup_control(&control);
 }
@@ -304,7 +306,6 @@ TEST(unseeded_form_changes_do_not_dirty_buffer) {
     rendered = buffer_text(control.config_buffer);
     ASSERT(rendered != NULL);
     ASSERT_STR_EQ(rendered, "");
-    ASSERT(!control.config_dirty);
     g_free(rendered);
 
     cleanup_control(&control);
@@ -317,8 +318,9 @@ int main(void) {
     }
 
     printf("Running control config tests:\n");
-    run_test_window_builds_summary_and_actions();
-    run_test_dirty_banner_and_cancel_restore_state();
+    run_test_window_builds_actions();
+    run_test_widget_debug_names_are_stable();
+    run_test_form_changes_update_buffer_immediately();
     run_test_voice_model_selection_follows_staged_config();
     run_test_voice_backend_sync_writes_default_engine_only();
     run_test_notification_settings_roundtrip_through_form();
