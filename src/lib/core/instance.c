@@ -34,6 +34,7 @@ struct TypioInstance {
 
     char *config_dir;
     char *data_dir;
+    char *state_dir;
     char *engine_dir;
     char *default_engine;
 
@@ -92,6 +93,22 @@ static const char *get_default_data_dir(void) {
     return path;
 }
 
+static const char *get_default_state_dir(void) {
+    static char path[512];
+    const char *state_home = getenv("XDG_STATE_HOME");
+    if (state_home && *state_home) {
+        snprintf(path, sizeof(path), "%s/typio", state_home);
+    } else {
+        const char *home = getenv("HOME");
+        if (home && *home) {
+            snprintf(path, sizeof(path), "%s/.local/state/typio", home);
+        } else {
+            snprintf(path, sizeof(path), "/tmp/typio/state");
+        }
+    }
+    return path;
+}
+
 static void ensure_directory(const char *path) {
     struct stat st;
     if (stat(path, &st) != 0) {
@@ -136,6 +153,12 @@ TypioInstance *typio_instance_new_with_config(const TypioInstanceConfig *config)
         instance->data_dir = typio_strdup(config->data_dir);
     } else {
         instance->data_dir = typio_strdup(get_default_data_dir());
+    }
+
+    if (config && config->state_dir) {
+        instance->state_dir = typio_strdup(config->state_dir);
+    } else {
+        instance->state_dir = typio_strdup(get_default_state_dir());
     }
 
     if (config && config->engine_dir) {
@@ -201,6 +224,7 @@ void typio_instance_free(TypioInstance *instance) {
 
     free(instance->config_dir);
     free(instance->data_dir);
+    free(instance->state_dir);
     free(instance->engine_dir);
     free(instance->default_engine);
     free(instance->last_status_icon);
@@ -221,6 +245,7 @@ TypioResult typio_instance_init(TypioInstance *instance) {
     /* Ensure directories exist */
     ensure_directory(instance->config_dir);
     ensure_directory(instance->data_dir);
+    ensure_directory(instance->state_dir);
     ensure_directory(instance->engine_dir);
 
     /* Load configuration */
@@ -400,6 +425,10 @@ const char *typio_instance_get_config_dir(TypioInstance *instance) {
 
 const char *typio_instance_get_data_dir(TypioInstance *instance) {
     return instance ? instance->data_dir : nullptr;
+}
+
+const char *typio_instance_get_state_dir(TypioInstance *instance) {
+    return instance ? instance->state_dir : nullptr;
 }
 
 TypioConfig *typio_instance_get_config(TypioInstance *instance) {

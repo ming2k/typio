@@ -18,6 +18,7 @@ extern "C" {
 typedef struct TypioInstanceConfig {
     const char *config_dir;     /* Configuration directory path */
     const char *data_dir;       /* Data directory path */
+    const char *state_dir;      /* State directory path */
     const char *engine_dir;     /* Engine plugins directory path */
     const char *default_engine; /* Default engine name to activate */
     TypioLogCallback log_callback;  /* Optional log callback */
@@ -129,6 +130,13 @@ const char *typio_instance_get_config_dir(TypioInstance *instance);
  * @return Data directory path
  */
 const char *typio_instance_get_data_dir(TypioInstance *instance);
+
+/**
+ * @brief Get the state directory path
+ * @param instance Typio instance
+ * @return State directory path
+ */
+const char *typio_instance_get_state_dir(TypioInstance *instance);
 
 /**
  * @brief Get the live root configuration object

@@ -6,6 +6,7 @@
 #include "typio/engine_manager.h"
 #include "typio/instance.h"
 #include "typio/engine.h"
+#include "typio/config.h"
 #include "../utils/log.h"
 #include "../utils/string.h"
 #include "../utils/list.h"
@@ -19,7 +20,10 @@
 #include <time.h>
 
 #define TYPIO_ENGINE_CONFIG_SUFFIX ".toml"
-#define TYPIO_MRU_THRESHOLD_MS 1500
+#define TYPIO_SWITCH_STABLE_THRESHOLD_MS 1000
+#define TYPIO_ENGINE_STATE_FILE "engine-state.toml"
+#define TYPIO_ENGINE_STATE_PRIMARY_KEY "recent.primary"
+#define TYPIO_ENGINE_STATE_SECONDARY_KEY "recent.secondary"
 
 /* Engine registry entry */
 typedef struct EngineEntry {
@@ -32,6 +36,9 @@ typedef struct EngineEntry {
     TypioEngine *instance;
     bool is_builtin;
 } EngineEntry;
+
+static EngineEntry *find_entry_by_name(TypioEngineManager *manager,
+                                       const char *name);
 
 static uint64_t engine_manager_monotonic_ms(void) {
     struct timespec ts;
@@ -49,9 +56,214 @@ struct TypioEngineManager {
     size_t active_voice_index;
     size_t prev_active_keyboard_index;
     uint64_t last_switch_ms;
+    char *recent_primary_name;
+    char *recent_secondary_name;
     const char **name_list;
     size_t name_list_size;
 };
+
+static char *engine_manager_build_state_path(TypioEngineManager *manager) {
+    const char *state_dir;
+    size_t len;
+    char *path;
+
+    if (!manager || !manager->instance) {
+        return nullptr;
+    }
+
+    state_dir = typio_instance_get_state_dir(manager->instance);
+    if (!state_dir || !*state_dir) {
+        return nullptr;
+    }
+
+    len = strlen(state_dir) + strlen(TYPIO_ENGINE_STATE_FILE) + 2;
+    path = malloc(len);
+    if (!path) {
+        return nullptr;
+    }
+
+    snprintf(path, len, "%s/%s", state_dir, TYPIO_ENGINE_STATE_FILE);
+    return path;
+}
+
+static bool engine_manager_strings_equal(const char *a, const char *b) {
+    if (a == b) {
+        return true;
+    }
+    if (!a || !b) {
+        return false;
+    }
+    return strcmp(a, b) == 0;
+}
+
+static bool engine_manager_name_is_keyboard(TypioEngineManager *manager,
+                                            const char *name) {
+    EngineEntry *entry;
+
+    if (!manager || !name || !*name) {
+        return false;
+    }
+
+    entry = find_entry_by_name(manager, name);
+    return entry && entry->info &&
+           entry->info->type == TYPIO_ENGINE_TYPE_KEYBOARD;
+}
+
+static void engine_manager_load_recent_state(TypioEngineManager *manager) {
+    TypioConfig *state = NULL;
+    char *path;
+    const char *primary;
+    const char *secondary;
+
+    if (!manager) {
+        return;
+    }
+
+    path = engine_manager_build_state_path(manager);
+    if (!path) {
+        return;
+    }
+
+    state = typio_config_load_file(path);
+    free(path);
+    if (!state) {
+        return;
+    }
+
+    primary = typio_config_get_string(state, TYPIO_ENGINE_STATE_PRIMARY_KEY, NULL);
+    secondary = typio_config_get_string(state, TYPIO_ENGINE_STATE_SECONDARY_KEY, NULL);
+
+    free(manager->recent_primary_name);
+    free(manager->recent_secondary_name);
+    manager->recent_primary_name = primary && *primary ? strdup(primary) : NULL;
+    manager->recent_secondary_name = secondary && *secondary ? strdup(secondary) : NULL;
+
+    typio_config_free(state);
+}
+
+static void engine_manager_save_recent_state(TypioEngineManager *manager) {
+    TypioConfig *state;
+    char *path;
+
+    if (!manager) {
+        return;
+    }
+
+    path = engine_manager_build_state_path(manager);
+    if (!path) {
+        return;
+    }
+
+    state = typio_config_new();
+    if (!state) {
+        free(path);
+        return;
+    }
+
+    if (manager->recent_primary_name && *manager->recent_primary_name) {
+        typio_config_set_string(state,
+                                TYPIO_ENGINE_STATE_PRIMARY_KEY,
+                                manager->recent_primary_name);
+    }
+    if (manager->recent_secondary_name && *manager->recent_secondary_name) {
+        typio_config_set_string(state,
+                                TYPIO_ENGINE_STATE_SECONDARY_KEY,
+                                manager->recent_secondary_name);
+    }
+
+    typio_config_save_file(state, path);
+    typio_config_free(state);
+    free(path);
+}
+
+static void engine_manager_update_recent_pair(TypioEngineManager *manager,
+                                              const char *stable_name) {
+    char *new_primary = NULL;
+    char *new_secondary = NULL;
+    bool changed = false;
+
+    if (!manager || !stable_name || !*stable_name) {
+        return;
+    }
+
+    if (manager->recent_primary_name &&
+        strcmp(manager->recent_primary_name, stable_name) == 0) {
+        return;
+    }
+
+    new_primary = strdup(stable_name);
+    if (!new_primary) {
+        return;
+    }
+
+    if (manager->recent_primary_name &&
+        strcmp(manager->recent_primary_name, stable_name) != 0) {
+        new_secondary = strdup(manager->recent_primary_name);
+    } else if (manager->recent_secondary_name &&
+               strcmp(manager->recent_secondary_name, stable_name) != 0) {
+        new_secondary = strdup(manager->recent_secondary_name);
+    }
+
+    changed = !engine_manager_strings_equal(manager->recent_primary_name, new_primary) ||
+              !engine_manager_strings_equal(manager->recent_secondary_name, new_secondary);
+
+    free(manager->recent_primary_name);
+    free(manager->recent_secondary_name);
+    manager->recent_primary_name = new_primary;
+    manager->recent_secondary_name = new_secondary;
+
+    if (changed) {
+        engine_manager_save_recent_state(manager);
+    }
+}
+
+static void engine_manager_note_stable_current(TypioEngineManager *manager,
+                                               uint64_t now_ms) {
+    const char *current_name;
+    uint64_t elapsed;
+
+    if (!manager || manager->active_keyboard_index == (size_t)-1) {
+        return;
+    }
+
+    elapsed = now_ms - manager->last_switch_ms;
+    if (elapsed < TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
+        return;
+    }
+
+    current_name = manager->entries[manager->active_keyboard_index]->name;
+    engine_manager_update_recent_pair(manager, current_name);
+}
+
+static size_t engine_manager_recent_partner_index(TypioEngineManager *manager) {
+    const char *current_name;
+    const char *partner_name = NULL;
+
+    if (!manager || manager->active_keyboard_index == (size_t)-1) {
+        return (size_t)-1;
+    }
+
+    current_name = manager->entries[manager->active_keyboard_index]->name;
+    if (manager->recent_primary_name &&
+        strcmp(manager->recent_primary_name, current_name) == 0) {
+        partner_name = manager->recent_secondary_name;
+    } else if (manager->recent_secondary_name &&
+               strcmp(manager->recent_secondary_name, current_name) == 0) {
+        partner_name = manager->recent_primary_name;
+    }
+
+    if (!engine_manager_name_is_keyboard(manager, partner_name)) {
+        return (size_t)-1;
+    }
+
+    for (size_t i = 0; i < manager->entry_count; i++) {
+        if (strcmp(manager->entries[i]->name, partner_name) == 0) {
+            return i;
+        }
+    }
+
+    return (size_t)-1;
+}
 
 static void free_engine_entry(EngineEntry *entry) {
     if (!entry) {
@@ -88,6 +300,7 @@ TypioEngineManager *typio_engine_manager_new(TypioInstance *instance) {
     manager->active_keyboard_index = (size_t)-1;
     manager->active_voice_index = (size_t)-1;
     manager->prev_active_keyboard_index = (size_t)-1;
+    engine_manager_load_recent_state(manager);
 
     return manager;
 }
@@ -122,6 +335,8 @@ void typio_engine_manager_free(TypioEngineManager *manager) {
     free(manager->entries);
 
     free(manager->name_list);
+    free(manager->recent_primary_name);
+    free(manager->recent_secondary_name);
     free(manager);
 }
 
@@ -474,9 +689,13 @@ static void engine_manager_rebind_focused_context(TypioEngineManager *manager,
 
 TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
                                              const char *name) {
+    uint64_t now_ms;
+
     if (!manager || !name) {
         return TYPIO_ERROR_INVALID_ARGUMENT;
     }
+
+    now_ms = engine_manager_monotonic_ms();
 
     /* Find entry */
     size_t index = (size_t)-1;
@@ -538,6 +757,10 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
         return TYPIO_OK;
     }
 
+    if (manager->active_keyboard_index != (size_t)-1) {
+        engine_manager_note_stable_current(manager, now_ms);
+    }
+
     /* Deactivate current keyboard engine */
     EngineEntry *current = nullptr;
     if (manager->active_keyboard_index != (size_t)-1) {
@@ -570,7 +793,7 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
 
     manager->prev_active_keyboard_index = manager->active_keyboard_index;
     manager->active_keyboard_index = index;
-    manager->last_switch_ms = engine_manager_monotonic_ms();
+    manager->last_switch_ms = now_ms;
 
     engine_manager_rebind_focused_context(manager,
                                           current ? current->instance : nullptr,
@@ -656,15 +879,14 @@ TypioResult typio_engine_manager_next(TypioEngineManager *manager) {
         uint64_t now_ms = engine_manager_monotonic_ms();
         uint64_t elapsed = now_ms - manager->last_switch_ms;
 
-        /* MRU: if enough time has passed and we have a previous engine,
-         * switch back to it instead of cycling sequentially */
-        if (elapsed > TYPIO_MRU_THRESHOLD_MS &&
-            manager->prev_active_keyboard_index != (size_t)-1 &&
-            manager->prev_active_keyboard_index != manager->active_keyboard_index &&
-            manager->prev_active_keyboard_index < manager->entry_count &&
-            manager->entries[manager->prev_active_keyboard_index]->info->type != TYPIO_ENGINE_TYPE_VOICE) {
-            next_index = manager->prev_active_keyboard_index;
+        if (elapsed > TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
+            engine_manager_note_stable_current(manager, now_ms);
+            next_index = engine_manager_recent_partner_index(manager);
         } else {
+            next_index = (size_t)-1;
+        }
+
+        if (next_index == (size_t)-1) {
             size_t start = (manager->active_keyboard_index + 1) % manager->entry_count;
             next_index = find_next_keyboard(manager, start);
         }
@@ -687,13 +909,25 @@ TypioResult typio_engine_manager_prev(TypioEngineManager *manager) {
     if (manager->active_keyboard_index == (size_t)-1) {
         prev_index = find_prev_keyboard(manager, manager->entry_count - 1);
     } else {
-        size_t start;
-        if (manager->active_keyboard_index == 0) {
-            start = manager->entry_count - 1;
+        uint64_t now_ms = engine_manager_monotonic_ms();
+        uint64_t elapsed = now_ms - manager->last_switch_ms;
+
+        if (elapsed > TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
+            engine_manager_note_stable_current(manager, now_ms);
+            prev_index = engine_manager_recent_partner_index(manager);
         } else {
-            start = manager->active_keyboard_index - 1;
+            prev_index = (size_t)-1;
         }
-        prev_index = find_prev_keyboard(manager, start);
+
+        if (prev_index == (size_t)-1) {
+            size_t start;
+            if (manager->active_keyboard_index == 0) {
+                start = manager->entry_count - 1;
+            } else {
+                start = manager->active_keyboard_index - 1;
+            }
+            prev_index = find_prev_keyboard(manager, start);
+        }
     }
 
     if (prev_index == (size_t)-1) {

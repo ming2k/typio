@@ -8,6 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <time.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static int tests_run = 0;
 static int tests_passed = 0;
@@ -48,6 +51,45 @@ static size_t engine_count(TypioEngineManager *manager) {
     const char **engines = typio_engine_manager_list(manager, &count);
     ASSERT_NOT_NULL(engines);
     return count;
+}
+
+static void ensure_dir(const char *path) {
+    ASSERT(path != NULL);
+    ASSERT(mkdir(path, 0755) == 0 || access(path, F_OK) == 0);
+}
+
+static void sleep_past_switch_threshold(void) {
+    struct timespec ts = {
+        .tv_sec = 1,
+        .tv_nsec = 100 * 1000 * 1000,
+    };
+    nanosleep(&ts, NULL);
+}
+
+static TypioInstance *create_temp_instance(char *root_template,
+                                           TypioInstanceConfig *config_out) {
+    static char config_dir[1024];
+    static char data_dir[1024];
+    static char state_dir[1024];
+    static char engine_dir[1024];
+
+    ASSERT(mkdtemp(root_template) != NULL);
+    ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", root_template) < (int)sizeof(config_dir));
+    ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", root_template) < (int)sizeof(data_dir));
+    ASSERT(snprintf(state_dir, sizeof(state_dir), "%s/state", root_template) < (int)sizeof(state_dir));
+    ASSERT(snprintf(engine_dir, sizeof(engine_dir), "%s/engines", root_template) < (int)sizeof(engine_dir));
+
+    ensure_dir(config_dir);
+    ensure_dir(data_dir);
+    ensure_dir(state_dir);
+    ensure_dir(engine_dir);
+
+    memset(config_out, 0, sizeof(*config_out));
+    config_out->config_dir = config_dir;
+    config_out->data_dir = data_dir;
+    config_out->state_dir = state_dir;
+    config_out->engine_dir = engine_dir;
+    return typio_instance_new_with_config(config_out);
 }
 
 /* Mock engine for testing */
@@ -461,6 +503,69 @@ TEST(next_prev_skip_voice) {
     typio_instance_free(instance);
 }
 
+TEST(stable_pair_prefers_recent_engines_and_skips_rapid_persistence) {
+    char root[] = "/tmp/typio-engine-mru-XXXXXX";
+    TypioInstanceConfig config;
+    TypioInstance *instance = create_temp_instance(root, &config);
+    TypioEngineManager *manager;
+
+    typio_instance_init(instance);
+    manager = typio_instance_get_engine_manager(instance);
+
+    typio_engine_manager_register(manager, mock_create, mock_get_info);
+    typio_engine_manager_register(manager, mock2_create, mock2_get_info);
+
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock"), TYPIO_OK);
+    sleep_past_switch_threshold();
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock2"), TYPIO_OK);
+    sleep_past_switch_threshold();
+
+    ASSERT_EQ(typio_engine_manager_next(manager), TYPIO_OK);
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock");
+
+    ASSERT_EQ(typio_engine_manager_next(manager), TYPIO_OK);
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock2");
+
+    ASSERT_EQ(typio_engine_manager_next(manager), TYPIO_OK);
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "basic");
+
+    typio_instance_free(instance);
+}
+
+TEST(stable_pair_persists_across_instances) {
+    char root[] = "/tmp/typio-engine-state-XXXXXX";
+    TypioInstanceConfig config;
+    TypioInstance *instance = create_temp_instance(root, &config);
+    TypioEngineManager *manager;
+
+    typio_instance_init(instance);
+    manager = typio_instance_get_engine_manager(instance);
+    typio_engine_manager_register(manager, mock_create, mock_get_info);
+    typio_engine_manager_register(manager, mock2_create, mock2_get_info);
+
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock"), TYPIO_OK);
+    sleep_past_switch_threshold();
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock2"), TYPIO_OK);
+    sleep_past_switch_threshold();
+    ASSERT_EQ(typio_engine_manager_next(manager), TYPIO_OK);
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock");
+    typio_instance_free(instance);
+
+    instance = typio_instance_new_with_config(&config);
+    ASSERT_NOT_NULL(instance);
+    typio_instance_init(instance);
+    manager = typio_instance_get_engine_manager(instance);
+    typio_engine_manager_register(manager, mock_create, mock_get_info);
+    typio_engine_manager_register(manager, mock2_create, mock2_get_info);
+
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock2"), TYPIO_OK);
+    sleep_past_switch_threshold();
+    ASSERT_EQ(typio_engine_manager_next(manager), TYPIO_OK);
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock");
+
+    typio_instance_free(instance);
+}
+
 /* Test: Unload voice engine clears voice slot */
 TEST(unload_voice_engine) {
     TypioInstance *instance = typio_instance_new();
@@ -495,6 +600,8 @@ int main(void) {
     run_test_voice_engine_activation();
     run_test_next_prev_skip_voice();
     run_test_unload_voice_engine();
+    run_test_stable_pair_prefers_recent_engines_and_skips_rapid_persistence();
+    run_test_stable_pair_persists_across_instances();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
 
