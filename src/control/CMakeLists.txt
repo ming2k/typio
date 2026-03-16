@@ -1,6 +1,11 @@
 # Typio GTK4 control panel
 
-add_executable(typio-control main.c)
+add_executable(typio-control
+    main.c
+    control_models.c
+    control_ui.c
+    control_bind.c
+)
 
 target_include_directories(typio-control PRIVATE
     ${CMAKE_BINARY_DIR}

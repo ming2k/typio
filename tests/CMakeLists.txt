@@ -1,3 +1,10 @@
+add_library(test_lazy_engine_plugin MODULE test_lazy_engine_plugin.c)
+target_link_libraries(test_lazy_engine_plugin PRIVATE typio-core)
+set_target_properties(test_lazy_engine_plugin PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "test_lazy_engine_plugin"
+)
+
 add_executable(test_core test_core.c)
 target_link_libraries(test_core PRIVATE typio-core)
 add_test(NAME test_core COMMAND test_core)
@@ -6,8 +13,16 @@ add_executable(test_config test_config.c)
 target_link_libraries(test_config PRIVATE typio-core)
 add_test(NAME test_config COMMAND test_config)
 
+add_executable(test_config_schema test_config_schema.c)
+target_link_libraries(test_config_schema PRIVATE typio-core)
+add_test(NAME test_config_schema COMMAND test_config_schema)
+
 add_executable(test_engine_manager test_engine_manager.c)
 target_link_libraries(test_engine_manager PRIVATE typio-core)
+target_compile_definitions(test_engine_manager PRIVATE
+    TYPIO_TEST_LAZY_ENGINE_PATH="$<TARGET_FILE:test_lazy_engine_plugin>"
+)
+add_dependencies(test_engine_manager test_lazy_engine_plugin)
 add_test(NAME test_engine_manager COMMAND test_engine_manager)
 
 add_executable(test_preedit_format
@@ -50,6 +65,27 @@ if(HAVE_STATUS_BUS)
     add_test(NAME test_status_bus COMMAND test_status_bus)
 endif()
 
+if(BUILD_CONTROL_PANEL)
+    add_executable(test_control_config
+        test_control_config.c
+        ${CMAKE_SOURCE_DIR}/src/control/main.c
+        ${CMAKE_SOURCE_DIR}/src/control/control_ui.c
+        ${CMAKE_SOURCE_DIR}/src/control/control_models.c
+        ${CMAKE_SOURCE_DIR}/src/control/control_bind.c
+    )
+    target_compile_definitions(test_control_config PRIVATE TYPIO_CONTROL_TEST)
+    target_include_directories(test_control_config PRIVATE
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}/src/control
+        ${CMAKE_SOURCE_DIR}/src/lib
+        ${CMAKE_SOURCE_DIR}/src/server
+        ${GTK4_INCLUDE_DIRS}
+    )
+    target_compile_options(test_control_config PRIVATE ${GTK4_CFLAGS_OTHER})
+    target_link_libraries(test_control_config PRIVATE typio-core ${GTK4_LIBRARIES})
+    add_test(NAME test_control_config COMMAND test_control_config)
+endif()
+
 add_executable(test_startup_guard
     test_startup_guard.c
     ${CMAKE_SOURCE_DIR}/src/server/wayland/startup_guard.c
@@ -61,6 +97,18 @@ target_include_directories(test_startup_guard PRIVATE
     ${CMAKE_SOURCE_DIR}/src/server/wayland
 )
 add_test(NAME test_startup_guard COMMAND test_startup_guard)
+
+add_executable(test_startup_health
+    test_startup_health.c
+    ${CMAKE_SOURCE_DIR}/src/server/notify/health.c
+)
+target_include_directories(test_startup_health PRIVATE
+    ${CMAKE_BINARY_DIR}
+    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/server/notify
+)
+target_link_libraries(test_startup_health PRIVATE typio-core)
+add_test(NAME test_startup_health COMMAND test_startup_health)
 
 add_executable(test_boundary_bridge
     test_boundary_bridge.c

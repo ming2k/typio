@@ -6,6 +6,7 @@
 #include "tray_internal.h"
 #include "icon_pixmap.h"
 #include "typio/config.h"
+#include "typio/rime_schema_list.h"
 #include "typio/typio.h"
 #include "utils/log.h"
 #include "utils/string.h"
@@ -46,35 +47,6 @@ static void free_rime_menu_info(TypioTrayRimeMenuInfo *info) {
     memset(info, 0, sizeof(*info));
 }
 
-static char *dup_trimmed_value(const char *text) {
-    const char *start;
-    const char *end;
-    char *copy;
-
-    if (!text) {
-        return nullptr;
-    }
-
-    start = text;
-    while (*start == ' ' || *start == '\t' || *start == '"' || *start == '\'') {
-        ++start;
-    }
-
-    end = start + strlen(start);
-    while (end > start &&
-           (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ' ||
-            end[-1] == '\t' || end[-1] == '"' || end[-1] == '\'')) {
-        --end;
-    }
-
-    copy = calloc((size_t)(end - start) + 1U, sizeof(char));
-    if (!copy) {
-        return nullptr;
-    }
-
-    memcpy(copy, start, (size_t)(end - start));
-    return copy;
-}
 
 static char *tray_path_join(const char *base, const char *suffix) {
     size_t base_len;
@@ -104,99 +76,12 @@ static char *tray_default_rime_user_dir(TypioTray *tray) {
     return data_dir ? tray_path_join(data_dir, "rime") : nullptr;
 }
 
-static bool tray_parse_rime_schema_list(const char *path, TypioTrayRimeMenuInfo *info) {
-    FILE *file;
-    char line[512];
-
-    if (!path || !info) {
-        return false;
-    }
-
-    file = fopen(path, "r");
-    if (!file) {
-        return false;
-    }
-
-    while (fgets(line, sizeof(line), file) && info->schema_count < TYPIO_TRAY_RIME_MENU_MAX_SCHEMAS) {
-        char *schema_marker = strstr(line, "- schema:");
-        if (!schema_marker) {
-            continue;
-        }
-
-        char *id = dup_trimmed_value(schema_marker + 9);
-        if (!id || !*id) {
-            free(id);
-            continue;
-        }
-
-        info->schemas[info->schema_count].id = id;
-        info->schema_count++;
-    }
-
-    fclose(file);
-    return info->schema_count > 0;
-}
-
-static char *tray_parse_rime_schema_name(const char *path) {
-    FILE *file;
-    char line[512];
-    bool in_schema = false;
-
-    if (!path) {
-        return nullptr;
-    }
-
-    file = fopen(path, "r");
-    if (!file) {
-        return nullptr;
-    }
-
-    while (fgets(line, sizeof(line), file)) {
-        if (strncmp(line, "schema:", 7) == 0) {
-            in_schema = true;
-            continue;
-        }
-
-        if (in_schema && strncmp(line, "  name:", 7) == 0) {
-            fclose(file);
-            return dup_trimmed_value(line + 7);
-        }
-    }
-
-    fclose(file);
-    return nullptr;
-}
-
-static void tray_fill_rime_schema_names(TypioTrayRimeMenuInfo *info) {
-    if (!info || !info->user_data_dir) {
-        return;
-    }
-
-    for (size_t i = 0; i < info->schema_count; ++i) {
-        char relative_path[256];
-        char *path;
-
-        snprintf(relative_path, sizeof(relative_path), "rime/%s.schema.yaml", info->schemas[i].id);
-        path = tray_path_join(info->user_data_dir, relative_path);
-        info->schemas[i].name = tray_parse_rime_schema_name(path);
-        free(path);
-
-        if (info->schemas[i].name) {
-            continue;
-        }
-
-        snprintf(relative_path, sizeof(relative_path), "build/%s.schema.yaml", info->schemas[i].id);
-        path = tray_path_join(info->user_data_dir, relative_path);
-        info->schemas[i].name = tray_parse_rime_schema_name(path);
-        free(path);
-    }
-}
-
 static bool tray_load_rime_menu_info(TypioTray *tray, TypioTrayRimeMenuInfo *info) {
     TypioEngineManager *manager;
     TypioEngine *engine;
     TypioConfig *config;
-    char *path;
+    TypioRimeSchemaList shared_list;
+    char *default_dir;
 
     if (!tray || !info || !tray->engine_name || strcmp(tray->engine_name, "rime") != 0) {
         return false;
@@ -210,41 +95,38 @@ static bool tray_load_rime_menu_info(TypioTray *tray, TypioTrayRimeMenuInfo *inf
     }
 
     config = typio_instance_get_engine_config(tray->instance, "rime");
+    default_dir = tray_default_rime_user_dir(tray);
+
+    if (!typio_rime_schema_list_load(config, default_dir, &shared_list)) {
+        if (config) {
+            typio_config_free(config);
+        }
+        free(default_dir);
+        return false;
+    }
+
+    info->page_size = config ? typio_config_get_int(config, "page_size", 9) : 9;
+    if (shared_list.current_schema) {
+        info->current_schema = typio_strdup(shared_list.current_schema);
+    }
+    if (shared_list.user_data_dir) {
+        info->user_data_dir = typio_strdup(shared_list.user_data_dir);
+    }
+    for (size_t i = 0; i < shared_list.schema_count &&
+                        i < TYPIO_TRAY_RIME_MENU_MAX_SCHEMAS; ++i) {
+        info->schemas[i].id = shared_list.schemas[i].id
+            ? typio_strdup(shared_list.schemas[i].id) : nullptr;
+        info->schemas[i].name = shared_list.schemas[i].name
+            ? typio_strdup(shared_list.schemas[i].name) : nullptr;
+        info->schema_count++;
+    }
+    info->available = shared_list.available;
+
+    typio_rime_schema_list_clear(&shared_list);
     if (config) {
-        const char *schema = typio_config_get_string(config, "schema", nullptr);
-        const char *user_data_dir = typio_config_get_string(config, "user_data_dir", nullptr);
-        info->page_size = typio_config_get_int(config, "page_size", 10);
-        if (schema && *schema) {
-            info->current_schema = typio_strdup(schema);
-        }
-        if (user_data_dir && *user_data_dir) {
-            info->user_data_dir = typio_strdup(user_data_dir);
-        }
         typio_config_free(config);
-    } else {
-        info->page_size = 10;
     }
-
-    if (!info->user_data_dir) {
-        info->user_data_dir = tray_default_rime_user_dir(tray);
-    }
-
-    if (info->user_data_dir) {
-        path = tray_path_join(info->user_data_dir, "rime/default.custom.yaml");
-        if (!tray_parse_rime_schema_list(path, info)) {
-            free(path);
-            path = tray_path_join(info->user_data_dir, "default.custom.yaml");
-            if (!tray_parse_rime_schema_list(path, info)) {
-                free(path);
-                path = tray_path_join(info->user_data_dir, "build/default.yaml");
-                tray_parse_rime_schema_list(path, info);
-            }
-        }
-        free(path);
-    }
-
-    tray_fill_rime_schema_names(info);
-    info->available = info->current_schema != nullptr || info->schema_count > 0;
+    free(default_dir);
     return info->available;
 }
 

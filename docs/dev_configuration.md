@@ -1,0 +1,155 @@
+# Configuration System
+
+## Design Goal
+
+All configuration fields, their types, defaults, legacy aliases, and UI
+metadata are defined once in a static schema table (`config_schema.c`).
+Every other component — the daemon, control surfaces, user documentation —
+derives its behaviour from that table rather than maintaining parallel
+field lists.
+
+## Single Source Of Truth
+
+```text
+                          config_schema.c
+                        (static field table)
+                               |
+            +------------------+------------------+
+            |                  |                  |
+     apply_defaults     migrate_legacy      UI metadata
+     (daemon init)      (daemon init)     (typio-control)
+```
+
+The schema table is the only place where a new configuration field needs
+to be declared.  Adding a field means adding one `TypioConfigField` entry;
+no other source file needs a parallel definition.
+
+## Configuration Lifecycle
+
+### 1. Load
+
+`typio_instance_init` reads `typio.toml` from the config directory:
+
+```text
+load_file(path)  →  TypioConfig (flat key-value store)
+```
+
+The parser handles a TOML-compatible subset: top-level keys, `[section]`
+headers, and `key = value` pairs.  Dotted keys are built by joining
+`section.key`.
+
+**Known parser limitations:**
+
+- No nested tables (`[a.b.c]` works; inline `{...}` does not)
+- No array-of-tables (`[[array]]`)
+- No multiline strings
+- No inline arrays (TOML `[1, 2, 3]`)
+
+These are sufficient for Typio's flat configuration model.
+
+### 2. Migrate Legacy Keys
+
+`typio_config_migrate_legacy` runs two passes:
+
+- **Pass 1 (generic):** for each schema field with a `legacy_key` or
+  `legacy_key2`, if the legacy key exists but the canonical key does not,
+  copy the value and remove the legacy entry.
+- **Pass 2 (voice shared keys):** `voice.model` and `voice.language` are
+  ambiguous legacy keys whose target depends on which voice engine was
+  configured.  They are routed to `engines.<backend>.model` based on
+  `default_voice_engine` (itself already migrated from `voice.backend`
+  in pass 1).
+
+### 3. Apply Defaults
+
+`typio_config_apply_defaults` iterates the schema table and sets any
+missing key to the field's default value.  Existing user values are never
+overwritten.
+
+After this step the daemon holds a complete, canonical config with no
+legacy keys and no missing defaults.
+
+### 4. Hold
+
+`TypioInstance` owns the live `TypioConfig *`.  All daemon subsystems
+read from it.  Engine-specific sections are extracted via
+`typio_instance_get_engine_config(instance, "rime")`, which returns a
+copied sub-config.
+
+### 5. Expose Over D-Bus
+
+The status bus exposes two config-related properties:
+
+- **`ConfigText`** — the full config serialised to text
+  (`typio_instance_get_config_text`)
+- **`ActiveEngineState`** — includes engine-specific config entries
+  prefixed with `config.`
+
+And two config-mutating methods:
+
+- **`SetConfigText(s)`** — parse → migrate → defaults → save → reload
+- **`ReloadConfig()`** — re-read file from disk → migrate → defaults →
+  switch engine if needed → notify callback
+
+Both emit `PropertiesChanged` after completing.
+
+### 6. Edit From Control Surfaces
+
+Control surfaces follow the seeded-draft model documented in
+`dev_control_surfaces.md`:
+
+1. Read `ConfigText` from the daemon
+2. Seed a local draft
+3. Let the user edit
+4. Submit the full draft via `SetConfigText`
+
+Control surfaces never write `typio.toml` directly.
+
+### 7. Reload
+
+`typio_instance_reload_config` (called by `SetConfigText`, `ReloadConfig`,
+or inotify) replaces the in-memory config, re-runs migrate + defaults,
+switches the active engine if `default_engine` changed, tells the active
+engine to `reload_config`, and fires the `config_reloaded_callback`.  The
+Wayland frontend registers this callback to refresh shortcuts, voice, and
+the status bus.
+
+## Schema Table Structure
+
+Each `TypioConfigField` entry contains:
+
+| Field         | Purpose                                              |
+|---------------|------------------------------------------------------|
+| `key`         | Canonical dotted key, e.g. `engines.rime.font_size`  |
+| `type`        | `STRING`, `INT`, `BOOL`, or `FLOAT`                  |
+| `def`         | Default value (typed union)                          |
+| `legacy_key`  | First legacy alias, or `NULL`                        |
+| `legacy_key2` | Second legacy alias, or `NULL`                       |
+| `ui_label`    | Display label for control surfaces                   |
+| `ui_section`  | Logical grouping (`display`, `rime`, `shortcuts`...) |
+| `ui_min/max/step` | Range constraints for numeric fields             |
+| `ui_options`  | `NULL`-terminated string array for dropdowns         |
+
+Fields without `ui_label` are internal (no UI representation).
+
+## How To Add A New Configuration Field
+
+1. Add one `TypioConfigField` entry to `schema_fields[]` in
+   `config_schema.c`.
+2. If it replaces an old key, set `legacy_key`.
+3. If it should appear in `typio-control`, set the `ui_*` fields.
+4. Update `docs/user_configuration.md` with the user-facing description.
+5. No other code changes are needed for the field to be parsed, defaulted,
+   migrated, serialised, and exposed over D-Bus.
+
+## Invariants
+
+- The daemon is the only writer of `typio.toml`.
+- `ConfigText` round-trips: `load_string(to_string(config))` produces
+  an equivalent config.
+- Legacy migration is idempotent: running it twice has no additional
+  effect.
+- `apply_defaults` never overwrites a user-set value.
+- Control surfaces must not write config state before receiving the first
+  `ConfigText` from the daemon (see the known failure pattern in
+  `dev_control_surfaces.md`).

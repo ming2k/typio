@@ -6,6 +6,8 @@ add_library(typio-core
     core/input_context.c
     core/event.c
     core/config.c
+    core/config_schema.c
+    core/rime_schema_list.c
     utils/list.c
     utils/string.c
     utils/log.c

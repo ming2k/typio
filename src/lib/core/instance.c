@@ -457,6 +457,23 @@ TypioResult typio_instance_reload_config(TypioInstance *instance) {
         active->ops->reload_config(active);
     }
 
+    /* Sync voice engine to match default_voice_engine config key */
+    {
+        const char *configured_voice = typio_config_get_string(
+            instance->config, "default_voice_engine", nullptr);
+        TypioEngine *active_voice =
+            typio_engine_manager_get_active_voice(instance->engine_manager);
+        const char *current_voice =
+            active_voice ? typio_engine_get_name(active_voice) : nullptr;
+
+        if (configured_voice && *configured_voice &&
+            (!current_voice ||
+             strcmp(configured_voice, current_voice) != 0)) {
+            typio_engine_manager_set_active_voice(instance->engine_manager,
+                                                   configured_voice);
+        }
+    }
+
     return TYPIO_OK;
 }
 
