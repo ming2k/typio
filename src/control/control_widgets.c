@@ -1,7 +1,8 @@
 #include "control_widgets.h"
 
-#include <glib/gstdio.h>
 #include <glib.h>
+
+#define TYPIO_CONTROL_CSS_RESOURCE_PATH "/com/hihusky/typio/control/typio-control.css"
 
 static void control_sync_css_color_scheme(GtkCssProvider *provider) {
     GtkSettings *settings;
@@ -23,26 +24,13 @@ static void control_sync_css_color_scheme(GtkCssProvider *provider) {
 
 void control_apply_css(void) {
     GtkCssProvider *provider = gtk_css_provider_new();
-    const char *css_path = nullptr;
-
-    if (g_file_test(TYPIO_CONTROL_CSS_INSTALL_PATH, G_FILE_TEST_EXISTS)) {
-        css_path = TYPIO_CONTROL_CSS_INSTALL_PATH;
-    } else if (g_file_test(TYPIO_CONTROL_CSS_SOURCE_PATH, G_FILE_TEST_EXISTS)) {
-        css_path = TYPIO_CONTROL_CSS_SOURCE_PATH;
-    }
-
-    if (css_path) {
-        g_debug("control_apply_css: loading css from %s", css_path);
-        gtk_css_provider_load_from_path(provider, css_path);
-        control_sync_css_color_scheme(provider);
-        gtk_style_context_add_provider_for_display(gdk_display_get_default(),
-                                                   GTK_STYLE_PROVIDER(provider),
-                                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    } else {
-        g_warning("control_apply_css: no CSS file found (install=%s source=%s)",
-                  TYPIO_CONTROL_CSS_INSTALL_PATH,
-                  TYPIO_CONTROL_CSS_SOURCE_PATH);
-    }
+    g_debug("control_apply_css: loading embedded css from %s",
+            TYPIO_CONTROL_CSS_RESOURCE_PATH);
+    gtk_css_provider_load_from_resource(provider, TYPIO_CONTROL_CSS_RESOURCE_PATH);
+    control_sync_css_color_scheme(provider);
+    gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+                                               GTK_STYLE_PROVIDER(provider),
+                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     g_object_unref(provider);
 }

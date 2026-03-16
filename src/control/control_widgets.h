@@ -3,14 +3,6 @@
 
 #include <gtk/gtk.h>
 
-#ifndef TYPIO_CONTROL_CSS_SOURCE_PATH
-#define TYPIO_CONTROL_CSS_SOURCE_PATH "src/control/typio-control.css"
-#endif
-
-#ifndef TYPIO_CONTROL_CSS_INSTALL_PATH
-#define TYPIO_CONTROL_CSS_INSTALL_PATH "share/typio/typio-control.css"
-#endif
-
 void control_apply_css(void);
 void control_name_widget(GtkWidget *widget, const char *name);
 char *control_build_debug_name(const char *prefix, const char *token);

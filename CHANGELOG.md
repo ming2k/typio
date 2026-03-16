@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-03-16
+
+### Fixed
+
+- **Embedded control-panel CSS**: the GTK control panel now compiles
+  `typio-control.css` directly into the `typio-control` binary via GResource,
+  so installed builds no longer lose styling when the external CSS file is not
+  found at runtime.
+
 ## [2.0.0] - 2026-03-16
 
 ### Changed
@@ -319,6 +328,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.4.0]: https://github.com/user/typio/releases/tag/v1.4.0
 [1.4.1]: https://github.com/user/typio/releases/tag/v1.4.1
 [2.0.0]: https://github.com/user/typio/releases/tag/v2.0.0
+[2.0.1]: https://github.com/user/typio/releases/tag/v2.0.1
 [1.5.0]: https://github.com/user/typio/releases/tag/v1.5.0
 [1.4.2]: https://github.com/user/typio/releases/tag/v1.4.2
 [1.1.2]: https://github.com/user/typio/releases/tag/v1.1.2
