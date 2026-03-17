@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-03-17
+
+### Fixed
+
+- **Chrome candidate navigation lag**: skip redundant `zwp_input_method_v2`
+  protocol commits when only the candidate highlight changes (e.g. Up/Down
+  arrow navigation), avoiding expensive composition-update round-trips in
+  heavyweight clients like Chromium.
+
 ## [2.1.0] - 2026-03-17
 
 ### Added
