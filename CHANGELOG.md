@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-03-17
+
+### Added
+
+- **Keyboard engine management UI**: the control panel now treats keyboard
+  engines as a first-class managed list, with drag reordering, active-engine
+  actions, per-engine editing, and persistent `engine_order` handling.
+- **Selector contract tests**: added broader control-panel regression coverage
+  for config-driven and runtime-driven selectors so mismatches between
+  `options -> UI`, `config/runtime -> UI`, and `UI -> config` are caught by
+  tests instead of slipping into runtime.
+
+### Changed
+
+- **Control-panel engine editing UX**: engine-specific settings now open in a
+  dedicated GTK window instead of replacing content inline, and the keyboard
+  engine area uses clearer active-state labeling and a more predictable layout.
+- **Single-source engine naming**: keyboard engine labels shown by the tray and
+  control panel now follow daemon-exported engine display metadata instead of
+  drifting across surfaces.
+- **Engine ordering semantics**: keyboard engine display/switch order is now
+  explicitly modeled through `engine_order`, `EngineOrder`, and
+  `OrderedEngines`, giving tray, switching, and the control panel the same
+  ordering source.
+
+### Fixed
+
+- **Atomic config saves**: daemon-side config writes now use temporary files
+  plus atomic replace, preventing a crash during save from truncating the whole
+  `typio.toml`.
+- **Control-panel startup sync**: opening the control panel no longer seeds an
+  empty local buffer over the real daemon config, which previously could erase
+  live settings or show stale selector state.
+- **Rime schema persistence and display**: `engines.rime.schema` now roundtrips
+  cleanly between disk, daemon, and control panel, supports an explicit
+  unselected state, and preserves configured values even when schema discovery
+  lags.
+- **Voice backend/model population**: the voice section now sources backend
+  choices from `AvailableEngines` rather than keyboard-only ordered engines, so
+  Whisper and sherpa-onnx appear correctly and installed models can be chosen.
+
 ## [2.0.1] - 2026-03-16
 
 ### Fixed
@@ -329,6 +370,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.4.1]: https://github.com/user/typio/releases/tag/v1.4.1
 [2.0.0]: https://github.com/user/typio/releases/tag/v2.0.0
 [2.0.1]: https://github.com/user/typio/releases/tag/v2.0.1
+[2.1.0]: https://github.com/user/typio/releases/tag/v2.1.0
 [1.5.0]: https://github.com/user/typio/releases/tag/v1.5.0
 [1.4.2]: https://github.com/user/typio/releases/tag/v1.4.2
 [1.1.2]: https://github.com/user/typio/releases/tag/v1.1.2
