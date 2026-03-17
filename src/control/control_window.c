@@ -15,6 +15,9 @@ GtkWidget *control_build_window(TypioControl *control, GtkApplication *app) {
     gtk_widget_add_css_class(window, "control-root");
     control_name_widget(window, "control-window");
     control_apply_css();
+    if (control) {
+        control->window = window;
+    }
 
     gtk_widget_add_css_class(shell, "control-shell");
     control_name_widget(shell, "control-window-shell");

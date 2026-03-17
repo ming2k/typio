@@ -75,13 +75,13 @@ window.background.control-root {
   background-color: alpha(@accent_bg_color, 0.10);
 }
 
-.engine-order-remove-button {
+.engine-order-action-button {
   min-width: 32px;
   min-height: 32px;
   opacity: 0.72;
 }
 
-.engine-order-remove-button:hover {
+.engine-order-action-button:hover {
   opacity: 1;
 }
 
@@ -99,6 +99,18 @@ window.background.control-root {
 
 .preference-title {
   font-weight: 600;
+}
+
+.engine-status-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.engine-status-badge-active {
+  background-color: alpha(@accent_bg_color, 0.16);
+  color: @accent_color;
 }
 
 .engine-config {

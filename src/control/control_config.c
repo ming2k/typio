@@ -101,6 +101,11 @@ static guint control_engine_order_index(TypioControl *control, const char *engin
 static void control_materialize_current_engine_order(TypioControl *control);
 static void control_queue_engine_order_editor_refresh(TypioControl *control);
 static void control_set_config_text(TypioControl *control, GVariant *config_text);
+static void control_set_engine_model(TypioControl *control,
+                                     GVariant *engines,
+                                     GVariant *display_names);
+static void control_set_voice_backend_model(TypioControl *control,
+                                            GVariant *engines);
 
 static const char *control_lookup_engine_display_name(GVariant *display_names,
                                                       const char *engine_name) {
@@ -405,14 +410,20 @@ static GtkWidget *control_build_engine_order_row(TypioControl *control,
     GtkWidget *row = gtk_list_box_row_new();
     GtkWidget *shell = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
     GtkWidget *text_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    GtkWidget *status_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *title = gtk_label_new(typio_engine_label_fallback(engine_name));
     GtkWidget *subtitle;
+    GtkWidget *active_badge = NULL;
+    GtkWidget *activate = gtk_button_new_from_icon_name("object-select-symbolic");
+    GtkWidget *edit = gtk_button_new_from_icon_name("document-edit-symbolic");
     GtkWidget *remove = gtk_button_new_from_icon_name("user-trash-symbolic");
     GtkDragSource *drag_source;
     GtkDropTarget *drop_target;
     GtkDropControllerMotion *drop_motion;
     char *row_name = control_build_debug_name("engine-order-row", engine_name);
     char *subtitle_text = control_dup_engine_order_status(control, engine_name);
+    guint active_index = GTK_INVALID_LIST_POSITION;
+    const char *active_engine = NULL;
 
     control_name_widget(row, row_name);
     g_object_set_data_full(G_OBJECT(row), "typio-engine-name", g_strdup(engine_name), g_free);
@@ -434,9 +445,37 @@ static GtkWidget *control_build_engine_order_row(TypioControl *control,
     gtk_label_set_xalign(GTK_LABEL(subtitle), 0.0f);
     gtk_label_set_wrap(GTK_LABEL(subtitle), TRUE);
     gtk_widget_add_css_class(subtitle, "preference-description");
+    if (control && control->engine_dropdown && control->engine_id_model) {
+        active_index = gtk_drop_down_get_selected(control->engine_dropdown);
+        active_engine = control_string_array_get(control->engine_id_model, active_index);
+    }
+    if (g_strcmp0(active_engine, engine_name) == 0) {
+        active_badge = gtk_label_new("Active");
+        gtk_widget_add_css_class(active_badge, "engine-status-badge");
+        gtk_widget_add_css_class(active_badge, "engine-status-badge-active");
+        gtk_box_append(GTK_BOX(status_box), active_badge);
+    }
+    g_object_set_data_full(G_OBJECT(activate), "typio-engine-name", g_strdup(engine_name), g_free);
+    control_name_widget(activate, "engine-activate-button");
+    gtk_widget_add_css_class(activate, "flat");
+    gtk_widget_add_css_class(activate, "engine-order-action-button");
+    gtk_widget_set_valign(activate, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(activate, GTK_ALIGN_END);
+    gtk_widget_set_tooltip_text(activate, "Set as active keyboard engine");
+    gtk_widget_set_sensitive(activate, g_strcmp0(active_engine, engine_name) != 0);
+    g_signal_connect(activate, "clicked", G_CALLBACK(on_engine_activate_clicked), control);
+    g_object_set_data_full(G_OBJECT(edit), "typio-engine-name", g_strdup(engine_name), g_free);
+    control_name_widget(edit, "engine-settings-edit-button");
+    gtk_widget_add_css_class(edit, "flat");
+    gtk_widget_add_css_class(edit, "engine-order-action-button");
+    gtk_widget_set_valign(edit, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(edit, GTK_ALIGN_END);
+    gtk_widget_set_tooltip_text(edit, "Show engine settings");
+    g_signal_connect(edit, "clicked", G_CALLBACK(on_engine_settings_edit_clicked), control);
     g_object_set_data_full(G_OBJECT(remove), "typio-engine-name", g_strdup(engine_name), g_free);
     control_name_widget(remove, "engine-order-remove-button");
     gtk_widget_add_css_class(remove, "flat");
+    gtk_widget_add_css_class(remove, "engine-order-action-button");
     gtk_widget_add_css_class(remove, "engine-order-remove-button");
     gtk_widget_set_valign(remove, GTK_ALIGN_CENTER);
     gtk_widget_set_halign(remove, GTK_ALIGN_END);
@@ -446,6 +485,9 @@ static GtkWidget *control_build_engine_order_row(TypioControl *control,
     gtk_box_append(GTK_BOX(text_box), title);
     gtk_box_append(GTK_BOX(text_box), subtitle);
     gtk_box_append(GTK_BOX(shell), text_box);
+    gtk_box_append(GTK_BOX(shell), status_box);
+    gtk_box_append(GTK_BOX(shell), activate);
+    gtk_box_append(GTK_BOX(shell), edit);
     gtk_box_append(GTK_BOX(shell), remove);
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), shell);
 
@@ -742,6 +784,17 @@ void control_test_set_config_text(TypioControl *control,
                                   GVariant *config_text) {
     control_set_config_text(control, config_text);
 }
+
+void control_test_set_engine_model(TypioControl *control,
+                                   GVariant *engines,
+                                   GVariant *display_names) {
+    control_set_engine_model(control, engines, display_names);
+}
+
+void control_test_set_voice_backend_model(TypioControl *control,
+                                          GVariant *engines) {
+    control_set_voice_backend_model(control, engines);
+}
 #endif
 
 static gboolean control_is_ui_syncing(TypioControl *control) {
@@ -855,21 +908,31 @@ gboolean control_has_pending_config_change(TypioControl *control) {
 
 static void control_update_engine_config_panel(TypioControl *control,
                                                const char *engine_name) {
-    gboolean has_config = FALSE;
+    const char *visible_engine = NULL;
+    const char *display_name = NULL;
+    char *title = NULL;
 
     if (!control || !control->engine_config_stack) {
         return;
     }
 
-    if (engine_name && gtk_stack_get_child_by_name(control->engine_config_stack, engine_name)) {
-        has_config = g_strcmp0(engine_name, "basic") != 0;
-        gtk_stack_set_visible_child_name(control->engine_config_stack, engine_name);
+    visible_engine = (control->engine_settings_engine && *control->engine_settings_engine)
+        ? control->engine_settings_engine
+        : engine_name;
+
+    if (visible_engine &&
+        gtk_stack_get_child_by_name(control->engine_config_stack, visible_engine)) {
+        gtk_stack_set_visible_child_name(control->engine_config_stack, visible_engine);
     } else {
         gtk_stack_set_visible_child_name(control->engine_config_stack, "empty");
     }
 
-    if (control->engine_config_title) {
-        gtk_widget_set_visible(control->engine_config_title, has_config);
+    if (control->engine_settings_window) {
+        display_name = typio_engine_label_fallback(visible_engine);
+        title = g_strdup_printf("%s settings",
+                                display_name ? display_name : "selected engine");
+        gtk_window_set_title(control->engine_settings_window, title);
+        g_free(title);
     }
 }
 
@@ -1302,6 +1365,7 @@ static void control_set_voice_backend_model(TypioControl *control,
 void control_refresh_from_proxy(TypioControl *control) {
     GVariant *active_engine;
     GVariant *available_engines;
+    GVariant *ordered_engines;
     GVariant *engine_display_names;
     GVariant *config_text;
     const char *active_name = "";
@@ -1332,7 +1396,10 @@ void control_refresh_from_proxy(TypioControl *control) {
 
     active_engine = control_get_runtime_property_for_config_key(control,
                                                                control->keyboard_engine_state.config_key);
-    available_engines = g_dbus_proxy_get_cached_property(control->proxy, TYPIO_STATUS_PROP_ORDERED_ENGINES);
+    available_engines = g_dbus_proxy_get_cached_property(control->proxy,
+                                                         TYPIO_STATUS_PROP_AVAILABLE_ENGINES);
+    ordered_engines = g_dbus_proxy_get_cached_property(control->proxy,
+                                                       TYPIO_STATUS_PROP_ORDERED_ENGINES);
     engine_display_names = g_dbus_proxy_get_cached_property(control->proxy,
                                                             TYPIO_STATUS_PROP_ENGINE_DISPLAY_NAMES);
     config_text = g_dbus_proxy_get_cached_property(control->proxy, TYPIO_STATUS_PROP_CONFIG_TEXT);
@@ -1357,7 +1424,7 @@ void control_refresh_from_proxy(TypioControl *control) {
                 configured_voice ? configured_voice : "(unset)",
                 configured_schema ? configured_schema : "(unset)");
     }
-    control_set_engine_model(control, available_engines, engine_display_names);
+    control_set_engine_model(control, ordered_engines, engine_display_names);
     control_state_binding_refresh_options(&control->rime_schema_state,
                                           parsed_config,
                                           configured_schema);
@@ -1380,6 +1447,9 @@ void control_refresh_from_proxy(TypioControl *control) {
     }
     if (available_engines) {
         g_variant_unref(available_engines);
+    }
+    if (ordered_engines) {
+        g_variant_unref(ordered_engines);
     }
     if (engine_display_names) {
         g_variant_unref(engine_display_names);
@@ -1730,6 +1800,50 @@ void on_engine_order_remove_clicked(GtkButton *button, gpointer user_data) {
     control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
 }
 
+void on_engine_activate_clicked(GtkButton *button, gpointer user_data) {
+    TypioControl *control = user_data;
+    const char *engine_name = g_object_get_data(G_OBJECT(button), "typio-engine-name");
+
+    if (!control || !engine_name || !*engine_name) {
+        return;
+    }
+
+    control_activate_engine(control, engine_name);
+}
+
+void on_engine_settings_edit_clicked(GtkButton *button, gpointer user_data) {
+    TypioControl *control = user_data;
+    const char *engine_name = g_object_get_data(G_OBJECT(button), "typio-engine-name");
+
+    if (!control || !engine_name || !*engine_name) {
+        return;
+    }
+
+    g_free(control->engine_settings_engine);
+    control->engine_settings_engine = g_strdup(engine_name);
+    control_update_engine_config_panel(control, engine_name);
+    if (control->engine_settings_window) {
+        if (control->window) {
+            gtk_window_set_transient_for(control->engine_settings_window,
+                                         GTK_WINDOW(control->window));
+        }
+        gtk_window_present(control->engine_settings_window);
+    }
+}
+
+gboolean on_engine_settings_window_close_request(GtkWindow *window, gpointer user_data) {
+    TypioControl *control = user_data;
+
+    if (!control) {
+        return FALSE;
+    }
+
+    g_clear_pointer(&control->engine_settings_engine, g_free);
+    control_update_engine_config_panel(control, NULL);
+    gtk_widget_set_visible(GTK_WIDGET(window), FALSE);
+    return TRUE;
+}
+
 void on_engine_selected(GObject *object,
                         [[maybe_unused]] GParamSpec *pspec,
                         gpointer user_data) {
@@ -1748,5 +1862,4 @@ void on_engine_selected(GObject *object,
 
     engine_name = control_string_array_get(control->engine_id_model, selected);
     control_activate_engine(control, engine_name);
-    control_update_engine_config_panel(control, engine_name);
 }

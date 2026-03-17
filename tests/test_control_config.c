@@ -179,6 +179,7 @@ static void cleanup_control(TypioControl *control) {
         g_ptr_array_unref(control->rime_schema_id_model);
     }
     g_free(control->committed_config_text);
+    g_free(control->engine_settings_engine);
 }
 
 TEST(page_builds_actions) {
@@ -227,6 +228,7 @@ TEST(state_bindings_are_configured) {
     ASSERT_STR_EQ(control.keyboard_engine_state.config_key, "default_engine");
     ASSERT(control.keyboard_engine_state.source == CONTROL_STATE_VALUE_FROM_RUNTIME);
     ASSERT(control.keyboard_engine_state.dropdown == control.engine_dropdown);
+    ASSERT(!gtk_widget_get_visible(GTK_WIDGET(control.engine_dropdown)));
 
     ASSERT_STR_EQ(control.voice_backend_state.config_key, "default_voice_engine");
     ASSERT(control.voice_backend_state.source == CONTROL_STATE_VALUE_RUNTIME_THEN_CONFIG);
@@ -236,6 +238,33 @@ TEST(state_bindings_are_configured) {
     ASSERT(control.rime_schema_state.source == CONTROL_STATE_VALUE_FROM_CONFIG);
     ASSERT(control.rime_schema_state.dropdown == control.rime_schema_dropdown);
     ASSERT(control.rime_schema_state.refresh_options != NULL);
+
+    cleanup_control(&control);
+}
+
+TEST(engine_settings_use_separate_window) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    GtkWidget *button;
+
+    setup_control(&control, root);
+
+    ASSERT_NOT_NULL(control.engine_settings_window);
+    ASSERT(!gtk_widget_get_visible(GTK_WIDGET(control.engine_settings_window)));
+
+    button = gtk_button_new();
+    g_object_set_data_full(G_OBJECT(button), "typio-engine-name", g_strdup("rime"), g_free);
+    on_engine_settings_edit_clicked(GTK_BUTTON(button), &control);
+
+    ASSERT(gtk_widget_get_visible(GTK_WIDGET(control.engine_settings_window)));
+    ASSERT_NOT_NULL(control.engine_settings_engine);
+    ASSERT_STR_EQ(control.engine_settings_engine, "rime");
+    ASSERT_STR_EQ(gtk_window_get_title(control.engine_settings_window),
+                  "Rime settings");
+
+    ASSERT(on_engine_settings_window_close_request(control.engine_settings_window, &control));
+    ASSERT(!gtk_widget_get_visible(GTK_WIDGET(control.engine_settings_window)));
+    ASSERT(control.engine_settings_engine == NULL);
 
     cleanup_control(&control);
 }
@@ -344,6 +373,31 @@ TEST(voice_backend_loads_selected_value_from_config) {
                                           control.voice_backend_dropdown,
                                           "sherpa-onnx");
 
+    cleanup_control(&control);
+}
+
+TEST(voice_backend_options_come_from_available_engines_not_ordered_engines) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    GVariant *available_engines;
+    GVariant *ordered_engines;
+
+    setup_control(&control, root);
+
+    available_engines = g_variant_ref_sink(
+        g_variant_new_strv((const char *[]){"basic", "rime", "mozc", "whisper", "sherpa-onnx"}, 5));
+    ordered_engines = g_variant_ref_sink(
+        g_variant_new_strv((const char *[]){"basic", "rime", "mozc"}, 3));
+
+    control_test_set_engine_model(&control, ordered_engines, NULL);
+    control_test_set_voice_backend_model(&control, available_engines);
+
+    ASSERT(string_list_count(control.voice_backend_model) == 2);
+    ASSERT_STR_EQ(gtk_string_list_get_string(control.voice_backend_model, 0), "whisper");
+    ASSERT_STR_EQ(gtk_string_list_get_string(control.voice_backend_model, 1), "sherpa-onnx");
+
+    g_variant_unref(available_engines);
+    g_variant_unref(ordered_engines);
     cleanup_control(&control);
 }
 
@@ -774,10 +828,12 @@ int main(void) {
     run_test_page_builds_actions();
     run_test_widget_debug_names_are_stable();
     run_test_state_bindings_are_configured();
+    run_test_engine_settings_use_separate_window();
     run_test_keyboard_engine_binding_selects_engine_ids();
     run_test_form_changes_update_buffer_immediately();
     run_test_voice_model_selection_follows_staged_config();
     run_test_voice_backend_loads_selected_value_from_config();
+    run_test_voice_backend_options_come_from_available_engines_not_ordered_engines();
     run_test_voice_backend_sync_writes_default_engine_only();
     run_test_notification_settings_roundtrip_through_form();
     run_test_rime_schema_uses_dropdown_selection();

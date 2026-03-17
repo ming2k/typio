@@ -176,7 +176,7 @@ static GtkWidget *build_rime_config(TypioControl *control) {
                                                             schema_field && schema_field->ui_label
                                                                 ? schema_field->ui_label
                                                                 : "Schema",
-                                                            "Choose the active schema exposed by the Rime installation, or leave it unselected.",
+                                                            "",
                                                             GTK_WIDGET(control->rime_schema_dropdown)));
 
     gtk_box_append(GTK_BOX(box), list);
@@ -206,19 +206,20 @@ static GtkWidget *build_mozc_config(TypioControl *control) {
 
 static GtkWidget *build_keyboard_section(TypioControl *control) {
     GtkWidget *box = control_create_panel_box_named("keyboard-section", 14);
-    GtkWidget *list = control_create_preferences_list_named("keyboard-list");
     GtkWidget *order_box;
-    GtkWidget *order_header;
     GtkWidget *order_editor;
     GtkWidget *order_mode_box;
     GtkWidget *order_add_box;
     GtkWidget *order_add_button;
     GtkWidget *order_reset_button;
+    GtkWidget *settings_headerbar;
+    GtkWidget *settings_root;
+    GtkWidget *settings_shell;
 
     gtk_box_append(GTK_BOX(box),
                    control_create_section_header_named("keyboard-header",
-                                                       "Input engine",
-                                                       "Switch between the built-in engine and installed plugins."));
+                                                       "Keyboard engines",
+                                                       "Set the active engine, reorder the preferred list, and open engine-specific settings from one place."));
 
     control->engine_model = gtk_string_list_new(nullptr);
     control->engine_id_model = g_ptr_array_new_with_free_func(g_free);
@@ -234,42 +235,9 @@ static GtkWidget *build_keyboard_section(TypioControl *control) {
                                control_string_array_index,
                                control_string_array_value,
                                CONTROL_STATE_VALUE_FROM_RUNTIME);
-    gtk_list_box_append(GTK_LIST_BOX(list),
-                        control_create_preference_row_named("keyboard-engine-row",
-                                                            "Keyboard engine",
-                                                            "Changes the active engine for new input sessions.",
-                                                            GTK_WIDGET(control->engine_dropdown)));
-    gtk_box_append(GTK_BOX(box), list);
+    gtk_widget_set_visible(GTK_WIDGET(control->engine_dropdown), FALSE);
 
-    control->engine_config_title = control_create_section_header_named(
-        "engine-config-title", "Engine settings", "Only engines that expose settings show editable options here.");
-    gtk_widget_set_visible(control->engine_config_title, FALSE);
-    gtk_box_append(GTK_BOX(box), control->engine_config_title);
-
-    control->engine_config_stack = GTK_STACK(gtk_stack_new());
-    control_name_widget(GTK_WIDGET(control->engine_config_stack), "engine-config-stack");
-    gtk_widget_add_css_class(GTK_WIDGET(control->engine_config_stack), "engine-config");
-    gtk_stack_set_transition_type(control->engine_config_stack,
-                                  GTK_STACK_TRANSITION_TYPE_CROSSFADE);
-    gtk_stack_add_named(control->engine_config_stack,
-                        control_create_empty_note_named("engine-config-empty-note",
-                                                        "This engine has no configurable options."),
-                        "empty");
-    gtk_stack_add_named(control->engine_config_stack,
-                        control_create_empty_note_named("engine-config-basic-note",
-                                                        "The built-in basic engine has no extra settings."),
-                        "basic");
-    gtk_stack_add_named(control->engine_config_stack, build_rime_config(control), "rime");
-    gtk_stack_add_named(control->engine_config_stack, build_mozc_config(control), "mozc");
-    gtk_stack_set_visible_child_name(control->engine_config_stack, "empty");
-    gtk_box_append(GTK_BOX(box), GTK_WIDGET(control->engine_config_stack));
-
-    order_box = control_create_panel_box_named("keyboard-order-section", 10);
-    order_header = control_create_section_header_named(
-        "keyboard-order-header",
-        "Keyboard engine order",
-        "Pin the engines you want first. Tray menus and next/previous engine switching follow this order.");
-    gtk_box_append(GTK_BOX(order_box), order_header);
+    order_box = control_create_panel_box_named("keyboard-overview-page", 10);
 
     order_mode_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     control_name_widget(order_mode_box, "keyboard-order-mode-box");
@@ -313,9 +281,51 @@ static GtkWidget *build_keyboard_section(TypioControl *control) {
     gtk_box_append(GTK_BOX(order_editor),
                    control_create_empty_note_named(
                        "keyboard-order-note",
-                       "Remove an engine from the preferred order to let runtime discovery place it later in the list."));
+                       "Drag to reorder. Use the pencil button to open settings for a specific engine."));
     gtk_box_append(GTK_BOX(order_box), order_editor);
     gtk_box_append(GTK_BOX(box), order_box);
+
+    control->engine_settings_window = GTK_WINDOW(gtk_window_new());
+    gtk_window_set_title(control->engine_settings_window, "Engine settings");
+    gtk_window_set_default_size(control->engine_settings_window, 520, 420);
+    gtk_window_set_modal(control->engine_settings_window, TRUE);
+    gtk_widget_add_css_class(GTK_WIDGET(control->engine_settings_window), "control-root");
+    control_name_widget(GTK_WIDGET(control->engine_settings_window), "engine-settings-window");
+    settings_headerbar = gtk_header_bar_new();
+    control_name_widget(settings_headerbar, "engine-settings-headerbar");
+    gtk_widget_add_css_class(settings_headerbar, "control-headerbar");
+    gtk_header_bar_set_show_title_buttons(GTK_HEADER_BAR(settings_headerbar), TRUE);
+    gtk_window_set_titlebar(control->engine_settings_window, settings_headerbar);
+    if (control->window) {
+        gtk_window_set_transient_for(control->engine_settings_window,
+                                     GTK_WINDOW(control->window));
+    }
+    g_signal_connect(control->engine_settings_window, "close-request",
+                     G_CALLBACK(on_engine_settings_window_close_request), control);
+
+    settings_root = control_create_page_shell_named("engine-settings-window-root");
+    gtk_widget_add_css_class(settings_root, "control-shell");
+    settings_shell = control_create_panel_box_named("engine-settings-window-shell", 12);
+    gtk_box_append(GTK_BOX(settings_root), settings_shell);
+    gtk_window_set_child(control->engine_settings_window, settings_root);
+
+    control->engine_config_stack = GTK_STACK(gtk_stack_new());
+    control_name_widget(GTK_WIDGET(control->engine_config_stack), "engine-config-stack");
+    gtk_widget_add_css_class(GTK_WIDGET(control->engine_config_stack), "engine-config");
+    gtk_stack_set_transition_type(control->engine_config_stack,
+                                  GTK_STACK_TRANSITION_TYPE_CROSSFADE);
+    gtk_stack_add_named(control->engine_config_stack,
+                        control_create_empty_note_named("engine-config-empty-note",
+                                                        "This engine has no configurable options."),
+                        "empty");
+    gtk_stack_add_named(control->engine_config_stack,
+                        control_create_empty_note_named("engine-config-basic-note",
+                                                        "The built-in basic engine has no extra settings."),
+                        "basic");
+    gtk_stack_add_named(control->engine_config_stack, build_rime_config(control), "rime");
+    gtk_stack_add_named(control->engine_config_stack, build_mozc_config(control), "mozc");
+    gtk_stack_set_visible_child_name(control->engine_config_stack, "empty");
+    gtk_box_append(GTK_BOX(settings_shell), GTK_WIDGET(control->engine_config_stack));
 
     control->engine_order_model = gtk_string_list_new(NULL);
     control_refresh_engine_order_editor(control);

@@ -139,7 +139,11 @@ static void on_window_destroy([[maybe_unused]] GtkWidget *widget, gpointer user_
     if (control->rime_schema_id_model) {
         g_ptr_array_unref(control->rime_schema_id_model);
     }
+    if (control->engine_settings_window) {
+        gtk_window_destroy(control->engine_settings_window);
+    }
     g_free(control->committed_config_text);
+    g_free(control->engine_settings_engine);
     g_free(control);
 }
 

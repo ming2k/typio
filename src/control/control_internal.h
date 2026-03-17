@@ -66,8 +66,8 @@ typedef struct TypioControl {
     GtkSwitch *notifications_runtime_switch;
     GtkSwitch *notifications_voice_switch;
     GtkSpinButton *notifications_cooldown_spin;
+    GtkWindow *engine_settings_window;
     GtkStack *engine_config_stack;
-    GtkWidget *engine_config_title;
     GtkDropDown *rime_schema_dropdown;
     GtkStringList *rime_schema_model;
     GPtrArray *rime_schema_id_model;
@@ -91,6 +91,7 @@ typedef struct TypioControl {
     gboolean config_seeded;
     gboolean submitting_config;
     char *committed_config_text;
+    char *engine_settings_engine;
     ControlBinding bindings[20];
     size_t binding_count;
     ControlStateBinding keyboard_engine_state;
@@ -128,6 +129,9 @@ void on_engine_order_add_clicked(GtkButton *button, gpointer user_data);
 void on_engine_order_move_up_clicked(GtkButton *button, gpointer user_data);
 void on_engine_order_move_down_clicked(GtkButton *button, gpointer user_data);
 void on_engine_order_remove_clicked(GtkButton *button, gpointer user_data);
+void on_engine_activate_clicked(GtkButton *button, gpointer user_data);
+void on_engine_settings_edit_clicked(GtkButton *button, gpointer user_data);
+gboolean on_engine_settings_window_close_request(GtkWindow *window, gpointer user_data);
 void on_engine_order_reset_clicked(GtkButton *button, gpointer user_data);
 void control_clear_proxy(TypioControl *control);
 void control_refresh_from_proxy(TypioControl *control);
@@ -150,6 +154,11 @@ void control_test_apply_state_binding_value(TypioControl *control,
                                             const char *fallback_text);
 void control_test_set_config_text(TypioControl *control,
                                   GVariant *config_text);
+void control_test_set_engine_model(TypioControl *control,
+                                   GVariant *engines,
+                                   GVariant *display_names);
+void control_test_set_voice_backend_model(TypioControl *control,
+                                          GVariant *engines);
 #endif
 
 GtkWidget *control_build_window(TypioControl *control, GtkApplication *app);
