@@ -102,19 +102,17 @@ TEST(window_builds_actions) {
     char root[] = "/tmp/typio-control-test-XXXXXX";
     GtkApplication *app;
     GtkWidget *window;
+    GError *error = NULL;
 
     setup_control(&control, root);
     app = gtk_application_new("org.typio.ControlTest", G_APPLICATION_NON_UNIQUE);
     ASSERT_NOT_NULL(app);
+    ASSERT(g_application_register(G_APPLICATION(app), NULL, &error));
+    ASSERT(error == NULL);
 
     window = control_build_window(&control, app);
     ASSERT_NOT_NULL(window);
-    ASSERT(control.window == NULL);
     ASSERT_NOT_NULL(control.config_status_label);
-
-    gtk_window_destroy(GTK_WINDOW(window));
-    g_object_unref(app);
-    cleanup_control(&control);
 }
 
 TEST(widget_debug_names_are_stable) {
@@ -131,6 +129,28 @@ TEST(widget_debug_names_are_stable) {
                   "shortcut-switch-engine-button");
     ASSERT_STR_EQ(gtk_widget_get_name(GTK_WIDGET(control.rime_schema_dropdown)),
                   "rime-schema-dropdown");
+
+    cleanup_control(&control);
+}
+
+TEST(state_bindings_are_configured) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+
+    setup_control(&control, root);
+
+    ASSERT_STR_EQ(control.keyboard_engine_state.config_key, "default_engine");
+    ASSERT(control.keyboard_engine_state.source == CONTROL_STATE_VALUE_FROM_RUNTIME);
+    ASSERT(control.keyboard_engine_state.dropdown == control.engine_dropdown);
+
+    ASSERT_STR_EQ(control.voice_backend_state.config_key, "default_voice_engine");
+    ASSERT(control.voice_backend_state.source == CONTROL_STATE_VALUE_RUNTIME_THEN_CONFIG);
+    ASSERT(control.voice_backend_state.dropdown == control.voice_backend_dropdown);
+
+    ASSERT_STR_EQ(control.rime_schema_state.config_key, "engines.rime.schema");
+    ASSERT(control.rime_schema_state.source == CONTROL_STATE_VALUE_FROM_CONFIG);
+    ASSERT(control.rime_schema_state.dropdown == control.rime_schema_dropdown);
+    ASSERT(control.rime_schema_state.refresh_options != NULL);
 
     cleanup_control(&control);
 }
@@ -291,6 +311,87 @@ TEST(rime_schema_uses_dropdown_selection) {
     cleanup_control(&control);
 }
 
+TEST(invalid_voice_backend_selection_does_not_reset_config) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    char *rendered;
+
+    setup_control(&control, root);
+    control.committed_config_text = g_strdup(
+        "default_voice_engine = \"whisper\"\n"
+        "[engines.whisper]\n"
+        "model = \"tiny\"\n"
+        "[notifications]\n"
+        "runtime = true\n");
+    write_buffer(control.config_buffer, control.committed_config_text);
+    control_sync_form_from_buffer(&control);
+
+    gtk_drop_down_set_selected(control.voice_backend_dropdown, GTK_INVALID_LIST_POSITION);
+    gtk_switch_set_active(control.notifications_runtime_switch, FALSE);
+    on_display_switch_changed(G_OBJECT(control.notifications_runtime_switch), NULL, &control);
+
+    rendered = buffer_text(control.config_buffer);
+    ASSERT(rendered != NULL);
+    ASSERT(strstr(rendered, "default_voice_engine = \"whisper\"") != NULL);
+    ASSERT(strstr(rendered, "model = \"tiny\"") != NULL);
+    ASSERT(strstr(rendered, "runtime = false") != NULL);
+    g_free(rendered);
+
+    cleanup_control(&control);
+}
+
+TEST(unknown_dropdown_value_is_not_replaced_by_first_option) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    char *rendered;
+
+    setup_control(&control, root);
+    control.committed_config_text = g_strdup(
+        "[engines.rime]\n"
+        "popup_theme = \"sepia\"\n"
+        "font_size = 11\n");
+    write_buffer(control.config_buffer, control.committed_config_text);
+    control_sync_form_from_buffer(&control);
+
+    gtk_spin_button_set_value(control.font_size_spin, 13.0);
+    on_display_spin_changed(control.font_size_spin, &control);
+
+    rendered = buffer_text(control.config_buffer);
+    ASSERT(rendered != NULL);
+    ASSERT(strstr(rendered, "popup_theme = \"sepia\"") != NULL);
+    ASSERT(strstr(rendered, "popup_theme = \"auto\"") == NULL);
+    ASSERT(strstr(rendered, "font_size = 13") != NULL);
+    g_free(rendered);
+
+    cleanup_control(&control);
+}
+
+TEST(programmatic_state_binding_updates_do_not_stage_changes) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    char *rendered;
+
+    setup_control(&control, root);
+    control.committed_config_text = g_strdup(
+        "default_voice_engine = \"whisper\"\n"
+        "[engines.whisper]\n"
+        "model = \"tiny\"\n");
+    write_buffer(control.config_buffer, control.committed_config_text);
+    control_sync_form_from_buffer(&control);
+
+    control_test_apply_state_binding_value(&control,
+                                           &control.voice_backend_state,
+                                           "default_voice_engine = \"sherpa-onnx\"\n");
+
+    rendered = buffer_text(control.config_buffer);
+    ASSERT(rendered != NULL);
+    ASSERT(strstr(rendered, "default_voice_engine = \"whisper\"") != NULL);
+    ASSERT(strstr(rendered, "default_voice_engine = \"sherpa-onnx\"") == NULL);
+    g_free(rendered);
+
+    cleanup_control(&control);
+}
+
 TEST(unseeded_form_changes_do_not_dirty_buffer) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
@@ -320,11 +421,15 @@ int main(void) {
     printf("Running control config tests:\n");
     run_test_window_builds_actions();
     run_test_widget_debug_names_are_stable();
+    run_test_state_bindings_are_configured();
     run_test_form_changes_update_buffer_immediately();
     run_test_voice_model_selection_follows_staged_config();
     run_test_voice_backend_sync_writes_default_engine_only();
     run_test_notification_settings_roundtrip_through_form();
     run_test_rime_schema_uses_dropdown_selection();
+    run_test_invalid_voice_backend_selection_does_not_reset_config();
+    run_test_unknown_dropdown_value_is_not_replaced_by_first_option();
+    run_test_programmatic_state_binding_updates_do_not_stage_changes();
     run_test_unseeded_form_changes_do_not_dirty_buffer();
     printf("\nPassed %d/%d tests\n", tests_passed, tests_run);
     return 0;

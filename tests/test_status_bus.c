@@ -5,6 +5,7 @@
 
 
 #include "status/status.h"
+#include "typio/dbus_protocol.h"
 #include "typio/typio.h"
 
 #include <dbus/dbus.h>
@@ -40,6 +41,8 @@ static int tests_passed = 0;
             exit(1); \
         } \
     } while (0)
+
+#define ASSERT_STR_EQ(a, b) ASSERT(strcmp((a), (b)) == 0)
 
 typedef struct TestBusProcess {
     pid_t pid;
@@ -243,7 +246,124 @@ static bool reply_contains_active_engine(DBusMessage *reply,
     ASSERT(dbus_message_iter_init(reply, &iter));
     ASSERT(dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_ARRAY);
     dbus_message_iter_recurse(&iter, &dict);
-    return dict_contains_string(&dict, "ActiveEngine", expected_engine);
+    return dict_contains_string(&dict, TYPIO_STATUS_PROP_ACTIVE_ENGINE, expected_engine);
+}
+
+static bool reply_contains_active_voice_engine(DBusMessage *reply,
+                                               const char *expected_engine) {
+    DBusMessageIter iter;
+    DBusMessageIter dict;
+
+    ASSERT(dbus_message_iter_init(reply, &iter));
+    ASSERT(dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_ARRAY);
+    dbus_message_iter_recurse(&iter, &dict);
+    return dict_contains_string(&dict, TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE, expected_engine);
+}
+
+static bool dict_contains_string_array(DBusMessageIter *dict,
+                                       const char *key,
+                                       const char *const *expected,
+                                       size_t expected_count) {
+    DBusMessageIter entry;
+
+    while (dbus_message_iter_get_arg_type(dict) == DBUS_TYPE_DICT_ENTRY) {
+        DBusMessageIter kv;
+        DBusMessageIter variant;
+        DBusMessageIter array;
+        const char *entry_key = nullptr;
+        size_t index = 0;
+
+        dbus_message_iter_recurse(dict, &entry);
+        kv = entry;
+        if (dbus_message_iter_get_arg_type(&kv) != DBUS_TYPE_STRING) {
+            dbus_message_iter_next(dict);
+            continue;
+        }
+
+        dbus_message_iter_get_basic(&kv, &entry_key);
+        dbus_message_iter_next(&kv);
+        if (dbus_message_iter_get_arg_type(&kv) != DBUS_TYPE_VARIANT) {
+            dbus_message_iter_next(dict);
+            continue;
+        }
+
+        dbus_message_iter_recurse(&kv, &variant);
+        if (strcmp(entry_key, key) == 0 &&
+            dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_ARRAY) {
+            dbus_message_iter_recurse(&variant, &array);
+            while (dbus_message_iter_get_arg_type(&array) == DBUS_TYPE_STRING) {
+                const char *value = nullptr;
+                if (index >= expected_count) {
+                    return false;
+                }
+                dbus_message_iter_get_basic(&array, &value);
+                if (strcmp(value, expected[index]) != 0) {
+                    return false;
+                }
+                index++;
+                dbus_message_iter_next(&array);
+            }
+            return index == expected_count;
+        }
+
+        dbus_message_iter_next(dict);
+    }
+
+    return false;
+}
+
+static bool reply_contains_string_array(DBusMessage *reply,
+                                        const char *key,
+                                        const char *const *expected,
+                                        size_t expected_count) {
+    DBusMessageIter iter;
+    DBusMessageIter dict;
+
+    ASSERT(dbus_message_iter_init(reply, &iter));
+    ASSERT(dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_ARRAY);
+    dbus_message_iter_recurse(&iter, &dict);
+    return dict_contains_string_array(&dict, key, expected, expected_count);
+}
+
+static TypioResult mock_init(TypioEngine *engine, [[maybe_unused]] TypioInstance *instance) {
+    engine->active = true;
+    return TYPIO_OK;
+}
+
+static void mock_destroy([[maybe_unused]] TypioEngine *engine) {
+}
+
+static TypioKeyProcessResult mock_process_key([[maybe_unused]] TypioEngine *engine,
+                                              [[maybe_unused]] TypioInputContext *ctx,
+                                              [[maybe_unused]] const TypioKeyEvent *event) {
+    return TYPIO_KEY_NOT_HANDLED;
+}
+
+static const TypioEngineInfo mock_voice_info = {
+    .name = "mock-voice",
+    .display_name = "Mock Voice Engine",
+    .description = "A mock voice engine for testing",
+    .version = "1.0.0",
+    .author = "Test",
+    .icon = NULL,
+    .language = NULL,
+    .type = TYPIO_ENGINE_TYPE_VOICE,
+    .capabilities = TYPIO_CAP_VOICE_INPUT,
+    .api_version = TYPIO_API_VERSION,
+};
+
+static const TypioEngineOps mock_voice_ops = {
+    .init = mock_init,
+    .destroy = mock_destroy,
+    .process_key = mock_process_key,
+};
+
+static const TypioEngineInfo *mock_voice_get_info(void) {
+    return &mock_voice_info;
+}
+
+static TypioEngine *mock_voice_create(void) {
+    return typio_engine_new(&mock_voice_info, &mock_voice_ops);
 }
 
 static bool reply_contains_engine_state_name(DBusMessage *reply,
@@ -268,7 +388,7 @@ static bool reply_contains_engine_state_name(DBusMessage *reply,
         dbus_message_iter_next(&kv);
         dbus_message_iter_recurse(&kv, &variant);
 
-        if (strcmp(entry_key, "ActiveEngineState") == 0 &&
+        if (strcmp(entry_key, TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE) == 0 &&
             dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_ARRAY) {
             dbus_message_iter_recurse(&variant, &state_dict);
             return dict_contains_string(&state_dict, "name", expected_engine);
@@ -294,6 +414,17 @@ TEST(exports_basic_engine_state_and_emits_change_signal) {
     instance = typio_instance_new_with_config(&config);
     ASSERT(instance != nullptr);
     ASSERT(typio_instance_init(instance) == TYPIO_OK);
+    {
+        TypioConfig *instance_config = typio_instance_get_config(instance);
+        const char *order[] = {"basic", "mock-voice"};
+        ASSERT(instance_config != NULL);
+        ASSERT(typio_config_set_string_array(instance_config, "engine_order", order, 2) == TYPIO_OK);
+    }
+    ASSERT(typio_engine_manager_register(typio_instance_get_engine_manager(instance),
+                                         mock_voice_create,
+                                         mock_voice_get_info) == TYPIO_OK);
+    ASSERT(typio_engine_manager_set_active_voice(typio_instance_get_engine_manager(instance),
+                                                 "mock-voice") == TYPIO_OK);
 
     bus = typio_status_bus_new(instance);
     ASSERT(bus != nullptr);
@@ -301,13 +432,22 @@ TEST(exports_basic_engine_state_and_emits_change_signal) {
     client = open_client_connection(bus_proc.address);
     reply = call_get_all(client, bus);
     ASSERT(reply_contains_active_engine(reply, "basic"));
+    ASSERT(reply_contains_active_voice_engine(reply, "mock-voice"));
     ASSERT(reply_contains_engine_state_name(reply, "basic"));
+    {
+        const char *ordered[] = {"basic"};
+        const char *engine_order[] = {"basic", "mock-voice"};
+        ASSERT(reply_contains_string_array(reply, TYPIO_STATUS_PROP_ORDERED_ENGINES,
+                                           ordered, 1));
+        ASSERT(reply_contains_string_array(reply, TYPIO_STATUS_PROP_ENGINE_ORDER,
+                                           engine_order, 2));
+    }
     dbus_message_unref(reply);
 
-    reply = call_status_method(client, bus, "ActivateEngine", "basic");
+    reply = call_status_method(client, bus, TYPIO_STATUS_METHOD_ACTIVATE_ENGINE, "basic");
     dbus_message_unref(reply);
 
-    reply = call_status_method(client, bus, "ReloadConfig", nullptr);
+    reply = call_status_method(client, bus, TYPIO_STATUS_METHOD_RELOAD_CONFIG, nullptr);
     dbus_message_unref(reply);
 
     dbus_error_init(&err);

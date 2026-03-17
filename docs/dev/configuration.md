@@ -134,8 +134,14 @@ Each `TypioConfigField` entry contains:
 | `ui_section`  | Logical grouping (`display`, `rime`, `shortcuts`...) |
 | `ui_min/max/step` | Range constraints for numeric fields             |
 | `ui_options`  | `NULL`-terminated string array for dropdowns         |
+| `runtime_property` | Matching D-Bus runtime property, or `NULL`      |
 
 Fields without `ui_label` are internal (no UI representation).
+
+Fields with `runtime_property` are still persisted config keys. The extra
+metadata means the key has a direct daemon runtime mirror and control surfaces
+should prefer that runtime property for display state when appropriate. See
+[State Management](state-management.md).
 
 ## How To Add A New Configuration Field
 

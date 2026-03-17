@@ -503,6 +503,42 @@ TEST(next_prev_skip_voice) {
     typio_instance_free(instance);
 }
 
+TEST(explicit_engine_order_controls_listing_and_switching) {
+    char root[] = "/tmp/typio-engine-order-XXXXXX";
+    TypioInstanceConfig config;
+    TypioInstance *instance = create_temp_instance(root, &config);
+    TypioEngineManager *manager;
+    TypioConfig *instance_config;
+    const char *order[] = {"mock2", "basic", "mock"};
+    const char **engines;
+    size_t count = 0;
+
+    typio_instance_init(instance);
+    manager = typio_instance_get_engine_manager(instance);
+    typio_engine_manager_register(manager, mock_create, mock_get_info);
+    typio_engine_manager_register(manager, mock2_create, mock2_get_info);
+
+    instance_config = typio_instance_get_config(instance);
+    ASSERT_NOT_NULL(instance_config);
+    ASSERT_EQ(typio_config_set_string_array(instance_config, "engine_order", order, 3), TYPIO_OK);
+
+    engines = typio_engine_manager_list_ordered_keyboards(manager, &count);
+    ASSERT(count >= 3);
+    ASSERT_STR_EQ(engines[0], "mock2");
+    ASSERT_STR_EQ(engines[1], "basic");
+    ASSERT_STR_EQ(engines[2], "mock");
+
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock2"), TYPIO_OK);
+    ASSERT_EQ(typio_engine_manager_next(manager), TYPIO_OK);
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "basic");
+    ASSERT_EQ(typio_engine_manager_next(manager), TYPIO_OK);
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock");
+    ASSERT_EQ(typio_engine_manager_prev(manager), TYPIO_OK);
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "basic");
+
+    typio_instance_free(instance);
+}
+
 TEST(stable_pair_prefers_recent_engines_and_skips_rapid_persistence) {
     char root[] = "/tmp/typio-engine-mru-XXXXXX";
     TypioInstanceConfig config;
@@ -599,6 +635,7 @@ int main(void) {
     run_test_engine_user_data();
     run_test_voice_engine_activation();
     run_test_next_prev_skip_voice();
+    run_test_explicit_engine_order_controls_listing_and_switching();
     run_test_unload_voice_engine();
     run_test_stable_pair_prefers_recent_engines_and_skips_rapid_persistence();
     run_test_stable_pair_persists_across_instances();

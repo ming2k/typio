@@ -39,6 +39,7 @@ typedef struct TypioConfigField {
     const char *ui_section;     /* "display"|"notifications"|"rime"|"mozc"|"shortcuts"|"voice" */
     int ui_min, ui_max, ui_step;
     const char *const *ui_options; /* NULL-terminated string array for dropdowns, or NULL */
+    const char *runtime_property;  /* matching D-Bus runtime property, or NULL */
 } TypioConfigField;
 
 /**
@@ -46,6 +47,12 @@ typedef struct TypioConfigField {
  * @return Pointer into static table, or NULL if not found.
  */
 const TypioConfigField *typio_config_schema_find(const char *key);
+
+/**
+ * @brief Get the runtime D-Bus property mirrored by a persisted config key.
+ * @return Property name, or NULL if the key has no direct runtime mirror.
+ */
+const char *typio_config_schema_runtime_property(const char *key);
 
 /**
  * @brief Apply default values from the schema for any key not already present.

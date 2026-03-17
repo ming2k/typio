@@ -213,6 +213,34 @@ TEST(config_load_string) {
     typio_config_free(config);
 }
 
+TEST(config_string_array_roundtrip) {
+    TypioConfig *config = typio_config_new();
+    const char *order[] = {"rime", "basic", "mozc"};
+    char *rendered;
+    TypioConfig *loaded;
+
+    ASSERT_EQ(typio_config_set_string_array(config, "engine_order", order, 3), TYPIO_OK);
+    ASSERT_EQ(typio_config_get_array_size(config, "engine_order"), 3);
+    ASSERT_STR_EQ(typio_config_get_array_string(config, "engine_order", 0), "rime");
+    ASSERT_STR_EQ(typio_config_get_array_string(config, "engine_order", 1), "basic");
+    ASSERT_STR_EQ(typio_config_get_array_string(config, "engine_order", 2), "mozc");
+
+    rendered = typio_config_to_string(config);
+    ASSERT_NOT_NULL(rendered);
+    ASSERT(strstr(rendered, "engine_order = [\"rime\", \"basic\", \"mozc\"]") != NULL);
+
+    loaded = typio_config_load_string(rendered);
+    ASSERT_NOT_NULL(loaded);
+    ASSERT_EQ(typio_config_get_array_size(loaded, "engine_order"), 3);
+    ASSERT_STR_EQ(typio_config_get_array_string(loaded, "engine_order", 0), "rime");
+    ASSERT_STR_EQ(typio_config_get_array_string(loaded, "engine_order", 1), "basic");
+    ASSERT_STR_EQ(typio_config_get_array_string(loaded, "engine_order", 2), "mozc");
+
+    typio_config_free(loaded);
+    free(rendered);
+    typio_config_free(config);
+}
+
 /* Test: Save and load */
 TEST(config_save_load) {
     TypioConfig *config = typio_config_new();
@@ -253,6 +281,7 @@ int main(void) {
     run_test_config_merge();
     run_test_config_overwrite();
     run_test_config_load_string();
+    run_test_config_string_array_roundtrip();
     run_test_config_save_load();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);

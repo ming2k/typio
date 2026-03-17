@@ -29,6 +29,12 @@ struct TypioConfig {
     size_t count;
 };
 
+static TypioResult set_value(TypioConfig *config, const char *key,
+                             const TypioConfigValue *value);
+static TypioResult parse_array_value(TypioConfig *config,
+                                     const char *key,
+                                     char *value);
+
 static void free_config_value(TypioConfigValue *value) {
     if (!value) {
         return;
@@ -157,7 +163,9 @@ TypioConfig *typio_config_load_file(const char *path) {
             }
 
             /* Detect value type */
-            if (strcmp(value, "true") == 0 || strcmp(value, "false") == 0) {
+            if (*value == '[') {
+                parse_array_value(config, full_key, value);
+            } else if (strcmp(value, "true") == 0 || strcmp(value, "false") == 0) {
                 typio_config_set_bool(config, full_key, strcmp(value, "true") == 0);
             } else if (*value == '-' || isdigit((unsigned char)*value)) {
                 char *end;
@@ -270,7 +278,9 @@ TypioConfig *typio_config_load_string(const char *content) {
             }
 
             /* Detect value type */
-            if (strcmp(value, "true") == 0 || strcmp(value, "false") == 0) {
+            if (*value == '[') {
+                parse_array_value(config, full_key, value);
+            } else if (strcmp(value, "true") == 0 || strcmp(value, "false") == 0) {
                 typio_config_set_bool(config, full_key, strcmp(value, "true") == 0);
             } else if (*value == '-' || isdigit((unsigned char)*value)) {
                 char *nend;
@@ -326,6 +336,8 @@ void typio_config_free(TypioConfig *config) {
 
 static void write_entry_value(FILE *stream, const char *key,
                               const ConfigEntry *entry) {
+    size_t i;
+
     switch (entry->value.type) {
     case TYPIO_CONFIG_STRING:
         fprintf(stream, "%s = ", key);
@@ -342,9 +354,169 @@ static void write_entry_value(FILE *stream, const char *key,
     case TYPIO_CONFIG_FLOAT:
         fprintf(stream, "%s = %g\n", key, entry->value.data.float_val);
         break;
+    case TYPIO_CONFIG_ARRAY:
+        fprintf(stream, "%s = [", key);
+        for (i = 0; i < entry->value.data.array_val.count; ++i) {
+            const TypioConfigValue *item = &entry->value.data.array_val.items[i];
+            if (i > 0) {
+                fputs(", ", stream);
+            }
+            switch (item->type) {
+            case TYPIO_CONFIG_STRING:
+                write_escaped_string(stream, item->data.string_val);
+                break;
+            case TYPIO_CONFIG_INT:
+                fprintf(stream, "%d", item->data.int_val);
+                break;
+            case TYPIO_CONFIG_BOOL:
+                fputs(item->data.bool_val ? "true" : "false", stream);
+                break;
+            case TYPIO_CONFIG_FLOAT:
+                fprintf(stream, "%g", item->data.float_val);
+                break;
+            default:
+                break;
+            }
+        }
+        fputs("]\n", stream);
+        break;
     default:
         break;
     }
+}
+
+static TypioResult parse_array_value(TypioConfig *config,
+                                     const char *key,
+                                     char *value) {
+    TypioConfigValue array = {};
+    char *cursor;
+    size_t capacity = 0;
+
+    if (!config || !key || !value) {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    cursor = trim_whitespace(value);
+    if (*cursor != '[') {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    cursor++;
+    for (;;) {
+        TypioConfigValue item = {};
+        char *item_start;
+        char *item_end;
+
+        while (isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+
+        if (*cursor == ']') {
+            cursor++;
+            break;
+        }
+        if (*cursor == '\0') {
+            free_config_value(&array);
+            return TYPIO_ERROR;
+        }
+
+        item_start = cursor;
+        if (*cursor == '"' || *cursor == '\'') {
+            char quote = *cursor++;
+            item_start = cursor;
+            while (*cursor && *cursor != quote) {
+                if (*cursor == '\\' && cursor[1] != '\0') {
+                    cursor += 2;
+                } else {
+                    cursor++;
+                }
+            }
+            if (*cursor != quote) {
+                free_config_value(&array);
+                return TYPIO_ERROR;
+            }
+            item_end = cursor;
+            *cursor++ = '\0';
+            item.type = TYPIO_CONFIG_STRING;
+            item.data.string_val = typio_strdup(item_start);
+        } else {
+            char *nend;
+            item_end = cursor;
+            while (*item_end && *item_end != ',' && *item_end != ']') {
+                item_end++;
+            }
+            if (*item_end != '\0') {
+                char saved = *item_end;
+                *item_end = '\0';
+                item_start = trim_whitespace(item_start);
+                if (strcmp(item_start, "true") == 0 || strcmp(item_start, "false") == 0) {
+                    item.type = TYPIO_CONFIG_BOOL;
+                    item.data.bool_val = strcmp(item_start, "true") == 0;
+                } else if (*item_start == '-' || isdigit((unsigned char)*item_start)) {
+                    errno = 0;
+                    if (strchr(item_start, '.')) {
+                        double fval = strtod(item_start, &nend);
+                        if (nend != item_start && *nend == '\0' && errno == 0) {
+                            item.type = TYPIO_CONFIG_FLOAT;
+                            item.data.float_val = fval;
+                        } else {
+                            item.type = TYPIO_CONFIG_STRING;
+                            item.data.string_val = typio_strdup(item_start);
+                        }
+                    } else {
+                        long ival = strtol(item_start, &nend, 10);
+                        if (nend != item_start && *nend == '\0' && errno == 0 &&
+                            ival >= INT_MIN && ival <= INT_MAX) {
+                            item.type = TYPIO_CONFIG_INT;
+                            item.data.int_val = (int)ival;
+                        } else {
+                            item.type = TYPIO_CONFIG_STRING;
+                            item.data.string_val = typio_strdup(item_start);
+                        }
+                    }
+                } else {
+                    item.type = TYPIO_CONFIG_STRING;
+                    item.data.string_val = typio_strdup(item_start);
+                }
+                *item_end = saved;
+                cursor = item_end;
+            }
+        }
+
+        if (array.data.array_val.count == capacity) {
+            size_t new_capacity = capacity == 0 ? 4 : capacity * 2;
+            TypioConfigValue *items = realloc(array.data.array_val.items,
+                                              new_capacity * sizeof(TypioConfigValue));
+            if (!items) {
+                free_config_value(&item);
+                free_config_value(&array);
+                return TYPIO_ERROR_OUT_OF_MEMORY;
+            }
+            array.data.array_val.items = items;
+            capacity = new_capacity;
+        }
+
+        array.type = TYPIO_CONFIG_ARRAY;
+        array.data.array_val.items[array.data.array_val.count++] = item;
+
+        while (isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        if (*cursor == ',') {
+            cursor++;
+            continue;
+        }
+        if (*cursor == ']') {
+            cursor++;
+            break;
+        }
+        if (*cursor == '\0') {
+            free_config_value(&array);
+            return TYPIO_ERROR;
+        }
+    }
+
+    return set_value(config, key, &array);
 }
 
 /**
@@ -639,6 +811,38 @@ TypioResult typio_config_set_float(TypioConfig *config, const char *key,
     return set_value(config, key, &val);
 }
 
+TypioResult typio_config_set_string_array(TypioConfig *config, const char *key,
+                                          const char *const *values, size_t count) {
+    TypioConfigValue val = {};
+
+    if (!config || !key || (!values && count > 0)) {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    val.type = TYPIO_CONFIG_ARRAY;
+    val.data.array_val.count = count;
+    if (count == 0) {
+        val.data.array_val.items = NULL;
+        return set_value(config, key, &val);
+    }
+
+    val.data.array_val.items = calloc(count, sizeof(TypioConfigValue));
+    if (!val.data.array_val.items) {
+        return TYPIO_ERROR_OUT_OF_MEMORY;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        val.data.array_val.items[i].type = TYPIO_CONFIG_STRING;
+        val.data.array_val.items[i].data.string_val = typio_strdup(values[i] ? values[i] : "");
+        if (!val.data.array_val.items[i].data.string_val) {
+            free_config_value(&val);
+            return TYPIO_ERROR_OUT_OF_MEMORY;
+        }
+    }
+
+    return set_value(config, key, &val);
+}
+
 TypioConfig *typio_config_get_section(const TypioConfig *config,
                                        const char *section) {
     if (!config || !section) {
@@ -671,12 +875,30 @@ TypioConfig *typio_config_get_section(const TypioConfig *config,
                     typio_config_set_bool(sub, subkey,
                                           entry->value.data.bool_val);
                     break;
-                case TYPIO_CONFIG_FLOAT:
-                    typio_config_set_float(sub, subkey,
-                                           entry->value.data.float_val);
-                    break;
-                default:
-                    break;
+            case TYPIO_CONFIG_FLOAT:
+                typio_config_set_float(sub, subkey,
+                                       entry->value.data.float_val);
+                break;
+            case TYPIO_CONFIG_ARRAY:
+                if (entry->value.data.array_val.count == 0) {
+                    typio_config_set_string_array(sub, subkey, NULL, 0);
+                } else if (entry->value.data.array_val.items[0].type == TYPIO_CONFIG_STRING) {
+                    const char **items = calloc(entry->value.data.array_val.count,
+                                                sizeof(char *));
+                    if (!items) {
+                        typio_config_free(sub);
+                        return nullptr;
+                    }
+                    for (size_t i = 0; i < entry->value.data.array_val.count; ++i) {
+                        items[i] = entry->value.data.array_val.items[i].data.string_val;
+                    }
+                    typio_config_set_string_array(sub, subkey, items,
+                                                  entry->value.data.array_val.count);
+                    free(items);
+                }
+                break;
+            default:
+                break;
             }
         }
         entry = entry->next;
@@ -713,6 +935,23 @@ TypioResult typio_config_set_section(TypioConfig *config, const char *section,
             case TYPIO_CONFIG_FLOAT:
                 typio_config_set_float(config, prefix,
                                        entry->value.data.float_val);
+                break;
+            case TYPIO_CONFIG_ARRAY:
+                if (entry->value.data.array_val.count == 0) {
+                    typio_config_set_string_array(config, prefix, NULL, 0);
+                } else if (entry->value.data.array_val.items[0].type == TYPIO_CONFIG_STRING) {
+                    const char **items = calloc(entry->value.data.array_val.count,
+                                                sizeof(char *));
+                    if (!items) {
+                        return TYPIO_ERROR_OUT_OF_MEMORY;
+                    }
+                    for (size_t i = 0; i < entry->value.data.array_val.count; ++i) {
+                        items[i] = entry->value.data.array_val.items[i].data.string_val;
+                    }
+                    typio_config_set_string_array(config, prefix, items,
+                                                  entry->value.data.array_val.count);
+                    free(items);
+                }
                 break;
             default:
                 break;
@@ -838,6 +1077,23 @@ TypioResult typio_config_merge(TypioConfig *dest, const TypioConfig *src) {
             case TYPIO_CONFIG_FLOAT:
                 typio_config_set_float(dest, entry->key,
                                        entry->value.data.float_val);
+                break;
+            case TYPIO_CONFIG_ARRAY:
+                if (entry->value.data.array_val.count == 0) {
+                    typio_config_set_string_array(dest, entry->key, NULL, 0);
+                } else if (entry->value.data.array_val.items[0].type == TYPIO_CONFIG_STRING) {
+                    const char **items = calloc(entry->value.data.array_val.count,
+                                                sizeof(char *));
+                    if (!items) {
+                        return TYPIO_ERROR_OUT_OF_MEMORY;
+                    }
+                    for (size_t i = 0; i < entry->value.data.array_val.count; ++i) {
+                        items[i] = entry->value.data.array_val.items[i].data.string_val;
+                    }
+                    typio_config_set_string_array(dest, entry->key, items,
+                                                  entry->value.data.array_val.count);
+                    free(items);
+                }
                 break;
             default:
                 break;

@@ -11,32 +11,13 @@
 #include "vk_bridge.h"
 #include "wl_frontend_internal.h"
 #include "wl_trace.h"
+#include "xkb_modifiers.h"
 #include "typio/typio.h"
 #include "utils/log.h"
 
 #include <sys/timerfd.h>
 #include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
-
-static uint32_t keyboard_repeat_xkb_modifiers(TypioWlKeyboard *keyboard) {
-    struct xkb_state *state = keyboard->xkb_state;
-    uint32_t mods = TYPIO_MOD_NONE;
-
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_shift, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_SHIFT;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_ctrl, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_CTRL;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_alt, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_ALT;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_super, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_SUPER;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_caps, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_CAPSLOCK;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_num, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_NUMLOCK;
-
-    return mods;
-}
 
 static TypioKeyTrackState keyboard_repeat_key_state(TypioWlFrontend *frontend,
                                                     uint32_t key) {
@@ -58,7 +39,6 @@ static void keyboard_repeat_trace(TypioWlKeyboard *keyboard,
                                   TypioKeyTrackState state,
                                   const char *detail) {
     uint32_t xkb_mods = 0;
-    const char *route = "unknown";
     char keysym_desc[64];
     char unicode_desc[64];
 
@@ -66,30 +46,9 @@ static void keyboard_repeat_trace(TypioWlKeyboard *keyboard,
         return;
 
     if (keyboard->xkb_state)
-        xkb_mods = keyboard_repeat_xkb_modifiers(keyboard);
+        xkb_mods = typio_wl_xkb_effective_modifiers(keyboard);
     typio_wl_key_debug_format_keysym(keysym, keysym_desc, sizeof(keysym_desc));
     typio_wl_key_debug_format(unicode, unicode_desc, sizeof(unicode_desc));
-
-    switch (state) {
-    case TYPIO_KEY_IDLE:
-        route = "idle";
-        break;
-    case TYPIO_KEY_FORWARDED:
-        route = "forwarded";
-        break;
-    case TYPIO_KEY_APP_SHORTCUT:
-        route = "app_shortcut";
-        break;
-    case TYPIO_KEY_RELEASED_PENDING:
-        route = "released_pending";
-        break;
-    case TYPIO_KEY_SUPPRESSED_STARTUP:
-        route = "suppressed_startup";
-        break;
-    case TYPIO_KEY_VOICE_PTT:
-        route = "voice_ptt";
-        break;
-    }
 
     typio_wl_trace(keyboard->frontend,
                    "key",
@@ -98,7 +57,7 @@ static void keyboard_repeat_trace(TypioWlKeyboard *keyboard,
                    key,
                    keysym,
                    keysym_desc,
-                   route,
+                   typio_wl_key_tracking_state_name(state),
                    modifiers,
                    keyboard->physical_modifiers,
                    xkb_mods,
@@ -195,7 +154,7 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
             keyboard_repeat_trace(keyboard, "repeat-stop", keyboard->repeat_key,
                                   repeat_keysym,
                                   keyboard->physical_modifiers |
-                                  (keyboard_repeat_xkb_modifiers(keyboard) &
+                                  (typio_wl_xkb_effective_modifiers(keyboard) &
                                    (TYPIO_MOD_CAPSLOCK | TYPIO_MOD_NUMLOCK)),
                                   repeat_unicode,
                                   repeat_state,
@@ -207,7 +166,7 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
         keyboard_repeat_trace(keyboard, "repeat-forward", keyboard->repeat_key,
                               repeat_keysym,
                               keyboard->physical_modifiers |
-                              (keyboard_repeat_xkb_modifiers(keyboard) &
+                              (typio_wl_xkb_effective_modifiers(keyboard) &
                                (TYPIO_MOD_CAPSLOCK | TYPIO_MOD_NUMLOCK)),
                               repeat_unicode,
                               repeat_state,
@@ -223,7 +182,7 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
         keyboard_repeat_trace(keyboard, "repeat-forward", keyboard->repeat_key,
                               repeat_keysym,
                               keyboard->physical_modifiers |
-                              (keyboard_repeat_xkb_modifiers(keyboard) &
+                              (typio_wl_xkb_effective_modifiers(keyboard) &
                                (TYPIO_MOD_CAPSLOCK | TYPIO_MOD_NUMLOCK)),
                               repeat_unicode,
                               repeat_state,
@@ -239,7 +198,7 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
         keyboard_repeat_trace(keyboard, "repeat-stop", keyboard->repeat_key,
                               repeat_keysym,
                               keyboard->physical_modifiers |
-                              (keyboard_repeat_xkb_modifiers(keyboard) &
+                              (typio_wl_xkb_effective_modifiers(keyboard) &
                                (TYPIO_MOD_CAPSLOCK | TYPIO_MOD_NUMLOCK)),
                               repeat_unicode,
                               repeat_state,
@@ -254,7 +213,7 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
             .keycode   = keyboard->repeat_key,
             .keysym    = repeat_keysym,
             .modifiers = keyboard->physical_modifiers |
-                         (keyboard_repeat_xkb_modifiers(keyboard) &
+                         (typio_wl_xkb_effective_modifiers(keyboard) &
                           (TYPIO_MOD_CAPSLOCK | TYPIO_MOD_NUMLOCK)),
             .unicode   = repeat_unicode,
             .time      = keyboard->repeat_time,

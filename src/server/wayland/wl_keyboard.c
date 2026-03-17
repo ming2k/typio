@@ -11,6 +11,8 @@
 
 #include "key_arbiter.h"
 #include "key_debug.h"
+#include "key_tracking_access.h"
+#include "monotonic_time.h"
 #include "wl_frontend_internal.h"
 #include "wl_trace.h"
 #include "modifier_policy.h"
@@ -20,6 +22,7 @@
 #include "shortcut_chord.h"
 #include "startup_guard.h"
 #include "vk_bridge.h"
+#include "xkb_modifiers.h"
 #include "typio/typio.h"
 #include "typio/engine_manager.h"
 #include "utils/log.h"
@@ -27,22 +30,12 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/timerfd.h>
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
-static uint32_t xkb_to_typio_modifiers(TypioWlKeyboard *keyboard);
-static const char *key_state_name(TypioKeyTrackState state);
-static inline TypioKeyTrackState key_get_state(TypioWlFrontend *fe,
-                                               uint32_t key);
-static inline void key_set_state(TypioWlFrontend *fe, uint32_t key,
-                                 TypioKeyTrackState st);
-static inline uint32_t key_get_generation(TypioWlFrontend *fe, uint32_t key);
-static inline void key_set_generation(TypioWlFrontend *fe, uint32_t key,
-                                      uint32_t generation);
 static void keyboard_trace_event(TypioWlKeyboard *keyboard,
                                  const char *stage,
                                  uint32_t key,
@@ -51,31 +44,6 @@ static void keyboard_trace_event(TypioWlKeyboard *keyboard,
                                  uint32_t unicode,
                                  TypioKeyTrackState state,
                                  const char *detail);
-
-static uint64_t keyboard_monotonic_ms(void) {
-    struct timespec ts;
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
-        return 0;
-    }
-    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000L);
-}
-
-static const char *key_state_name(TypioKeyTrackState state) {
-    switch (state) {
-    case TYPIO_KEY_IDLE:
-        return "idle";
-    case TYPIO_KEY_FORWARDED:
-        return "forwarded";
-    case TYPIO_KEY_APP_SHORTCUT:
-        return "app_shortcut";
-    case TYPIO_KEY_RELEASED_PENDING:
-        return "released_pending";
-    case TYPIO_KEY_SUPPRESSED_STARTUP:
-        return "suppressed_startup";
-    default:
-        return "unknown";
-    }
-}
 
 static void keyboard_trace_event(TypioWlKeyboard *keyboard,
                                  const char *stage,
@@ -93,7 +61,7 @@ static void keyboard_trace_event(TypioWlKeyboard *keyboard,
         return;
 
     if (keyboard->xkb_state)
-        xkb_mods = xkb_to_typio_modifiers(keyboard);
+        xkb_mods = typio_wl_xkb_effective_modifiers(keyboard);
     typio_wl_key_debug_format_keysym(keysym, keysym_desc, sizeof(keysym_desc));
     typio_wl_key_debug_format(unicode, unicode_desc, sizeof(unicode_desc));
 
@@ -104,7 +72,7 @@ static void keyboard_trace_event(TypioWlKeyboard *keyboard,
                    key,
                    keysym,
                    keysym_desc,
-                   key_state_name(state),
+                   typio_wl_key_tracking_state_name(state),
                    modifiers,
                    keyboard->physical_modifiers,
                    xkb_mods,
@@ -119,7 +87,7 @@ static uint32_t keyboard_event_modifiers(TypioWlKeyboard *keyboard,
                                          uint32_t state) {
     return typio_wl_modifier_policy_effective_modifiers(
         keyboard->physical_modifiers,
-        xkb_to_typio_modifiers(keyboard),
+        typio_wl_xkb_effective_modifiers(keyboard),
         keyboard->frontend->active_generation_owned_keys,
         keysym,
         state);
@@ -158,67 +126,10 @@ static void keyboard_sync_physical_modifiers(TypioWlKeyboard *keyboard) {
     keyboard->physical_modifiers =
         typio_wl_modifier_policy_sync_physical_modifiers(
             keyboard->physical_modifiers,
-            xkb_to_typio_modifiers(keyboard));
-}
-
-static uint32_t xkb_to_typio_modifiers(TypioWlKeyboard *keyboard) {
-    struct xkb_state *state = keyboard->xkb_state;
-    uint32_t mods = TYPIO_MOD_NONE;
-
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_shift, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_SHIFT;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_ctrl, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_CTRL;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_alt, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_ALT;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_super, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_SUPER;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_caps, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_CAPSLOCK;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_num, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_NUMLOCK;
-
-    return mods;
+            typio_wl_xkb_effective_modifiers(keyboard));
 }
 
 /* ── Per-key state machine ───────────────────────────────────────── */
-
-static inline TypioKeyTrackState key_get_state(TypioWlFrontend *fe, uint32_t key) {
-    return (key < TYPIO_WL_MAX_TRACKED_KEYS) ? fe->key_states[key] : TYPIO_KEY_IDLE;
-}
-
-static inline void key_set_state(TypioWlFrontend *fe, uint32_t key,
-                                 TypioKeyTrackState st) {
-    if (key < TYPIO_WL_MAX_TRACKED_KEYS)
-        fe->key_states[key] = st;
-}
-
-static inline uint32_t key_get_generation(TypioWlFrontend *fe, uint32_t key) {
-    return (key < TYPIO_WL_MAX_TRACKED_KEYS) ? fe->key_generations[key] : 0;
-}
-
-static inline void key_set_generation(TypioWlFrontend *fe, uint32_t key,
-                                      uint32_t generation) {
-    if (key < TYPIO_WL_MAX_TRACKED_KEYS)
-        fe->key_generations[key] = generation;
-}
-
-static inline void key_claim_current_generation(TypioWlFrontend *fe,
-                                                uint32_t key) {
-    key_set_generation(fe, key, fe->active_key_generation);
-    fe->active_generation_owned_keys = true;
-}
-
-static inline void key_clear_tracking(TypioWlFrontend *fe, uint32_t key) {
-    key_set_state(fe, key, TYPIO_KEY_IDLE);
-    key_set_generation(fe, key, 0);
-}
-
-static inline bool key_owned_by_active_generation(TypioWlFrontend *fe,
-                                                  uint32_t key) {
-    return fe && fe->active_key_generation != 0 &&
-           key_get_generation(fe, key) == fe->active_key_generation;
-}
 
 static void keyboard_reset_tracking(TypioWlFrontend *frontend) {
     if (!frontend)
@@ -273,7 +184,7 @@ TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend) {
     keyboard_reset_tracking(frontend);
     keyboard->frontend = frontend;
     keyboard->suppress_stale_keys = true;
-    keyboard->created_at_ms = keyboard_monotonic_ms();
+    keyboard->created_at_ms = typio_wl_monotonic_ms();
     typio_wl_key_arbiter_init(&keyboard->arbiter);
 
     keyboard->repeat_timer_fd = timerfd_create(CLOCK_MONOTONIC,
@@ -313,7 +224,8 @@ void typio_wl_keyboard_destroy(TypioWlKeyboard *keyboard) {
     if (!keyboard)
         return;
 
-    typio_wl_vk_release_forwarded_keys(keyboard->frontend, key_state_name);
+    typio_wl_vk_release_forwarded_keys(keyboard->frontend,
+                                       typio_wl_key_tracking_state_name);
     typio_wl_keyboard_release_grab(keyboard);
     typio_wl_keyboard_repeat_stop(keyboard);
     keyboard_reset_tracking(keyboard->frontend);
@@ -504,7 +416,7 @@ static void kb_handle_modifiers(void *data,
             keyboard->frontend->lifecycle_phase))
         return;
 
-    uint32_t prev_mods = xkb_to_typio_modifiers(keyboard);
+    uint32_t prev_mods = typio_wl_xkb_effective_modifiers(keyboard);
 
     xkb_state_update_mask(keyboard->xkb_state,
                           mods_depressed, mods_latched, mods_locked,
@@ -513,7 +425,7 @@ static void kb_handle_modifiers(void *data,
     keyboard->mods_latched = mods_latched;
     keyboard->mods_locked = mods_locked;
     keyboard->mods_group = group;
-    uint32_t cur_mods = xkb_to_typio_modifiers(keyboard);
+    uint32_t cur_mods = typio_wl_xkb_effective_modifiers(keyboard);
     keyboard_sync_physical_modifiers(keyboard);
     if ((cur_mods & (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0)
         keyboard->saw_blocking_modifier = true;

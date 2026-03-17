@@ -71,6 +71,8 @@ TypioResult typio_engine_manager_unload(TypioEngineManager *manager,
  */
 const char **typio_engine_manager_list(TypioEngineManager *manager,
                                         size_t *count);
+const char **typio_engine_manager_list_ordered_keyboards(TypioEngineManager *manager,
+                                                          size_t *count);
 
 /**
  * @brief Get engine info by name

@@ -19,7 +19,25 @@ static guint find_string_in_options(const char *const *options, const char *valu
             return i;
         }
     }
-    return 0; /* fallback to first */
+    return GTK_INVALID_LIST_POSITION;
+}
+
+static guint find_string_in_model(GListModel *model, const char *value) {
+    guint count;
+
+    if (!model || !value) {
+        return GTK_INVALID_LIST_POSITION;
+    }
+
+    count = (guint)g_list_model_get_n_items(model);
+    for (guint i = 0; i < count; ++i) {
+        const char *item = gtk_string_list_get_string(GTK_STRING_LIST(model), i);
+        if (item && strcmp(item, value) == 0) {
+            return i;
+        }
+    }
+
+    return GTK_INVALID_LIST_POSITION;
 }
 
 /* ---------- create ---------- */
@@ -115,7 +133,21 @@ void control_binding_load(const ControlBinding *b, const TypioConfig *config) {
         if (f->ui_options) {
             const char *val = typio_config_get_string(config, f->key, f->def.s);
             guint idx = find_string_in_options(f->ui_options, val);
-            gtk_drop_down_set_selected(GTK_DROP_DOWN(b->widget), idx);
+            GtkStringList *model = GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(b->widget)));
+            if (idx == GTK_INVALID_LIST_POSITION && val && *val && model) {
+                guint existing = find_string_in_model(G_LIST_MODEL(model), val);
+                if (existing == GTK_INVALID_LIST_POSITION) {
+                    gtk_string_list_append(model, val);
+                    existing = (guint)g_list_model_get_n_items(G_LIST_MODEL(model)) - 1;
+                }
+                idx = existing;
+            }
+            if (idx != GTK_INVALID_LIST_POSITION) {
+                gtk_drop_down_set_selected(GTK_DROP_DOWN(b->widget), idx);
+            } else {
+                gtk_drop_down_set_selected(GTK_DROP_DOWN(b->widget),
+                                           GTK_INVALID_LIST_POSITION);
+            }
         } else {
             const char *val = typio_config_get_string(config, f->key,
                                                        f->def.s ? f->def.s : "");
@@ -154,10 +186,13 @@ void control_binding_save(const ControlBinding *b, TypioConfig *config) {
     case TYPIO_FIELD_STRING:
         if (f->ui_options) {
             guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(b->widget));
-            const char *val = (sel != GTK_INVALID_LIST_POSITION && f->ui_options[sel])
-                ? f->ui_options[sel]
-                : f->def.s;
-            typio_config_set_string(config, f->key, val ? val : "");
+            GtkStringList *model = GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(b->widget)));
+            if (sel != GTK_INVALID_LIST_POSITION && model) {
+                const char *val = gtk_string_list_get_string(model, sel);
+                if (val) {
+                    typio_config_set_string(config, f->key, val);
+                }
+            }
         } else {
             const char *text = gtk_editable_get_text(GTK_EDITABLE(b->widget));
             typio_config_set_string(config, f->key, text ? text : "");
@@ -186,4 +221,70 @@ void control_bindings_save_all(const ControlBinding *bindings, size_t count,
     for (size_t i = 0; i < count; i++) {
         control_binding_save(&bindings[i], config);
     }
+}
+
+void control_state_binding_select_value(const ControlStateBinding *binding,
+                                        const char *value) {
+    guint idx = GTK_INVALID_LIST_POSITION;
+
+    if (!binding || !binding->dropdown || !binding->find_index) {
+        return;
+    }
+
+    if (value && *value) {
+        idx = binding->find_index(binding->user_data, value);
+    }
+
+    gtk_drop_down_set_selected(binding->dropdown, idx);
+}
+
+void control_state_binding_load_from_config(const ControlStateBinding *binding,
+                                            const TypioConfig *config) {
+    const char *value;
+
+    if (!binding || !binding->config_key || !config) {
+        return;
+    }
+
+    value = typio_config_get_string(config, binding->config_key, NULL);
+    control_state_binding_select_value(binding, value);
+}
+
+const char *control_state_binding_get_selected_value(const ControlStateBinding *binding) {
+    guint selected;
+
+    if (!binding || !binding->dropdown || !binding->get_value) {
+        return NULL;
+    }
+
+    selected = gtk_drop_down_get_selected(binding->dropdown);
+    if (selected == GTK_INVALID_LIST_POSITION) {
+        return NULL;
+    }
+
+    return binding->get_value(binding->user_data, selected);
+}
+
+void control_state_binding_save_to_config(const ControlStateBinding *binding,
+                                          TypioConfig *config) {
+    const char *value;
+
+    if (!binding || !binding->config_key || !config) {
+        return;
+    }
+
+    value = control_state_binding_get_selected_value(binding);
+    if (value && *value) {
+        typio_config_set_string(config, binding->config_key, value);
+    }
+}
+
+void control_state_binding_refresh_options(const ControlStateBinding *binding,
+                                           const TypioConfig *config,
+                                           const char *configured_value) {
+    if (!binding || !binding->refresh_options) {
+        return;
+    }
+
+    binding->refresh_options(binding->options_user_data, config, configured_value);
 }

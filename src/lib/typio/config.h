@@ -73,6 +73,8 @@ TypioResult typio_config_set_bool(TypioConfig *config, const char *key,
                                    bool value);
 TypioResult typio_config_set_float(TypioConfig *config, const char *key,
                                     double value);
+TypioResult typio_config_set_string_array(TypioConfig *config, const char *key,
+                                          const char *const *values, size_t count);
 
 /* Nested config */
 TypioConfig *typio_config_get_section(const TypioConfig *config,

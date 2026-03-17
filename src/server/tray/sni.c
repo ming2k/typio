@@ -4,6 +4,7 @@
  */
 
 #include "tray_internal.h"
+#include "../dbus_helpers.h"
 #include "icon_pixmap.h"
 #include "typio/config.h"
 #include "typio/rime_schema_list.h"
@@ -46,33 +47,9 @@ static void free_rime_menu_info(TypioTrayRimeMenuInfo *info) {
     memset(info, 0, sizeof(*info));
 }
 
-
-static char *tray_path_join(const char *base, const char *suffix) {
-    size_t base_len;
-    size_t suffix_len;
-    bool need_slash;
-    char *path;
-
-    if (!base || !suffix) {
-        return nullptr;
-    }
-
-    base_len = strlen(base);
-    suffix_len = strlen(suffix);
-    need_slash = base_len > 0 && base[base_len - 1] != '/';
-    path = calloc(base_len + suffix_len + (need_slash ? 2U : 1U), sizeof(char));
-    if (!path) {
-        return nullptr;
-    }
-
-    snprintf(path, base_len + suffix_len + (need_slash ? 2U : 1U),
-             need_slash ? "%s/%s" : "%s%s", base, suffix);
-    return path;
-}
-
 static char *tray_default_rime_user_dir(TypioTray *tray) {
     const char *data_dir = typio_instance_get_data_dir(tray->instance);
-    return data_dir ? tray_path_join(data_dir, "rime") : nullptr;
+    return data_dir ? typio_path_join(data_dir, "rime") : nullptr;
 }
 
 static bool tray_load_rime_menu_info(TypioTray *tray, TypioTrayRimeMenuInfo *info) {
@@ -179,87 +156,6 @@ static dbus_bool_t append_icon_pixmap_array(DBusMessageIter *iter,
     }
 
     typio_tray_icon_pixmap_free(data);
-    return TRUE;
-}
-
-/* Helper to append a string property to a dict entry */
-static dbus_bool_t append_dict_entry_string(DBusMessageIter *dict,
-                                            const char *key,
-                                            const char *value) {
-    DBusMessageIter entry, variant;
-
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry))
-        return FALSE;
-
-    if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key))
-        return FALSE;
-
-    if (!dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "s", &variant))
-        return FALSE;
-
-    if (!dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &value))
-        return FALSE;
-
-    if (!dbus_message_iter_close_container(&entry, &variant))
-        return FALSE;
-
-    if (!dbus_message_iter_close_container(dict, &entry))
-        return FALSE;
-
-    return TRUE;
-}
-
-/* Helper to append a boolean property to a dict entry */
-static dbus_bool_t append_dict_entry_bool(DBusMessageIter *dict,
-                                          const char *key,
-                                          dbus_bool_t value) {
-    DBusMessageIter entry, variant;
-
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry))
-        return FALSE;
-
-    if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key))
-        return FALSE;
-
-    if (!dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "b", &variant))
-        return FALSE;
-
-    if (!dbus_message_iter_append_basic(&variant, DBUS_TYPE_BOOLEAN, &value))
-        return FALSE;
-
-    if (!dbus_message_iter_close_container(&entry, &variant))
-        return FALSE;
-
-    if (!dbus_message_iter_close_container(dict, &entry))
-        return FALSE;
-
-    return TRUE;
-}
-
-/* Helper to append an object path property to a dict entry */
-static dbus_bool_t append_dict_entry_object_path(DBusMessageIter *dict,
-                                                 const char *key,
-                                                 const char *value) {
-    DBusMessageIter entry, variant;
-
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry))
-        return FALSE;
-
-    if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key))
-        return FALSE;
-
-    if (!dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "o", &variant))
-        return FALSE;
-
-    if (!dbus_message_iter_append_basic(&variant, DBUS_TYPE_OBJECT_PATH, &value))
-        return FALSE;
-
-    if (!dbus_message_iter_close_container(&entry, &variant))
-        return FALSE;
-
-    if (!dbus_message_iter_close_container(dict, &entry))
-        return FALSE;
-
     return TRUE;
 }
 
@@ -458,19 +354,19 @@ static DBusMessage *handle_properties_getall(TypioTray *tray, DBusMessage *msg) 
             default: status_str = "Passive"; break;
         }
 
-        append_dict_entry_string(&dict, "Category", "ApplicationStatus");
-        append_dict_entry_string(&dict, "Id", "typio");
-        append_dict_entry_string(&dict, "Title", tray->title ? tray->title : "Typio");
-        append_dict_entry_string(&dict, "Status", status_str);
-        append_dict_entry_string(&dict, "IconName",
-                                 tray->icon_name ? tray->icon_name : "typio-keyboard");
-        append_dict_entry_string(&dict, "IconThemePath",
-                                 tray->icon_theme_path ? tray->icon_theme_path : "");
+        typio_dbus_append_dict_entry_string(&dict, "Category", "ApplicationStatus");
+        typio_dbus_append_dict_entry_string(&dict, "Id", "typio");
+        typio_dbus_append_dict_entry_string(&dict, "Title", tray->title ? tray->title : "Typio");
+        typio_dbus_append_dict_entry_string(&dict, "Status", status_str);
+        typio_dbus_append_dict_entry_string(&dict, "IconName",
+                                            tray->icon_name ? tray->icon_name : "typio-keyboard");
+        typio_dbus_append_dict_entry_string(&dict, "IconThemePath",
+                                            tray->icon_theme_path ? tray->icon_theme_path : "");
         append_dict_entry_icon_pixmap(&dict, "IconPixmap", tray->icon_name);
-        append_dict_entry_string(&dict, "OverlayIconName", "");
-        append_dict_entry_string(&dict, "AttentionIconName", "");
-        append_dict_entry_bool(&dict, "ItemIsMenu", FALSE);
-        append_dict_entry_object_path(&dict, "Menu", DBUSMENU_PATH);
+        typio_dbus_append_dict_entry_string(&dict, "OverlayIconName", "");
+        typio_dbus_append_dict_entry_string(&dict, "AttentionIconName", "");
+        typio_dbus_append_dict_entry_bool(&dict, "ItemIsMenu", FALSE);
+        typio_dbus_append_dict_entry_object_path(&dict, "Menu", DBUSMENU_PATH);
     }
 
     dbus_message_iter_close_container(&iter, &dict);
@@ -558,12 +454,12 @@ static void build_menu_item(DBusMessageIter *parent, int32_t id,
 
     dbus_message_iter_open_container(&st, DBUS_TYPE_ARRAY, "{sv}", &dict);
     if (label) {
-        append_dict_entry_string(&dict, "label", label);
+        typio_dbus_append_dict_entry_string(&dict, "label", label);
     }
     if (type) {
-        append_dict_entry_string(&dict, "type", type);
+        typio_dbus_append_dict_entry_string(&dict, "type", type);
     }
-    append_dict_entry_bool(&dict, "enabled", enabled);
+    typio_dbus_append_dict_entry_bool(&dict, "enabled", enabled);
     dbus_message_iter_close_container(&st, &dict);
 
     dbus_message_iter_open_container(&st, DBUS_TYPE_ARRAY, "v", &children);
@@ -583,11 +479,11 @@ static void begin_menu_item(DBusMessageIter *parent, DBusMessageIter *var,
     dbus_message_iter_append_basic(st, DBUS_TYPE_INT32, &id);
     dbus_message_iter_open_container(st, DBUS_TYPE_ARRAY, "{sv}", dict);
     if (label) {
-        append_dict_entry_string(dict, "label", label);
+        typio_dbus_append_dict_entry_string(dict, "label", label);
     }
-    append_dict_entry_bool(dict, "enabled", enabled);
+    typio_dbus_append_dict_entry_bool(dict, "enabled", enabled);
     if (submenu) {
-        append_dict_entry_string(dict, "children-display", "submenu");
+        typio_dbus_append_dict_entry_string(dict, "children-display", "submenu");
     }
     dbus_message_iter_close_container(st, dict);
     dbus_message_iter_open_container(st, DBUS_TYPE_ARRAY, "v", children);
@@ -685,7 +581,7 @@ static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
     dbus_message_iter_append_basic(&root_st, DBUS_TYPE_INT32, &root_id);
 
     dbus_message_iter_open_container(&root_st, DBUS_TYPE_ARRAY, "{sv}", &root_dict);
-    append_dict_entry_string(&root_dict, "children-display", "submenu");
+    typio_dbus_append_dict_entry_string(&root_dict, "children-display", "submenu");
     dbus_message_iter_close_container(&root_st, &root_dict);
 
     /* Children */
@@ -698,12 +594,12 @@ static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
     TypioEngineManager *manager = typio_instance_get_engine_manager(tray->instance);
     if (manager) {
         size_t engine_count;
-        const char **engines = typio_engine_manager_list(manager, &engine_count);
+        const char **engines = typio_engine_manager_list_ordered_keyboards(manager, &engine_count);
         size_t shown = 0;
 
         for (size_t i = 0; i < engine_count && i < 10; i++) {
             const TypioEngineInfo *info = typio_engine_manager_get_info(manager, engines[i]);
-            if (!info || info->type == TYPIO_ENGINE_TYPE_VOICE) {
+            if (!info) {
                 continue;
             }
 
@@ -775,7 +671,7 @@ static DBusMessage *handle_menu_event(TypioTray *tray, DBusMessage *msg) {
             TypioEngineManager *manager = typio_instance_get_engine_manager(tray->instance);
             if (manager) {
                 size_t engine_count;
-                const char **engines = typio_engine_manager_list(manager, &engine_count);
+                const char **engines = typio_engine_manager_list_ordered_keyboards(manager, &engine_count);
                 if ((size_t)engine_idx < engine_count && tray->menu_callback) {
                     char action[128];
                     snprintf(action, sizeof(action), "engine:%s", engines[engine_idx]);

@@ -20,6 +20,7 @@ char *typio_strndup(const char *str, size_t n);
 /* String manipulation */
 char *typio_strjoin(const char *a, const char *b);
 char *typio_strjoin3(const char *a, const char *b, const char *c);
+char *typio_path_join(const char *base, const char *suffix);
 
 /* String comparison */
 bool typio_str_starts_with(const char *str, const char *prefix);

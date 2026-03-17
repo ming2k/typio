@@ -83,6 +83,9 @@ typedef struct TypioControl {
     char *committed_config_text;
     ControlBinding bindings[20];
     size_t binding_count;
+    ControlStateBinding keyboard_engine_state;
+    ControlStateBinding rime_schema_state;
+    ControlStateBinding voice_backend_state;
     ModelRow whisper_rows[WHISPER_MODEL_COUNT];
     char *whisper_dir;
     ModelRow sherpa_rows[SHERPA_MODEL_COUNT];
@@ -109,6 +112,7 @@ void on_voice_backend_changed(GObject *object, GParamSpec *pspec, gpointer user_
 void on_display_dropdown_changed(GObject *object, GParamSpec *pspec, gpointer user_data);
 void on_display_spin_changed(GtkSpinButton *spin, gpointer user_data);
 void on_display_switch_changed(GObject *object, GParamSpec *pspec, gpointer user_data);
+void on_display_entry_changed(GtkEditable *editable, gpointer user_data);
 void on_engine_selected(GObject *object, GParamSpec *pspec, gpointer user_data);
 void control_clear_proxy(TypioControl *control);
 void control_refresh_from_proxy(TypioControl *control);
@@ -118,6 +122,15 @@ void control_queue_autosave(TypioControl *control,
 void control_update_availability_label(TypioControl *control,
                                        const char *message,
                                        gboolean visible);
+void control_refresh_rime_schema_options(gpointer user_data,
+                                         const TypioConfig *config,
+                                         const char *configured_value);
+
+#ifdef TYPIO_CONTROL_TEST
+void control_test_apply_state_binding_value(TypioControl *control,
+                                            const ControlStateBinding *binding,
+                                            const char *fallback_text);
+#endif
 
 GtkWidget *control_build_window(TypioControl *control, GtkApplication *app);
 GtkWidget *control_wrap_page_scroller(GtkWidget *child);

@@ -40,3 +40,24 @@ size_t typio_wl_key_tracking_mark_released_pending(TypioKeyTrackState *states,
 
     return changed;
 }
+
+const char *typio_wl_key_tracking_state_name(TypioKeyTrackState state) {
+    switch (state) {
+    case TYPIO_KEY_IDLE:
+        return "idle";
+    case TYPIO_KEY_FORWARDED:
+        return "forwarded";
+    case TYPIO_KEY_APP_SHORTCUT:
+        return "app_shortcut";
+    case TYPIO_KEY_RELEASED_PENDING:
+        return "released_pending";
+    case TYPIO_KEY_SUPPRESSED_STARTUP:
+        return "suppressed_startup";
+    case TYPIO_KEY_VOICE_PTT:
+        return "voice_ptt";
+    case TYPIO_KEY_VOICE_PTT_UNAVAIL:
+        return "voice_ptt_unavail";
+    default:
+        return "unknown";
+    }
+}

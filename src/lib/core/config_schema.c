@@ -6,6 +6,7 @@
 
 #include "typio/config_schema.h"
 #include "typio/config.h"
+#include "typio/dbus_protocol.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -23,6 +24,7 @@ static const TypioConfigField schema_fields[] = {
         .key = "default_engine",
         .type = TYPIO_FIELD_STRING,
         .def.s = "",
+        .runtime_property = TYPIO_STATUS_PROP_ACTIVE_ENGINE,
     },
 
     /* --- Display / Rime popup --- */
@@ -131,6 +133,7 @@ static const TypioConfigField schema_fields[] = {
         .legacy_key = "voice.backend",
         .ui_label = "Voice Backend",
         .ui_section = "voice",
+        .runtime_property = TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE,
     },
 
     /* --- Shortcuts --- */
@@ -201,6 +204,16 @@ const TypioConfigField *typio_config_schema_find(const char *key) {
         }
     }
     return NULL;
+}
+
+const char *typio_config_schema_runtime_property(const char *key) {
+    const TypioConfigField *field = typio_config_schema_find(key);
+
+    if (!field || !field->runtime_property || !*field->runtime_property) {
+        return NULL;
+    }
+
+    return field->runtime_property;
 }
 
 void typio_config_apply_defaults(TypioConfig *config) {

@@ -60,6 +60,8 @@ struct TypioEngineManager {
     char *recent_secondary_name;
     const char **name_list;
     size_t name_list_size;
+    const char **ordered_keyboard_list;
+    size_t ordered_keyboard_list_size;
 };
 
 static char *engine_manager_build_state_path(TypioEngineManager *manager) {
@@ -107,6 +109,17 @@ static bool engine_manager_name_is_keyboard(TypioEngineManager *manager,
     entry = find_entry_by_name(manager, name);
     return entry && entry->info &&
            entry->info->type == TYPIO_ENGINE_TYPE_KEYBOARD;
+}
+
+static bool engine_manager_has_explicit_order(TypioEngineManager *manager) {
+    TypioConfig *config;
+
+    if (!manager || !manager->instance) {
+        return false;
+    }
+
+    config = typio_instance_get_config(manager->instance);
+    return config && typio_config_get_array_size(config, "engine_order") > 0;
 }
 
 static void engine_manager_load_recent_state(TypioEngineManager *manager) {
@@ -335,6 +348,7 @@ void typio_engine_manager_free(TypioEngineManager *manager) {
     free(manager->entries);
 
     free(manager->name_list);
+    free(manager->ordered_keyboard_list);
     free(manager->recent_primary_name);
     free(manager->recent_secondary_name);
     free(manager);
@@ -375,6 +389,9 @@ static TypioResult add_entry(TypioEngineManager *manager, EngineEntry *entry) {
     free(manager->name_list);
     manager->name_list = nullptr;
     manager->name_list_size = 0;
+    free(manager->ordered_keyboard_list);
+    manager->ordered_keyboard_list = nullptr;
+    manager->ordered_keyboard_list_size = 0;
 
     return TYPIO_OK;
 }
@@ -574,6 +591,9 @@ TypioResult typio_engine_manager_unload(TypioEngineManager *manager,
             free(manager->name_list);
             manager->name_list = nullptr;
             manager->name_list_size = 0;
+            free(manager->ordered_keyboard_list);
+            manager->ordered_keyboard_list = nullptr;
+            manager->ordered_keyboard_list_size = 0;
 
             return TYPIO_OK;
         }
@@ -607,6 +627,88 @@ const char **typio_engine_manager_list(TypioEngineManager *manager,
 
     if (count) *count = manager->entry_count;
     return manager->name_list;
+}
+
+const char **typio_engine_manager_list_ordered_keyboards(TypioEngineManager *manager,
+                                                          size_t *count) {
+    TypioConfig *config;
+    size_t keyboard_count = 0;
+    size_t write_index = 0;
+
+    if (!manager) {
+        if (count) {
+            *count = 0;
+        }
+        return nullptr;
+    }
+
+    free(manager->ordered_keyboard_list);
+    manager->ordered_keyboard_list = NULL;
+    manager->ordered_keyboard_list_size = 0;
+
+    for (size_t i = 0; i < manager->entry_count; ++i) {
+        if (manager->entries[i]->info->type == TYPIO_ENGINE_TYPE_KEYBOARD) {
+            keyboard_count++;
+        }
+    }
+
+    manager->ordered_keyboard_list = calloc(keyboard_count + 1, sizeof(char *));
+    if (!manager->ordered_keyboard_list) {
+        if (count) {
+            *count = 0;
+        }
+        return nullptr;
+    }
+
+    config = manager->instance ? typio_instance_get_config(manager->instance) : NULL;
+    if (config) {
+        size_t order_count = typio_config_get_array_size(config, "engine_order");
+        for (size_t i = 0; i < order_count; ++i) {
+            const char *name = typio_config_get_array_string(config, "engine_order", i);
+            if (!engine_manager_name_is_keyboard(manager, name)) {
+                continue;
+            }
+            if (find_entry_by_name(manager, name) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (size_t j = 0; j < write_index; ++j) {
+                if (strcmp(manager->ordered_keyboard_list[j], name) == 0) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) {
+                manager->ordered_keyboard_list[write_index++] = name;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < manager->entry_count; ++i) {
+        const char *name = manager->entries[i]->name;
+        bool seen = false;
+
+        if (manager->entries[i]->info->type != TYPIO_ENGINE_TYPE_KEYBOARD) {
+            continue;
+        }
+
+        for (size_t j = 0; j < write_index; ++j) {
+            if (strcmp(manager->ordered_keyboard_list[j], name) == 0) {
+                seen = true;
+                break;
+            }
+        }
+        if (!seen) {
+            manager->ordered_keyboard_list[write_index++] = name;
+        }
+    }
+
+    manager->ordered_keyboard_list[write_index] = NULL;
+    manager->ordered_keyboard_list_size = write_index;
+    if (count) {
+        *count = write_index;
+    }
+    return manager->ordered_keyboard_list;
 }
 
 const TypioEngineInfo *typio_engine_manager_get_info(TypioEngineManager *manager,
@@ -840,46 +942,22 @@ TypioEngine *typio_engine_manager_get_active_voice(TypioEngineManager *manager) 
     return manager->entries[manager->active_voice_index]->instance;
 }
 
-/**
- * Find next keyboard engine index, wrapping around and skipping voice engines.
- * Returns (size_t)-1 if no keyboard engine exists.
- */
-static size_t find_next_keyboard(TypioEngineManager *manager, size_t from) {
-    for (size_t i = 0; i < manager->entry_count; i++) {
-        size_t idx = (from + i) % manager->entry_count;
-        if (manager->entries[idx]->info->type != TYPIO_ENGINE_TYPE_VOICE) {
-            return idx;
-        }
-    }
-    return (size_t)-1;
-}
-
-/**
- * Find previous keyboard engine index, wrapping around and skipping voice engines.
- */
-static size_t find_prev_keyboard(TypioEngineManager *manager, size_t from) {
-    for (size_t i = 0; i < manager->entry_count; i++) {
-        size_t idx = (from + manager->entry_count - i) % manager->entry_count;
-        if (manager->entries[idx]->info->type != TYPIO_ENGINE_TYPE_VOICE) {
-            return idx;
-        }
-    }
-    return (size_t)-1;
-}
-
 TypioResult typio_engine_manager_next(TypioEngineManager *manager) {
     if (!manager || manager->entry_count == 0) {
         return TYPIO_ERROR_ENGINE_NOT_AVAILABLE;
     }
 
     size_t next_index;
+    size_t ordered_count = 0;
+    const char **ordered = typio_engine_manager_list_ordered_keyboards(manager, &ordered_count);
     if (manager->active_keyboard_index == (size_t)-1) {
-        next_index = find_next_keyboard(manager, 0);
+        next_index = ordered_count > 0 ? 0 : (size_t)-1;
     } else {
         uint64_t now_ms = engine_manager_monotonic_ms();
         uint64_t elapsed = now_ms - manager->last_switch_ms;
 
-        if (elapsed > TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
+        if (!engine_manager_has_explicit_order(manager) &&
+            elapsed > TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
             engine_manager_note_stable_current(manager, now_ms);
             next_index = engine_manager_recent_partner_index(manager);
         } else {
@@ -887,8 +965,19 @@ TypioResult typio_engine_manager_next(TypioEngineManager *manager) {
         }
 
         if (next_index == (size_t)-1) {
-            size_t start = (manager->active_keyboard_index + 1) % manager->entry_count;
-            next_index = find_next_keyboard(manager, start);
+            const char *active_name = manager->entries[manager->active_keyboard_index]->name;
+            size_t current_ordered = (size_t)-1;
+            for (size_t i = 0; i < ordered_count; ++i) {
+                if (strcmp(ordered[i], active_name) == 0) {
+                    current_ordered = i;
+                    break;
+                }
+            }
+            if (current_ordered == (size_t)-1) {
+                next_index = ordered_count > 0 ? 0 : (size_t)-1;
+            } else {
+                next_index = (current_ordered + 1) % ordered_count;
+            }
         }
     }
 
@@ -896,8 +985,7 @@ TypioResult typio_engine_manager_next(TypioEngineManager *manager) {
         return TYPIO_ERROR_ENGINE_NOT_AVAILABLE;
     }
 
-    return typio_engine_manager_set_active(manager,
-                                            manager->entries[next_index]->name);
+    return typio_engine_manager_set_active(manager, ordered[next_index]);
 }
 
 TypioResult typio_engine_manager_prev(TypioEngineManager *manager) {
@@ -906,13 +994,16 @@ TypioResult typio_engine_manager_prev(TypioEngineManager *manager) {
     }
 
     size_t prev_index;
+    size_t ordered_count = 0;
+    const char **ordered = typio_engine_manager_list_ordered_keyboards(manager, &ordered_count);
     if (manager->active_keyboard_index == (size_t)-1) {
-        prev_index = find_prev_keyboard(manager, manager->entry_count - 1);
+        prev_index = ordered_count > 0 ? ordered_count - 1 : (size_t)-1;
     } else {
         uint64_t now_ms = engine_manager_monotonic_ms();
         uint64_t elapsed = now_ms - manager->last_switch_ms;
 
-        if (elapsed > TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
+        if (!engine_manager_has_explicit_order(manager) &&
+            elapsed > TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
             engine_manager_note_stable_current(manager, now_ms);
             prev_index = engine_manager_recent_partner_index(manager);
         } else {
@@ -920,13 +1011,21 @@ TypioResult typio_engine_manager_prev(TypioEngineManager *manager) {
         }
 
         if (prev_index == (size_t)-1) {
-            size_t start;
-            if (manager->active_keyboard_index == 0) {
-                start = manager->entry_count - 1;
-            } else {
-                start = manager->active_keyboard_index - 1;
+            const char *active_name = manager->entries[manager->active_keyboard_index]->name;
+            size_t current_ordered = (size_t)-1;
+            for (size_t i = 0; i < ordered_count; ++i) {
+                if (strcmp(ordered[i], active_name) == 0) {
+                    current_ordered = i;
+                    break;
+                }
             }
-            prev_index = find_prev_keyboard(manager, start);
+            if (current_ordered == (size_t)-1) {
+                prev_index = ordered_count > 0 ? ordered_count - 1 : (size_t)-1;
+            } else if (current_ordered == 0) {
+                prev_index = ordered_count - 1;
+            } else {
+                prev_index = current_ordered - 1;
+            }
         }
     }
 
@@ -934,6 +1033,5 @@ TypioResult typio_engine_manager_prev(TypioEngineManager *manager) {
         return TYPIO_ERROR_ENGINE_NOT_AVAILABLE;
     }
 
-    return typio_engine_manager_set_active(manager,
-                                            manager->entries[prev_index]->name);
+    return typio_engine_manager_set_active(manager, ordered[prev_index]);
 }

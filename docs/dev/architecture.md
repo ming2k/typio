@@ -162,3 +162,6 @@ Still limited in this repository:
 - `TypioInputContext` owns its preedit, candidates, and property storage.
 - `TypioWlFrontend` owns the Wayland connection, popup surface, current session, and keyboard grab.
 - Engine implementations own their own `user_data`.
+
+For persisted config vs runtime-state ownership across daemon and control
+surfaces, see [State Management](state-management.md).

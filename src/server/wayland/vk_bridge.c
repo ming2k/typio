@@ -6,22 +6,13 @@
 
 #include "vk_bridge.h"
 #include "key_debug.h"
+#include "monotonic_time.h"
 #include "wl_frontend_internal.h"
 #include "wl_trace.h"
 #include "utils/log.h"
 
-#include <time.h>
 #include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
-
-static uint64_t vk_bridge_monotonic_ms(void) {
-    struct timespec ts;
-
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
-        return 0;
-
-    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000L);
-}
 
 void typio_wl_vk_forward_key(struct TypioWlKeyboard *keyboard,
                              uint32_t time,
@@ -109,7 +100,7 @@ void typio_wl_vk_release_forwarded_keys(TypioWlFrontend *frontend,
         !frontend->virtual_keyboard_has_keymap)
         return;
 
-    time = (uint32_t)vk_bridge_monotonic_ms();
+    time = (uint32_t)typio_wl_monotonic_ms();
     use_generic_name = key_state_name == nullptr;
 
     for (size_t key = 0; key < TYPIO_WL_MAX_TRACKED_KEYS; key++) {

@@ -22,13 +22,6 @@ static void on_candidate_callback(TypioInputContext *ctx,
                                   const TypioCandidateList *candidates,
                                   void *user_data);
 static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *ctx);
-static bool session_is_focused(TypioWlFrontend *frontend);
-static void set_pending_reactivation(TypioWlFrontend *frontend, bool pending);
-static TypioEngine *active_engine(TypioWlFrontend *frontend);
-static void trace_session_state(TypioWlFrontend *frontend, const char *event);
-static bool rebuild_keyboard_grab(TypioWlFrontend *frontend,
-                                  const char *reset_reason,
-                                  const char *failure_reason);
 
 /* Input method event handlers */
 static void im_handle_activate(void *data, struct zwp_input_method_v2 *im);

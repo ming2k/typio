@@ -16,11 +16,34 @@ static char *control_dup_buffer_text(TypioControl *control) {
     return gtk_text_buffer_get_text(control->config_buffer, &start, &end, FALSE);
 }
 
-static char *control_dup_preferred_voice_backend(TypioControl *control,
-                                                 const char *fallback_text) {
-    char *content = NULL;
+static char *control_dup_config_string_from_text(const char *content,
+                                                 const char *config_key) {
     TypioConfig *config = NULL;
-    const char *backend = NULL;
+    const char *value = NULL;
+    char *result = NULL;
+
+    if (!content || !config_key) {
+        return NULL;
+    }
+
+    config = typio_config_load_string(content);
+    if (!config) {
+        return NULL;
+    }
+
+    value = typio_config_get_string(config, config_key, NULL);
+    if (value && *value) {
+        result = g_strdup(value);
+    }
+
+    typio_config_free(config);
+    return result;
+}
+
+static char *control_dup_staged_config_string(TypioControl *control,
+                                              const char *config_key,
+                                              const char *fallback_text) {
+    char *content = NULL;
     char *result = NULL;
 
     if (control && control->config_buffer) {
@@ -33,20 +56,117 @@ static char *control_dup_preferred_voice_backend(TypioControl *control,
         return NULL;
     }
 
-    config = typio_config_load_string(content);
+    result = control_dup_config_string_from_text(content, config_key);
     g_free(content);
-    if (!config) {
+    return result;
+}
+
+static GVariant *control_get_runtime_property_for_config_key(TypioControl *control,
+                                                             const char *config_key) {
+    const char *property_name;
+
+    if (!control || !control->proxy || !config_key) {
         return NULL;
     }
 
-    backend = typio_config_get_string(config, "default_voice_engine", NULL);
-    if (backend && *backend) {
-        result = g_strdup(backend);
+    property_name = typio_config_schema_runtime_property(config_key);
+    if (!property_name) {
+        return NULL;
     }
 
-    typio_config_free(config);
+    return g_dbus_proxy_get_cached_property(control->proxy, property_name);
+}
+
+static guint control_find_model_index(GtkStringList *model, const char *value) {
+    guint count;
+
+    if (!model || !value) {
+        return GTK_INVALID_LIST_POSITION;
+    }
+
+    count = (guint)g_list_model_get_n_items(G_LIST_MODEL(model));
+    for (guint i = 0; i < count; ++i) {
+        const char *item = gtk_string_list_get_string(model, i);
+        if (item && g_strcmp0(item, value) == 0) {
+            return i;
+        }
+    }
+
+    return GTK_INVALID_LIST_POSITION;
+}
+
+static char *control_dup_runtime_string_for_config_key(TypioControl *control,
+                                                       const char *config_key) {
+    GVariant *value;
+    const char *text;
+    char *result = NULL;
+
+    value = control_get_runtime_property_for_config_key(control, config_key);
+    if (!value || !g_variant_is_of_type(value, G_VARIANT_TYPE_STRING)) {
+        if (value) {
+            g_variant_unref(value);
+        }
+        return NULL;
+    }
+
+    text = g_variant_get_string(value, NULL);
+    if (text && *text) {
+        result = g_strdup(text);
+    }
+    g_variant_unref(value);
     return result;
 }
+
+static char *control_dup_state_binding_value(TypioControl *control,
+                                             const ControlStateBinding *binding,
+                                             const char *fallback_text) {
+    if (!binding || !binding->config_key) {
+        return NULL;
+    }
+
+    switch (binding->source) {
+    case CONTROL_STATE_VALUE_FROM_CONFIG:
+        return control_dup_staged_config_string(control, binding->config_key, fallback_text);
+    case CONTROL_STATE_VALUE_FROM_RUNTIME:
+        return control_dup_runtime_string_for_config_key(control, binding->config_key);
+    case CONTROL_STATE_VALUE_RUNTIME_THEN_CONFIG:
+        {
+            char *result = control_dup_runtime_string_for_config_key(control, binding->config_key);
+            if (result) {
+                return result;
+            }
+            return control_dup_staged_config_string(control, binding->config_key, fallback_text);
+        }
+    }
+
+    return NULL;
+}
+
+static void control_apply_state_binding_value(TypioControl *control,
+                                              const ControlStateBinding *binding,
+                                              const char *fallback_text) {
+    char *value;
+    gboolean was_updating_ui;
+
+    if (!control || !binding) {
+        return;
+    }
+
+    was_updating_ui = control->updating_ui;
+    control->updating_ui = TRUE;
+    value = control_dup_state_binding_value(control, binding, fallback_text);
+    control_state_binding_select_value(binding, value);
+    control->updating_ui = was_updating_ui;
+    g_free(value);
+}
+
+#ifdef TYPIO_CONTROL_TEST
+void control_test_apply_state_binding_value(TypioControl *control,
+                                            const ControlStateBinding *binding,
+                                            const char *fallback_text) {
+    control_apply_state_binding_value(control, binding, fallback_text);
+}
+#endif
 
 static gboolean control_is_ui_syncing(TypioControl *control) {
     return control && control->updating_ui;
@@ -204,7 +324,9 @@ static void control_set_config_text(TypioControl *control, GVariant *config_text
                 g_strcmp0(control->committed_config_text, text) == 0,
             should_replace_stage);
     g_free(staged_text);
-    preferred_voice_backend = control_dup_preferred_voice_backend(control, text);
+    preferred_voice_backend = control_dup_staged_config_string(control,
+                                                               control->voice_backend_state.config_key,
+                                                               text);
     g_debug("control_set_config_text: incoming default_voice_engine=%s",
             preferred_voice_backend ? preferred_voice_backend : "(unset)");
     g_free(preferred_voice_backend);
@@ -216,46 +338,6 @@ static void control_set_config_text(TypioControl *control, GVariant *config_text
         control_replace_staged_config_text(control, text);
         return;
     }
-}
-
-static guint control_find_model_index(GtkStringList *model, const char *value) {
-    guint count;
-
-    if (!model || !value) {
-        return GTK_INVALID_LIST_POSITION;
-    }
-
-    count = (guint)g_list_model_get_n_items(G_LIST_MODEL(model));
-    for (guint i = 0; i < count; ++i) {
-        const char *item = gtk_string_list_get_string(model, i);
-        if (item && g_strcmp0(item, value) == 0) {
-            return i;
-        }
-    }
-
-    return GTK_INVALID_LIST_POSITION;
-}
-
-static void control_log_available_voice_backends(GVariant *engines) {
-    GVariantIter iter;
-    const char *name;
-    guint count = 0;
-
-    if (!engines || !g_variant_is_of_type(engines, G_VARIANT_TYPE("as"))) {
-        g_debug("control_log_available_voice_backends: no AvailableEngines property");
-        return;
-    }
-
-    g_variant_iter_init(&iter, engines);
-    while (g_variant_iter_next(&iter, "&s", &name)) {
-        if (!is_voice_backend_name(name)) {
-            continue;
-        }
-        g_debug("control_log_available_voice_backends: backend[%u]=%s", count, name);
-        count++;
-    }
-
-    g_debug("control_log_available_voice_backends: count=%u", count);
 }
 
 static void control_append_rime_schema(TypioControl *control, const char *schema_id) {
@@ -287,9 +369,10 @@ static void control_clear_rime_schema_model(TypioControl *control) {
     gtk_string_list_splice(control->rime_schema_model, 0, count, NULL);
 }
 
-static void control_refresh_rime_schema_model(TypioControl *control,
-                                              TypioConfig *parsed_config,
-                                              const char *configured_schema) {
+void control_refresh_rime_schema_options(gpointer user_data,
+                                         const TypioConfig *parsed_config,
+                                         const char *configured_schema) {
+    TypioControl *control = user_data;
     gboolean was_updating_ui;
     TypioConfig *rime_config = NULL;
     TypioRimeSchemaList list;
@@ -345,25 +428,6 @@ static void control_refresh_rime_schema_model(TypioControl *control,
     g_free(data_dir_buf);
 }
 
-static void control_select_rime_schema_from_config(TypioControl *control, TypioConfig *config) {
-    const char *schema;
-    guint idx = GTK_INVALID_LIST_POSITION;
-
-    if (!control || !control->rime_schema_dropdown) {
-        return;
-    }
-
-    schema = config ? typio_config_get_string(config, "engines.rime.schema", NULL) : NULL;
-    if (schema && *schema) {
-        idx = control_find_model_index(control->rime_schema_model, schema);
-    }
-    if (idx == GTK_INVALID_LIST_POSITION &&
-        g_list_model_get_n_items(G_LIST_MODEL(control->rime_schema_model)) > 0) {
-        idx = 0;
-    }
-    gtk_drop_down_set_selected(control->rime_schema_dropdown, idx);
-}
-
 static void control_select_voice_model_from_config(TypioControl *control,
                                                    TypioConfig *config) {
     guint backend_idx;
@@ -385,7 +449,6 @@ static void control_select_voice_model_from_config(TypioControl *control,
     g_snprintf(engine_model_key, sizeof(engine_model_key),
                "engines.%s.model", backend_name);
     voice_model = typio_config_get_string(config, engine_model_key, "");
-
     idx = control_find_model_index(control->voice_model_list, voice_model);
     gtk_drop_down_set_selected(control->voice_model_dropdown, idx);
 }
@@ -447,20 +510,15 @@ void control_sync_form_from_buffer(TypioControl *control) {
 
     control_begin_ui_sync(control);
     control_bindings_load_all(control->bindings, control->binding_count, config);
-    control_select_rime_schema_from_config(control, config);
+    control_state_binding_load_from_config(&control->rime_schema_state, config);
     if (control->voice_backend_dropdown) {
         const char *voice_backend = typio_config_get_string(config,
-                                                            "default_voice_engine",
+                                                            control->voice_backend_state.config_key,
                                                             nullptr);
-        guint idx = control_voice_backend_index(control, voice_backend);
-        if (idx == GTK_INVALID_LIST_POSITION &&
-            g_list_model_get_n_items(G_LIST_MODEL(control->voice_backend_model)) > 0) {
-            idx = 0;
-        }
         g_debug("control_sync_form_from_buffer: default_voice_engine=%s voice_backend_index=%u",
                 voice_backend ? voice_backend : "(unset)",
-                idx);
-        gtk_drop_down_set_selected(control->voice_backend_dropdown, idx);
+                control_voice_backend_index(control, voice_backend));
+        control_state_binding_load_from_config(&control->voice_backend_state, config);
     }
     voice_update_model_sections(control);
     control_refresh_voice_models_from_stage(control);
@@ -490,6 +548,7 @@ void control_sync_buffer_from_form(TypioControl *control) {
     TypioConfig *config;
     guint selected;
     const char *voice_backend;
+    gboolean has_voice_backend_selection;
 
     if (!control || !control->config_buffer || control_is_ui_syncing(control)) {
         return;
@@ -510,35 +569,32 @@ void control_sync_buffer_from_form(TypioControl *control) {
     control_bindings_save_all(control->bindings, control->binding_count, config);
 
     if (control->rime_schema_dropdown && control->rime_schema_model) {
-        selected = gtk_drop_down_get_selected(control->rime_schema_dropdown);
-        if (selected != GTK_INVALID_LIST_POSITION) {
-            const char *schema = gtk_string_list_get_string(control->rime_schema_model, selected);
-            if (schema && *schema) {
-                g_debug("control_sync_buffer_from_form: selected_rime_schema=%s", schema);
-                typio_config_set_string(config, "engines.rime.schema", schema);
-            }
+        const char *schema = control_state_binding_get_selected_value(&control->rime_schema_state);
+        if (schema && *schema) {
+            g_debug("control_sync_buffer_from_form: selected_rime_schema=%s", schema);
+            control_state_binding_save_to_config(&control->rime_schema_state, config);
         }
     }
 
     selected = gtk_drop_down_get_selected(control->voice_backend_dropdown);
     voice_backend = control_voice_backend_id(control, selected);
-    if (!voice_backend) {
-        voice_backend = "whisper";
-    }
+    has_voice_backend_selection = voice_backend && *voice_backend;
     g_debug("control_sync_buffer_from_form: voice_backend=%s (dropdown=%u)",
-            voice_backend, selected);
-    typio_config_remove(config, "voice.backend");
-    typio_config_remove(config, "voice.model");
-    typio_config_set_string(config, "default_voice_engine", voice_backend);
+            voice_backend ? voice_backend : "(unset)", selected);
+    if (has_voice_backend_selection) {
+        typio_config_remove(config, "voice.backend");
+        typio_config_remove(config, "voice.model");
+        control_state_binding_save_to_config(&control->voice_backend_state, config);
 
-    selected = gtk_drop_down_get_selected(control->voice_model_dropdown);
-    if (selected != GTK_INVALID_LIST_POSITION) {
-        const char *voice_model = gtk_string_list_get_string(control->voice_model_list, selected);
-        if (voice_model && *voice_model) {
-            char engine_model_key[256];
-            g_snprintf(engine_model_key, sizeof(engine_model_key),
-                       "engines.%s.model", voice_backend);
-            typio_config_set_string(config, engine_model_key, voice_model);
+        selected = gtk_drop_down_get_selected(control->voice_model_dropdown);
+        if (selected != GTK_INVALID_LIST_POSITION) {
+            const char *voice_model = gtk_string_list_get_string(control->voice_model_list, selected);
+            if (voice_model && *voice_model) {
+                char engine_model_key[256];
+                g_snprintf(engine_model_key, sizeof(engine_model_key),
+                           "engines.%s.model", voice_backend);
+                typio_config_set_string(config, engine_model_key, voice_model);
+            }
         }
     }
 
@@ -568,8 +624,7 @@ void control_sync_buffer_from_form(TypioControl *control) {
 }
 
 static void control_set_engine_model(TypioControl *control,
-                                     GVariant *engines,
-                                     const char *active_engine) {
+                                     GVariant *engines) {
     guint count = 0;
 
     if (!control || !control->engine_model) {
@@ -583,8 +638,6 @@ static void control_set_engine_model(TypioControl *control,
     if (engines && g_variant_is_of_type(engines, G_VARIANT_TYPE("as"))) {
         GVariantIter iter;
         const char *name;
-        guint index = 0;
-        guint selected = GTK_INVALID_LIST_POSITION;
 
         g_variant_iter_init(&iter, engines);
         while (g_variant_iter_next(&iter, "&s", &name)) {
@@ -592,13 +645,7 @@ static void control_set_engine_model(TypioControl *control,
                 continue;
             }
             gtk_string_list_append(control->engine_model, name);
-            if (active_engine && g_strcmp0(name, active_engine) == 0) {
-                selected = index;
-            }
-            index++;
         }
-
-        gtk_drop_down_set_selected(control->engine_dropdown, selected);
     } else {
         gtk_drop_down_set_selected(control->engine_dropdown, GTK_INVALID_LIST_POSITION);
     }
@@ -607,10 +654,8 @@ static void control_set_engine_model(TypioControl *control,
 }
 
 static void control_set_voice_backend_model(TypioControl *control,
-                                            GVariant *engines,
-                                            const char *preferred_backend) {
+                                            GVariant *engines) {
     guint count;
-    guint selected = GTK_INVALID_LIST_POSITION;
 
     if (!control || !control->voice_backend_model || !control->voice_backend_dropdown) {
         return;
@@ -632,29 +677,17 @@ static void control_set_voice_backend_model(TypioControl *control,
             }
         }
     }
-
-    if (preferred_backend) {
-        selected = control_voice_backend_index(control, preferred_backend);
-    }
-    if (selected == GTK_INVALID_LIST_POSITION &&
-        g_list_model_get_n_items(G_LIST_MODEL(control->voice_backend_model)) > 0) {
-        selected = 0;
-    }
-    g_debug("control_set_voice_backend_model: preferred=%s selected=%u n_items=%u",
-            preferred_backend ? preferred_backend : "(null)", selected,
+    g_debug("control_set_voice_backend_model: n_items=%u",
             (guint)g_list_model_get_n_items(G_LIST_MODEL(control->voice_backend_model)));
-    gtk_drop_down_set_selected(control->voice_backend_dropdown, selected);
     control_end_ui_sync(control);
 }
 
 void control_refresh_from_proxy(TypioControl *control) {
     GVariant *active_engine;
     GVariant *available_engines;
-    GVariant *engine_state;
     GVariant *config_text;
     const char *active_name = "";
     const char *config_text_str = NULL;
-    char *preferred_voice_backend = NULL;
     TypioConfig *parsed_config = NULL;
     const char *configured_schema = NULL;
 
@@ -666,10 +699,10 @@ void control_refresh_from_proxy(TypioControl *control) {
         g_warning("control_refresh_from_proxy: Typio service unavailable");
         control_update_availability_label(control, "Typio service unavailable", TRUE);
         control_clear_rime_schema_model(control);
-        control_set_engine_model(control, nullptr, nullptr);
-        preferred_voice_backend = control_dup_preferred_voice_backend(control, NULL);
-        control_set_voice_backend_model(control, nullptr, preferred_voice_backend);
-        g_free(preferred_voice_backend);
+        control_set_engine_model(control, nullptr);
+        control_set_voice_backend_model(control, nullptr);
+        control_apply_state_binding_value(control, &control->keyboard_engine_state, NULL);
+        control_apply_state_binding_value(control, &control->voice_backend_state, NULL);
         gtk_widget_set_sensitive(GTK_WIDGET(control->engine_dropdown), FALSE);
         gtk_widget_set_sensitive(GTK_WIDGET(control->voice_backend_dropdown), FALSE);
         return;
@@ -679,54 +712,49 @@ void control_refresh_from_proxy(TypioControl *control) {
     gtk_widget_set_sensitive(GTK_WIDGET(control->engine_dropdown), TRUE);
     gtk_widget_set_sensitive(GTK_WIDGET(control->voice_backend_dropdown), TRUE);
 
-    active_engine = g_dbus_proxy_get_cached_property(control->proxy, "ActiveEngine");
-    available_engines = g_dbus_proxy_get_cached_property(control->proxy, "AvailableEngines");
-    engine_state = g_dbus_proxy_get_cached_property(control->proxy, "ActiveEngineState");
-    config_text = g_dbus_proxy_get_cached_property(control->proxy, "ConfigText");
+    active_engine = control_get_runtime_property_for_config_key(control,
+                                                               control->keyboard_engine_state.config_key);
+    available_engines = g_dbus_proxy_get_cached_property(control->proxy, TYPIO_STATUS_PROP_ORDERED_ENGINES);
+    config_text = g_dbus_proxy_get_cached_property(control->proxy, TYPIO_STATUS_PROP_CONFIG_TEXT);
 
     if (active_engine) {
-        active_name = g_variant_get_string(active_engine, nullptr);
+        active_name = g_variant_get_string(active_engine, NULL);
     }
 
     if (config_text && g_variant_is_of_type(config_text, G_VARIANT_TYPE_STRING)) {
         config_text_str = g_variant_get_string(config_text, NULL);
         parsed_config = typio_config_load_string(config_text_str);
         configured_schema = parsed_config
-            ? typio_config_get_string(parsed_config, "engines.rime.schema", NULL)
+            ? typio_config_get_string(parsed_config, control->rime_schema_state.config_key, NULL)
             : NULL;
     }
 
     g_debug("control_refresh_from_proxy: entering");
     if (parsed_config) {
         const char *configured_voice =
-            typio_config_get_string(parsed_config, "default_voice_engine", NULL);
+            typio_config_get_string(parsed_config, control->voice_backend_state.config_key, NULL);
         g_debug("control_refresh_from_proxy: config default_voice_engine=%s configured_schema=%s",
                 configured_voice ? configured_voice : "(unset)",
                 configured_schema ? configured_schema : "(unset)");
     }
-    control_log_available_voice_backends(available_engines);
-    control_set_engine_model(control, available_engines, active_name);
-    control_refresh_rime_schema_model(control, parsed_config, configured_schema);
-    preferred_voice_backend = control_dup_preferred_voice_backend(
+    control_set_engine_model(control, available_engines);
+    control_state_binding_refresh_options(&control->rime_schema_state,
+                                          parsed_config,
+                                          configured_schema);
+    control_set_voice_backend_model(control, available_engines);
+    control_apply_state_binding_value(control, &control->keyboard_engine_state, NULL);
+    control_apply_state_binding_value(
         control,
+        &control->voice_backend_state,
         config_text && g_variant_is_of_type(config_text, G_VARIANT_TYPE_STRING)
             ? g_variant_get_string(config_text, NULL)
             : NULL);
-    g_debug("control_refresh_from_proxy: preferred_voice_backend=%s",
-            preferred_voice_backend ? preferred_voice_backend : "(null)");
-    g_debug("control_refresh_from_proxy: active_engine=%s has_config=%d has_state=%d has_engines=%d",
-            active_name && *active_name ? active_name : "(null)",
+    g_debug("control_refresh_from_proxy: active_engine has_config=%d has_engines=%d",
             config_text != NULL,
-            engine_state != NULL,
             available_engines != NULL);
-    control_set_voice_backend_model(control, available_engines, preferred_voice_backend);
-    g_free(preferred_voice_backend);
     control_update_engine_config_panel(control, active_name);
     control_set_config_text(control, config_text);
 
-    if (engine_state) {
-        g_variant_unref(engine_state);
-    }
     if (config_text) {
         g_variant_unref(config_text);
     }
@@ -750,7 +778,7 @@ static void control_activate_engine(TypioControl *control, const char *engine_na
     }
 
     reply = g_dbus_proxy_call_sync(control->proxy,
-                                   "ActivateEngine",
+                                   TYPIO_STATUS_METHOD_ACTIVATE_ENGINE,
                                    g_variant_new("(s)", engine_name),
                                    G_DBUS_CALL_FLAGS_NONE,
                                    -1,
@@ -839,7 +867,7 @@ static gboolean control_autosave_timeout_cb(gpointer user_data) {
 
     control->submitting_config = TRUE;
     g_dbus_proxy_call(control->proxy,
-                      "SetConfigText",
+                      TYPIO_STATUS_METHOD_SET_CONFIG_TEXT,
                       g_variant_new("(s)", content),
                       G_DBUS_CALL_FLAGS_NONE,
                       -1,
@@ -935,6 +963,15 @@ void on_display_switch_changed(GObject *object,
 
     if (!control_is_ui_syncing(control) && GTK_IS_SWITCH(object)) {
         control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
+    }
+}
+
+void on_display_entry_changed([[maybe_unused]] GtkEditable *editable,
+                              gpointer user_data) {
+    TypioControl *control = user_data;
+
+    if (!control_is_ui_syncing(control)) {
+        control_stage_form_change(control, CONTROL_AUTOSAVE_NORMAL);
     }
 }
 

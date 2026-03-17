@@ -5,6 +5,7 @@
 
 #include "typio/typio.h"
 #include "typio/config_schema.h"
+#include "typio/dbus_protocol.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,6 +48,7 @@ TEST(schema_find_existing) {
     ASSERT_EQ(f->def.i, 11);
     ASSERT_NOT_NULL(f->ui_label);
     ASSERT_STR_EQ(f->ui_label, "Font size");
+    ASSERT_NULL(f->runtime_property);
 }
 
 TEST(schema_find_missing) {
@@ -57,6 +59,15 @@ TEST(schema_find_missing) {
 TEST(schema_find_null) {
     const TypioConfigField *f = typio_config_schema_find(NULL);
     ASSERT_NULL(f);
+}
+
+TEST(runtime_property_lookup) {
+    ASSERT_STR_EQ(typio_config_schema_runtime_property("default_engine"),
+                  TYPIO_STATUS_PROP_ACTIVE_ENGINE);
+    ASSERT_STR_EQ(typio_config_schema_runtime_property("default_voice_engine"),
+                  TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE);
+    ASSERT_NULL(typio_config_schema_runtime_property("engines.rime.font_size"));
+    ASSERT_NULL(typio_config_schema_runtime_property(NULL));
 }
 
 /* Test: defaults application */
@@ -224,6 +235,16 @@ TEST(mozc_page_size_default) {
     ASSERT_EQ(mozc->def.i, 9);
 }
 
+TEST(stateful_engine_keys_expose_runtime_property) {
+    const TypioConfigField *keyboard = typio_config_schema_find("default_engine");
+    const TypioConfigField *voice = typio_config_schema_find("default_voice_engine");
+
+    ASSERT_NOT_NULL(keyboard);
+    ASSERT_NOT_NULL(voice);
+    ASSERT_STR_EQ(keyboard->runtime_property, TYPIO_STATUS_PROP_ACTIVE_ENGINE);
+    ASSERT_STR_EQ(voice->runtime_property, TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE);
+}
+
 /* Test: schema field enumeration */
 TEST(schema_fields_enumeration) {
     size_t count = 0;
@@ -278,6 +299,7 @@ int main(void) {
     run_test_schema_find_existing();
     run_test_schema_find_missing();
     run_test_schema_find_null();
+    run_test_runtime_property_lookup();
     run_test_apply_defaults_empty_config();
     run_test_apply_defaults_preserves_existing();
     run_test_migrate_legacy_voice_backend();
@@ -288,6 +310,7 @@ int main(void) {
     run_test_migrate_shared_voice_model_routes_to_whisper();
     run_test_migrate_shared_voice_model_no_backend_defaults_whisper();
     run_test_mozc_page_size_default();
+    run_test_stateful_engine_keys_expose_runtime_property();
     run_test_schema_fields_enumeration();
     run_test_full_lifecycle();
 

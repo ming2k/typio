@@ -10,6 +10,9 @@ It replaces the older split between UI-only notes and control-center config
 flow notes. The goal is to keep information architecture, state ownership, and
 editing rules in one place.
 
+The broader ownership model for persisted config, runtime state, and staged
+edits is defined in [State Management](state-management.md).
+
 ## Scope
 
 Control surfaces have two jobs:
@@ -37,9 +40,13 @@ Rules:
 
 - Runtime state must come from the daemon, not from client-side filesystem
   guesses.
+- If a runtime selection is unknown, the UI must keep the widget unselected
+  instead of guessing a fallback entry.
 - Persistent edits must start from the daemon's current `ConfigText`.
 - Widget state is never authoritative by itself.
 - Programmatic refresh must not overwrite newer local staged edits.
+- Selector widgets should prefer the shared `ControlStateBinding` model over
+  bespoke sync logic.
 
 ## Editing Model
 
@@ -119,6 +126,8 @@ Both the tray menu and control center use `typio_rime_schema_list_load()`
 from the core library (`typio/rime_schema_list.h`).  This ensures schema
 lists are always consistent regardless of which surface the user is
 looking at.  Neither surface should implement its own schema file parsing.
+In `typio-control`, schema option refresh should flow through the selector
+binding layer instead of direct one-off widget code.
 
 ## Tray Menu Rules
 

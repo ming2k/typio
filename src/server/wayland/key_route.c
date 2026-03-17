@@ -8,74 +8,25 @@
 
 #include "boundary_bridge.h"
 #include "key_debug.h"
+#include "key_tracking_access.h"
+#include "monotonic_time.h"
 #include "shortcut_chord.h"
 #include "startup_guard.h"
 #include "vk_bridge.h"
-#include "wl_frontend_internal.h"
 #include "wl_trace.h"
+#include "xkb_modifiers.h"
 #include "typio/typio.h"
 #include "typio/engine_manager.h"
 #include "utils/log.h"
 
-#include <time.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 #ifdef HAVE_VOICE
 #include "shortcut_config.h"
 #endif
 
-static uint64_t key_route_monotonic_ms(void) {
-    struct timespec ts;
-
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
-        return 0;
-
-    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000L);
-}
-
-static uint32_t key_route_xkb_modifiers(TypioWlKeyboard *keyboard) {
-    struct xkb_state *state = keyboard->xkb_state;
-    uint32_t mods = TYPIO_MOD_NONE;
-
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_shift, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_SHIFT;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_ctrl, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_CTRL;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_alt, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_ALT;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_super, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_SUPER;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_caps, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_CAPSLOCK;
-    if (xkb_state_mod_index_is_active(state, keyboard->mod_num, XKB_STATE_MODS_EFFECTIVE))
-        mods |= TYPIO_MOD_NUMLOCK;
-
-    return mods;
-}
-
 static bool key_route_is_shift_keysym(uint32_t keysym) {
     return keysym == XKB_KEY_Shift_L || keysym == XKB_KEY_Shift_R;
-}
-
-static const char *key_route_state_name(TypioKeyTrackState state) {
-    switch (state) {
-    case TYPIO_KEY_IDLE:
-        return "idle";
-    case TYPIO_KEY_FORWARDED:
-        return "forwarded";
-    case TYPIO_KEY_APP_SHORTCUT:
-        return "app_shortcut";
-    case TYPIO_KEY_RELEASED_PENDING:
-        return "released_pending";
-    case TYPIO_KEY_SUPPRESSED_STARTUP:
-        return "suppressed_startup";
-    case TYPIO_KEY_VOICE_PTT:
-        return "voice_ptt";
-    case TYPIO_KEY_VOICE_PTT_UNAVAIL:
-        return "voice_ptt_unavail";
-    default:
-        return "unknown";
-    }
 }
 
 static void key_route_trace(TypioWlKeyboard *keyboard,
@@ -94,7 +45,7 @@ static void key_route_trace(TypioWlKeyboard *keyboard,
         return;
 
     if (keyboard->xkb_state)
-        xkb_mods = key_route_xkb_modifiers(keyboard);
+        xkb_mods = typio_wl_xkb_effective_modifiers(keyboard);
     typio_wl_key_debug_format_keysym(keysym, keysym_desc, sizeof(keysym_desc));
     typio_wl_key_debug_format(unicode, unicode_desc, sizeof(unicode_desc));
 
@@ -105,7 +56,7 @@ static void key_route_trace(TypioWlKeyboard *keyboard,
                    key,
                    keysym,
                    keysym_desc,
-                   key_route_state_name(state),
+                   typio_wl_key_tracking_state_name(state),
                    modifiers,
                    keyboard->physical_modifiers,
                    xkb_mods,
@@ -113,41 +64,6 @@ static void key_route_trace(TypioWlKeyboard *keyboard,
                    keyboard->frontend->active_key_generation,
                    unicode_desc,
                    detail ? detail : "-");
-}
-
-static inline TypioKeyTrackState key_get_state(TypioWlFrontend *fe, uint32_t key) {
-    return (key < TYPIO_WL_MAX_TRACKED_KEYS) ? fe->key_states[key] : TYPIO_KEY_IDLE;
-}
-
-static inline void key_set_state(TypioWlFrontend *fe, uint32_t key,
-                                 TypioKeyTrackState st) {
-    if (key < TYPIO_WL_MAX_TRACKED_KEYS)
-        fe->key_states[key] = st;
-}
-
-static inline uint32_t key_get_generation(TypioWlFrontend *fe, uint32_t key) {
-    return (key < TYPIO_WL_MAX_TRACKED_KEYS) ? fe->key_generations[key] : 0;
-}
-
-static inline void key_set_generation(TypioWlFrontend *fe, uint32_t key,
-                                      uint32_t generation) {
-    if (key < TYPIO_WL_MAX_TRACKED_KEYS)
-        fe->key_generations[key] = generation;
-}
-
-static inline void key_claim_current_generation(TypioWlFrontend *fe, uint32_t key) {
-    key_set_generation(fe, key, fe->active_key_generation);
-    fe->active_generation_owned_keys = true;
-}
-
-static inline void key_clear_tracking(TypioWlFrontend *fe, uint32_t key) {
-    key_set_state(fe, key, TYPIO_KEY_IDLE);
-    key_set_generation(fe, key, 0);
-}
-
-static inline bool key_owned_by_active_generation(TypioWlFrontend *fe, uint32_t key) {
-    return fe && fe->active_key_generation != 0 &&
-           key_get_generation(fe, key) == fe->active_key_generation;
 }
 
 static bool key_route_is_app_shortcut(uint32_t keysym, uint32_t modifiers) {
@@ -178,13 +94,8 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
                                       uint32_t time) {
     TypioWlFrontend *frontend = keyboard->frontend;
     TypioKeyTrackState kstate = key_get_state(frontend, key);
-    uint64_t now_ms = key_route_monotonic_ms();
+    uint64_t now_ms = typio_wl_monotonic_ms();
     TypioWlStartupSuppressReason suppress_reason;
-    const TypioPreedit *preedit = typio_input_context_get_preedit(session->ctx);
-    const TypioCandidateList *candidates =
-        typio_input_context_get_candidates(session->ctx);
-    bool has_composition = (preedit && preedit->segment_count > 0) ||
-                           (candidates && candidates->count > 0);
 
     if (kstate == TYPIO_KEY_RELEASED_PENDING) {
         key_route_trace(keyboard, "press-ignore", key, keysym, modifiers, unicode,
@@ -320,7 +231,7 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
                       active_engine ? typio_engine_get_name(active_engine) : "(none)",
                       modifiers,
                       keyboard->physical_modifiers,
-                      key_route_xkb_modifiers(keyboard));
+                      typio_wl_xkb_effective_modifiers(keyboard));
         }
 
         if (!handled || is_modifier) {
@@ -347,7 +258,7 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                                         uint32_t time) {
     TypioWlFrontend *frontend = keyboard->frontend;
     TypioKeyTrackState kstate = key_get_state(frontend, key);
-    uint64_t now_ms = key_route_monotonic_ms();
+    uint64_t now_ms = typio_wl_monotonic_ms();
 
     if (keyboard->repeating && keyboard->repeat_key == key)
         keyboard->repeat_timer_fd >= 0 ? (void)0 : (void)0;
@@ -387,8 +298,8 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                   "Forwarded application shortcut release: keycode=%u", key);
         return;
 
-#ifdef HAVE_VOICE
     case TYPIO_KEY_VOICE_PTT:
+#ifdef HAVE_VOICE
         key_route_trace(keyboard, "release-ptt", key, keysym, modifiers, unicode,
                         kstate, "voice ptt stop");
         typio_voice_service_stop(frontend->voice);
@@ -397,8 +308,15 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
         key_clear_tracking(frontend, key);
         typio_log(TYPIO_LOG_DEBUG, "Voice PTT released: keycode=%u", key);
         return;
+#else
+        key_route_trace(keyboard, "release-consume", key, keysym, modifiers, unicode,
+                        kstate, "voice ptt unsupported build");
+        key_clear_tracking(frontend, key);
+        return;
+#endif
 
     case TYPIO_KEY_VOICE_PTT_UNAVAIL:
+#ifdef HAVE_VOICE
         key_route_trace(keyboard, "release-ptt-unavail", key, keysym,
                         modifiers, unicode, kstate, "voice ptt unavail release");
         typio_wl_set_preedit(frontend, "", 0, 0);
@@ -406,6 +324,11 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
         key_clear_tracking(frontend, key);
         typio_log(TYPIO_LOG_DEBUG,
                   "Voice PTT unavail released: keycode=%u", key);
+        return;
+#else
+        key_route_trace(keyboard, "release-consume", key, keysym, modifiers, unicode,
+                        kstate, "voice unavailable state unsupported build");
+        key_clear_tracking(frontend, key);
         return;
 #endif
 
@@ -492,7 +415,7 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                           active_engine ? typio_engine_get_name(active_engine) : "(none)",
                           modifiers,
                           keyboard->physical_modifiers,
-                          key_route_xkb_modifiers(keyboard));
+                          typio_wl_xkb_effective_modifiers(keyboard));
             }
         }
         key_clear_tracking(frontend, key);
@@ -522,7 +445,7 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                       active_engine ? typio_engine_get_name(active_engine) : "(none)",
                       modifiers,
                       keyboard->physical_modifiers,
-                      key_route_xkb_modifiers(keyboard));
+                      typio_wl_xkb_effective_modifiers(keyboard));
         }
     }
 

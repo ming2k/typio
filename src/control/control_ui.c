@@ -4,10 +4,6 @@
 
 #include <gdk/gdkkeysyms.h>
 
-static char *control_name_from_key(const char *prefix, const char *key) {
-    return control_build_debug_name(prefix, key);
-}
-
 static void connect_binding_change_signal(GtkWidget *widget, gpointer user_data) {
     if (GTK_IS_SWITCH(widget)) {
         g_signal_connect(widget, "notify::active",
@@ -18,6 +14,9 @@ static void connect_binding_change_signal(GtkWidget *widget, gpointer user_data)
     } else if (GTK_IS_SPIN_BUTTON(widget)) {
         g_signal_connect(widget, "value-changed",
                          G_CALLBACK(on_display_spin_changed), user_data);
+    } else if (GTK_IS_EDITABLE(widget)) {
+        g_signal_connect(widget, "changed",
+                         G_CALLBACK(on_display_entry_changed), user_data);
     }
 }
 
@@ -35,6 +34,56 @@ static void control_register_binding(TypioControl *control,
     control->binding_count++;
 }
 
+static void control_init_state_binding(ControlStateBinding *binding,
+                                       const char *config_key,
+                                       GtkDropDown *dropdown,
+                                       gpointer user_data,
+                                       ControlStateIndexFunc find_index,
+                                       ControlStateValueFunc get_value,
+                                       ControlStateValueSource source) {
+    if (!binding) {
+        return;
+    }
+
+    binding->config_key = config_key;
+    binding->dropdown = dropdown;
+    binding->user_data = user_data;
+    binding->find_index = find_index;
+    binding->get_value = get_value;
+    binding->source = source;
+    binding->options_user_data = NULL;
+    binding->refresh_options = NULL;
+}
+
+static guint control_string_list_index(gpointer user_data, const char *value) {
+    GtkStringList *model = user_data;
+    guint count;
+
+    if (!model || !value) {
+        return GTK_INVALID_LIST_POSITION;
+    }
+
+    count = (guint)g_list_model_get_n_items(G_LIST_MODEL(model));
+    for (guint i = 0; i < count; ++i) {
+        const char *item = gtk_string_list_get_string(model, i);
+        if (item && g_strcmp0(item, value) == 0) {
+            return i;
+        }
+    }
+
+    return GTK_INVALID_LIST_POSITION;
+}
+
+static const char *control_string_list_value(gpointer user_data, guint index) {
+    GtkStringList *model = user_data;
+
+    if (!model || index == GTK_INVALID_LIST_POSITION) {
+        return NULL;
+    }
+
+    return gtk_string_list_get_string(model, index);
+}
+
 static GtkWidget *create_bound_widget(TypioControl *control,
                                       const char *key) {
     const TypioConfigField *field = typio_config_schema_find(key);
@@ -47,7 +96,7 @@ static GtkWidget *create_bound_widget(TypioControl *control,
         return fallback;
     }
 
-    name = control_name_from_key("field", key);
+    name = control_build_debug_name("field", key);
     control_name_widget(widget, name);
     g_free(name);
     connect_binding_change_signal(widget, control);
@@ -71,6 +120,15 @@ static GtkWidget *build_rime_config(TypioControl *control) {
     control_name_widget(GTK_WIDGET(control->rime_schema_dropdown), "rime-schema-dropdown");
     g_signal_connect(control->rime_schema_dropdown, "notify::selected",
                      G_CALLBACK(on_display_dropdown_changed), control);
+    control_init_state_binding(&control->rime_schema_state,
+                               "engines.rime.schema",
+                               control->rime_schema_dropdown,
+                               control->rime_schema_model,
+                               control_string_list_index,
+                               control_string_list_value,
+                               CONTROL_STATE_VALUE_FROM_CONFIG);
+    control->rime_schema_state.options_user_data = control;
+    control->rime_schema_state.refresh_options = control_refresh_rime_schema_options;
     gtk_list_box_append(GTK_LIST_BOX(list),
                         control_create_preference_row_named("rime-schema-row",
                                                             schema_field && schema_field->ui_label
@@ -119,6 +177,13 @@ static GtkWidget *build_keyboard_section(TypioControl *control) {
     control_name_widget(GTK_WIDGET(control->engine_dropdown), "keyboard-engine-dropdown");
     g_signal_connect(control->engine_dropdown, "notify::selected",
                      G_CALLBACK(on_engine_selected), control);
+    control_init_state_binding(&control->keyboard_engine_state,
+                               "default_engine",
+                               control->engine_dropdown,
+                               control->engine_model,
+                               control_string_list_index,
+                               control_string_list_value,
+                               CONTROL_STATE_VALUE_FROM_RUNTIME);
     gtk_list_box_append(GTK_LIST_BOX(list),
                         control_create_preference_row_named("keyboard-engine-row",
                                                             "Keyboard engine",
@@ -167,6 +232,13 @@ static GtkWidget *build_voice_section(TypioControl *control) {
     control_name_widget(GTK_WIDGET(control->voice_backend_dropdown), "voice-backend-dropdown");
     g_signal_connect(control->voice_backend_dropdown, "notify::selected",
                      G_CALLBACK(on_voice_backend_changed), control);
+    control_init_state_binding(&control->voice_backend_state,
+                               "default_voice_engine",
+                               control->voice_backend_dropdown,
+                               control->voice_backend_model,
+                               control_string_list_index,
+                               control_string_list_value,
+                               CONTROL_STATE_VALUE_RUNTIME_THEN_CONFIG);
     gtk_list_box_append(GTK_LIST_BOX(list),
                         control_create_preference_row_named("voice-backend-row",
                                                             "Voice backend",

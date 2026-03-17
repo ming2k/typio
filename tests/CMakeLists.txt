@@ -17,6 +17,10 @@ add_executable(test_config_schema test_config_schema.c)
 target_link_libraries(test_config_schema PRIVATE typio-core)
 add_test(NAME test_config_schema COMMAND test_config_schema)
 
+add_executable(test_rime_schema_list test_rime_schema_list.c)
+target_link_libraries(test_rime_schema_list PRIVATE typio-core)
+add_test(NAME test_rime_schema_list COMMAND test_rime_schema_list)
+
 add_executable(test_engine_manager test_engine_manager.c)
 target_link_libraries(test_engine_manager PRIVATE typio-core)
 target_compile_definitions(test_engine_manager PRIVATE

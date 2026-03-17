@@ -8,6 +8,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <stdio.h>
 
 char *typio_strdup(const char *str) {
     if (!str) {
@@ -58,6 +59,32 @@ char *typio_strjoin3(const char *a, const char *b, const char *c) {
     char *result = typio_strjoin(ab, c);
     free(ab);
     return result;
+}
+
+char *typio_path_join(const char *base, const char *suffix) {
+    size_t base_len;
+    size_t suffix_len;
+    bool need_slash;
+    char *path;
+
+    if (!base || !suffix) {
+        return nullptr;
+    }
+
+    base_len = strlen(base);
+    suffix_len = strlen(suffix);
+    need_slash = base_len > 0 && base[base_len - 1] != '/';
+    path = malloc(base_len + suffix_len + (need_slash ? 2U : 1U));
+    if (!path) {
+        return nullptr;
+    }
+
+    snprintf(path,
+             base_len + suffix_len + (need_slash ? 2U : 1U),
+             need_slash ? "%s/%s" : "%s%s",
+             base,
+             suffix);
+    return path;
 }
 
 bool typio_str_starts_with(const char *str, const char *prefix) {

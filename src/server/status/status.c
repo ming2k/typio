@@ -5,6 +5,7 @@
 
 #include "status.h"
 
+#include "../dbus_helpers.h"
 #include "typio/config.h"
 #include "typio/engine_manager.h"
 #include "typio/instance.h"
@@ -25,127 +26,6 @@ struct TypioStatusBus {
     TypioInstance *instance;
     DBusConnection *conn;
 };
-
-static dbus_bool_t append_dict_entry_string(DBusMessageIter *dict,
-                                            const char *key,
-                                            const char *value) {
-    DBusMessageIter entry;
-    DBusMessageIter variant;
-    const char *text = value ? value : "";
-
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "s", &variant)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &text)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_close_container(&entry, &variant)) {
-        return FALSE;
-    }
-    return dbus_message_iter_close_container(dict, &entry);
-}
-
-static dbus_bool_t append_dict_entry_bool(DBusMessageIter *dict,
-                                          const char *key,
-                                          dbus_bool_t value) {
-    DBusMessageIter entry;
-    DBusMessageIter variant;
-
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "b", &variant)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_append_basic(&variant, DBUS_TYPE_BOOLEAN, &value)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_close_container(&entry, &variant)) {
-        return FALSE;
-    }
-    return dbus_message_iter_close_container(dict, &entry);
-}
-
-static dbus_bool_t append_dict_entry_int32(DBusMessageIter *dict,
-                                           const char *key,
-                                           dbus_int32_t value) {
-    DBusMessageIter entry;
-    DBusMessageIter variant;
-
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "i", &variant)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_append_basic(&variant, DBUS_TYPE_INT32, &value)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_close_container(&entry, &variant)) {
-        return FALSE;
-    }
-    return dbus_message_iter_close_container(dict, &entry);
-}
-
-static dbus_bool_t append_dict_entry_uint32(DBusMessageIter *dict,
-                                            const char *key,
-                                            dbus_uint32_t value) {
-    DBusMessageIter entry;
-    DBusMessageIter variant;
-
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "u", &variant)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_append_basic(&variant, DBUS_TYPE_UINT32, &value)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_close_container(&entry, &variant)) {
-        return FALSE;
-    }
-    return dbus_message_iter_close_container(dict, &entry);
-}
-
-static dbus_bool_t append_dict_entry_double(DBusMessageIter *dict,
-                                            const char *key,
-                                            double value) {
-    DBusMessageIter entry;
-    DBusMessageIter variant;
-
-    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "d", &variant)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_append_basic(&variant, DBUS_TYPE_DOUBLE, &value)) {
-        return FALSE;
-    }
-    if (!dbus_message_iter_close_container(&entry, &variant)) {
-        return FALSE;
-    }
-    return dbus_message_iter_close_container(dict, &entry);
-}
 
 static const char *engine_type_name(TypioEngineType type) {
     return type == TYPIO_ENGINE_TYPE_VOICE ? "voice" : "keyboard";
@@ -194,16 +74,16 @@ static dbus_bool_t append_config_entries(DBusMessageIter *dict,
 
         switch (value->type) {
         case TYPIO_CONFIG_STRING:
-            ok = append_dict_entry_string(dict, prefixed, value->data.string_val);
+            ok = typio_dbus_append_dict_entry_string(dict, prefixed, value->data.string_val);
             break;
         case TYPIO_CONFIG_INT:
-            ok = append_dict_entry_int32(dict, prefixed, value->data.int_val);
+            ok = typio_dbus_append_dict_entry_int32(dict, prefixed, value->data.int_val);
             break;
         case TYPIO_CONFIG_BOOL:
-            ok = append_dict_entry_bool(dict, prefixed, value->data.bool_val ? TRUE : FALSE);
+            ok = typio_dbus_append_dict_entry_bool(dict, prefixed, value->data.bool_val ? TRUE : FALSE);
             break;
         case TYPIO_CONFIG_FLOAT:
-            ok = append_dict_entry_double(dict, prefixed, value->data.float_val);
+            ok = typio_dbus_append_dict_entry_double(dict, prefixed, value->data.float_val);
             break;
         default:
             ok = true;
@@ -239,21 +119,21 @@ static dbus_bool_t append_active_engine_state_dict(DBusMessageIter *iter,
     engine_name = engine ? typio_engine_get_name(engine) : nullptr;
 
     if (info) {
-        ok = append_dict_entry_string(&dict, "name", info->name) &&
-             append_dict_entry_string(&dict, "display_name", info->display_name) &&
-             append_dict_entry_string(&dict, "icon", info->icon) &&
-             append_dict_entry_string(&dict, "language", info->language) &&
-             append_dict_entry_string(&dict, "engine_type", engine_type_name(info->type)) &&
-             append_dict_entry_uint32(&dict, "capabilities", info->capabilities);
+        ok = typio_dbus_append_dict_entry_string(&dict, "name", info->name) &&
+             typio_dbus_append_dict_entry_string(&dict, "display_name", info->display_name) &&
+             typio_dbus_append_dict_entry_string(&dict, "icon", info->icon) &&
+             typio_dbus_append_dict_entry_string(&dict, "language", info->language) &&
+             typio_dbus_append_dict_entry_string(&dict, "engine_type", engine_type_name(info->type)) &&
+             typio_dbus_append_dict_entry_uint32(&dict, "capabilities", info->capabilities);
     }
 
     if (ok && engine) {
-        ok = append_dict_entry_bool(&dict, "active",
-                                    typio_engine_is_active(engine) ? TRUE : FALSE);
+        ok = typio_dbus_append_dict_entry_bool(&dict, "active",
+                                               typio_engine_is_active(engine) ? TRUE : FALSE);
     }
 
     if (ok && config_path && *config_path) {
-        ok = append_dict_entry_string(&dict, "config_path", config_path);
+        ok = typio_dbus_append_dict_entry_string(&dict, "config_path", config_path);
     }
 
     if (ok && bus && bus->instance && engine_name && *engine_name) {
@@ -294,15 +174,66 @@ static dbus_bool_t append_available_engines_array(DBusMessageIter *iter,
     return dbus_message_iter_close_container(iter, &array);
 }
 
+static dbus_bool_t append_ordered_engines_array(DBusMessageIter *iter,
+                                                TypioStatusBus *bus) {
+    DBusMessageIter array;
+    TypioEngineManager *manager;
+    const char **engines;
+    size_t count = 0;
+
+    if (!dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, "s", &array)) {
+        return FALSE;
+    }
+
+    manager = bus ? typio_instance_get_engine_manager(bus->instance) : nullptr;
+    engines = manager ? typio_engine_manager_list_ordered_keyboards(manager, &count) : nullptr;
+    for (size_t i = 0; i < count; ++i) {
+        const char *name = engines[i];
+        if (!dbus_message_iter_append_basic(&array, DBUS_TYPE_STRING, &name)) {
+            return FALSE;
+        }
+    }
+
+    return dbus_message_iter_close_container(iter, &array);
+}
+
+static dbus_bool_t append_engine_order_array(DBusMessageIter *iter,
+                                             TypioStatusBus *bus) {
+    DBusMessageIter array;
+    TypioConfig *config;
+    size_t count = 0;
+
+    if (!dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, "s", &array)) {
+        return FALSE;
+    }
+
+    config = bus && bus->instance ? typio_instance_get_config(bus->instance) : NULL;
+    count = config ? typio_config_get_array_size(config, "engine_order") : 0;
+    for (size_t i = 0; i < count; ++i) {
+        const char *name = typio_config_get_array_string(config, "engine_order", i);
+        if (!name) {
+            continue;
+        }
+        if (!dbus_message_iter_append_basic(&array, DBUS_TYPE_STRING, &name)) {
+            return FALSE;
+        }
+    }
+
+    return dbus_message_iter_close_container(iter, &array);
+}
+
 static dbus_bool_t append_property_variant(DBusMessageIter *iter,
                                            TypioStatusBus *bus,
                                            const char *property) {
     DBusMessageIter variant;
     TypioEngine *engine = status_active_engine(bus);
+    TypioEngineManager *manager = bus ? typio_instance_get_engine_manager(bus->instance) : nullptr;
+    TypioEngine *voice_engine = manager ? typio_engine_manager_get_active_voice(manager) : nullptr;
     const char *active_name = engine ? typio_engine_get_name(engine) : "";
+    const char *active_voice_name = voice_engine ? typio_engine_get_name(voice_engine) : "";
     char *config_text;
 
-    if (strcmp(property, "Version") == 0) {
+    if (strcmp(property, TYPIO_STATUS_PROP_VERSION) == 0) {
         const char *version = TYPIO_VERSION;
         if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "s", &variant)) {
             return FALSE;
@@ -313,7 +244,7 @@ static dbus_bool_t append_property_variant(DBusMessageIter *iter,
         return dbus_message_iter_close_container(iter, &variant);
     }
 
-    if (strcmp(property, "ActiveEngine") == 0) {
+    if (strcmp(property, TYPIO_STATUS_PROP_ACTIVE_ENGINE) == 0) {
         if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "s", &variant)) {
             return FALSE;
         }
@@ -323,7 +254,7 @@ static dbus_bool_t append_property_variant(DBusMessageIter *iter,
         return dbus_message_iter_close_container(iter, &variant);
     }
 
-    if (strcmp(property, "AvailableEngines") == 0) {
+    if (strcmp(property, TYPIO_STATUS_PROP_AVAILABLE_ENGINES) == 0) {
         if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "as", &variant)) {
             return FALSE;
         }
@@ -333,7 +264,37 @@ static dbus_bool_t append_property_variant(DBusMessageIter *iter,
         return dbus_message_iter_close_container(iter, &variant);
     }
 
-    if (strcmp(property, "ActiveEngineState") == 0) {
+    if (strcmp(property, TYPIO_STATUS_PROP_ORDERED_ENGINES) == 0) {
+        if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "as", &variant)) {
+            return FALSE;
+        }
+        if (!append_ordered_engines_array(&variant, bus)) {
+            return FALSE;
+        }
+        return dbus_message_iter_close_container(iter, &variant);
+    }
+
+    if (strcmp(property, TYPIO_STATUS_PROP_ENGINE_ORDER) == 0) {
+        if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "as", &variant)) {
+            return FALSE;
+        }
+        if (!append_engine_order_array(&variant, bus)) {
+            return FALSE;
+        }
+        return dbus_message_iter_close_container(iter, &variant);
+    }
+
+    if (strcmp(property, TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE) == 0) {
+        if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "s", &variant)) {
+            return FALSE;
+        }
+        if (!dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &active_voice_name)) {
+            return FALSE;
+        }
+        return dbus_message_iter_close_container(iter, &variant);
+    }
+
+    if (strcmp(property, TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE) == 0) {
         if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "a{sv}", &variant)) {
             return FALSE;
         }
@@ -343,7 +304,7 @@ static dbus_bool_t append_property_variant(DBusMessageIter *iter,
         return dbus_message_iter_close_container(iter, &variant);
     }
 
-    if (strcmp(property, "ConfigText") == 0) {
+    if (strcmp(property, TYPIO_STATUS_PROP_CONFIG_TEXT) == 0) {
         const char *text = "";
         config_text = (bus && bus->instance) ? typio_instance_get_config_text(bus->instance) : nullptr;
         if (config_text) {
@@ -403,11 +364,14 @@ static DBusMessage *status_handle_properties_getall(TypioStatusBus *bus,
     DBusMessageIter iter;
     DBusMessageIter dict;
     const char *properties[] = {
-        "Version",
-        "ActiveEngine",
-        "AvailableEngines",
-        "ActiveEngineState",
-        "ConfigText",
+        TYPIO_STATUS_PROP_VERSION,
+        TYPIO_STATUS_PROP_ACTIVE_ENGINE,
+        TYPIO_STATUS_PROP_AVAILABLE_ENGINES,
+        TYPIO_STATUS_PROP_ORDERED_ENGINES,
+        TYPIO_STATUS_PROP_ENGINE_ORDER,
+        TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE,
+        TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE,
+        TYPIO_STATUS_PROP_CONFIG_TEXT,
     };
 
     if (!dbus_message_get_args(msg, nullptr,
@@ -562,14 +526,17 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
             "\"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n"
             "<node>\n"
             "  <interface name=\"org.typio.InputMethod1\">\n"
-            "    <property name=\"Version\" type=\"s\" access=\"read\"/>\n"
-            "    <property name=\"ActiveEngine\" type=\"s\" access=\"read\"/>\n"
-            "    <property name=\"AvailableEngines\" type=\"as\" access=\"read\"/>\n"
-            "    <property name=\"ActiveEngineState\" type=\"a{sv}\" access=\"read\"/>\n"
-            "    <property name=\"ConfigText\" type=\"s\" access=\"read\"/>\n"
-            "    <method name=\"ActivateEngine\"><arg name=\"engine\" type=\"s\" direction=\"in\"/></method>\n"
-            "    <method name=\"SetConfigText\"><arg name=\"content\" type=\"s\" direction=\"in\"/></method>\n"
-            "    <method name=\"ReloadConfig\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_VERSION "\" type=\"s\" access=\"read\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_ACTIVE_ENGINE "\" type=\"s\" access=\"read\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_AVAILABLE_ENGINES "\" type=\"as\" access=\"read\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_ORDERED_ENGINES "\" type=\"as\" access=\"read\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_ENGINE_ORDER "\" type=\"as\" access=\"read\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE "\" type=\"s\" access=\"read\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE "\" type=\"a{sv}\" access=\"read\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_CONFIG_TEXT "\" type=\"s\" access=\"read\"/>\n"
+            "    <method name=\"" TYPIO_STATUS_METHOD_ACTIVATE_ENGINE "\"><arg name=\"engine\" type=\"s\" direction=\"in\"/></method>\n"
+            "    <method name=\"" TYPIO_STATUS_METHOD_SET_CONFIG_TEXT "\"><arg name=\"content\" type=\"s\" direction=\"in\"/></method>\n"
+            "    <method name=\"" TYPIO_STATUS_METHOD_RELOAD_CONFIG "\"/>\n"
             "  </interface>\n"
             "  <interface name=\"org.freedesktop.DBus.Properties\">\n"
             "    <method name=\"Get\"><arg type=\"s\" direction=\"in\"/><arg type=\"s\" direction=\"in\"/><arg type=\"v\" direction=\"out\"/></method>\n"
@@ -583,11 +550,11 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
         }
     } else if (strcmp(interface, TYPIO_STATUS_DBUS_INTERFACE) == 0 ||
                interface[0] == '\0') {
-        if (strcmp(member, "ActivateEngine") == 0) {
+        if (strcmp(member, TYPIO_STATUS_METHOD_ACTIVATE_ENGINE) == 0) {
             reply = status_handle_activate_engine(bus, msg);
-        } else if (strcmp(member, "SetConfigText") == 0) {
+        } else if (strcmp(member, TYPIO_STATUS_METHOD_SET_CONFIG_TEXT) == 0) {
             reply = status_handle_set_config_text(bus, msg);
-        } else if (strcmp(member, "ReloadConfig") == 0) {
+        } else if (strcmp(member, TYPIO_STATUS_METHOD_RELOAD_CONFIG) == 0) {
             reply = status_handle_reload_config(bus, msg);
         }
     }
@@ -705,10 +672,13 @@ void typio_status_bus_emit_properties_changed(TypioStatusBus *bus) {
     DBusMessageIter invalidated;
     const char *interface = TYPIO_STATUS_DBUS_INTERFACE;
     const char *properties[] = {
-        "ActiveEngine",
-        "AvailableEngines",
-        "ActiveEngineState",
-        "ConfigText",
+        TYPIO_STATUS_PROP_ACTIVE_ENGINE,
+        TYPIO_STATUS_PROP_AVAILABLE_ENGINES,
+        TYPIO_STATUS_PROP_ORDERED_ENGINES,
+        TYPIO_STATUS_PROP_ENGINE_ORDER,
+        TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE,
+        TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE,
+        TYPIO_STATUS_PROP_CONFIG_TEXT,
     };
 
     if (!bus || !bus->conn) {

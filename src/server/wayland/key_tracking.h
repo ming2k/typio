@@ -28,6 +28,7 @@ void typio_wl_key_tracking_reset_generations(uint32_t *generations,
                                              size_t count);
 size_t typio_wl_key_tracking_mark_released_pending(TypioKeyTrackState *states,
                                                    size_t count);
+const char *typio_wl_key_tracking_state_name(TypioKeyTrackState state);
 
 #ifdef __cplusplus
 }

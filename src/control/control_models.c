@@ -88,19 +88,23 @@ gboolean is_voice_backend_name(const char *name) {
 }
 
 void voice_update_model_sections(TypioControl *control) {
+    gboolean is_whisper;
+    gboolean is_sherpa;
+
     if (!control || !control->voice_backend_dropdown) {
         return;
     }
 
     guint idx = gtk_drop_down_get_selected(control->voice_backend_dropdown);
     const char *id = control_voice_backend_id(control, idx);
-    gboolean is_whisper = g_strcmp0(id, "whisper") == 0;
+    is_whisper = g_strcmp0(id, "whisper") == 0;
+    is_sherpa = g_strcmp0(id, "sherpa-onnx") == 0;
 
     if (control->whisper_models_frame) {
         gtk_widget_set_visible(control->whisper_models_frame, is_whisper);
     }
     if (control->sherpa_models_frame) {
-        gtk_widget_set_visible(control->sherpa_models_frame, !is_whisper);
+        gtk_widget_set_visible(control->sherpa_models_frame, is_sherpa);
     }
 }
 
@@ -115,7 +119,13 @@ void control_refresh_voice_models(TypioControl *control) {
 
     guint backend = gtk_drop_down_get_selected(control->voice_backend_dropdown);
     const char *backend_name = control_voice_backend_id(control, backend);
-    const char *scan_dir = g_strcmp0(backend_name, "sherpa-onnx") == 0
+    const char *scan_dir;
+
+    if (!backend_name) {
+        return;
+    }
+
+    scan_dir = g_strcmp0(backend_name, "sherpa-onnx") == 0
         ? control->sherpa_dir
         : control->whisper_dir;
 

@@ -67,27 +67,6 @@ static void typio_rime_free_config(TypioRimeConfig *config) {
     memset(config, 0, sizeof(*config));
 }
 
-static char *typio_rime_path_join(const char *base, const char *suffix) {
-    if (!base || !suffix) {
-        return nullptr;
-    }
-
-    const size_t base_len = strlen(base);
-    const size_t suffix_len = strlen(suffix);
-    const bool need_slash = base_len > 0 && base[base_len - 1] != '/';
-    char *path = malloc(base_len + suffix_len + (need_slash ? 2 : 1));
-    if (!path) {
-        return nullptr;
-    }
-
-    snprintf(path,
-             base_len + suffix_len + (need_slash ? 2 : 1),
-             need_slash ? "%s/%s" : "%s%s",
-             base,
-             suffix);
-    return path;
-}
-
 static bool typio_rime_ensure_dir(const char *path) {
     if (!path || !*path) {
         return false;
@@ -136,7 +115,7 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
     config->schema = typio_strdup(TYPIO_RIME_DEFAULT_SCHEMA);
     config->shared_data_dir = typio_strdup(TYPIO_RIME_SHARED_DATA_DIR);
     data_dir = typio_instance_get_data_dir(instance);
-    default_user_dir = typio_rime_path_join(data_dir, "rime");
+    default_user_dir = typio_path_join(data_dir, "rime");
     config->user_data_dir = default_user_dir;
 
     if (!config->schema || !config->shared_data_dir || !config->user_data_dir) {
@@ -213,7 +192,7 @@ static bool typio_rime_ensure_deployed(TypioRimeState *state) {
         return true;
     }
 
-    build_path = typio_rime_path_join(state->config.user_data_dir, "build/default.yaml");
+    build_path = typio_path_join(state->config.user_data_dir, "build/default.yaml");
     need_maintenance = !typio_rime_path_exists(build_path);
     free(build_path);
 
