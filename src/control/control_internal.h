@@ -48,6 +48,14 @@ typedef struct TypioControl {
     GtkLabel *config_status_label;
     GtkDropDown *engine_dropdown;
     GtkStringList *engine_model;
+    GPtrArray *engine_id_model;
+    GtkListBox *engine_order_list;
+    GtkStringList *engine_order_model;
+    GtkLabel *engine_order_mode_label;
+    GtkButton *engine_order_reset_button;
+    GtkDropDown *engine_order_add_dropdown;
+    GtkStringList *engine_order_add_model;
+    GPtrArray *engine_order_add_id_model;
     GtkDropDown *popup_theme_dropdown;
     GtkStringList *popup_theme_model;
     GtkDropDown *candidate_layout_dropdown;
@@ -62,6 +70,7 @@ typedef struct TypioControl {
     GtkWidget *engine_config_title;
     GtkDropDown *rime_schema_dropdown;
     GtkStringList *rime_schema_model;
+    GPtrArray *rime_schema_id_model;
     GtkSpinButton *mozc_page_size_spin;
     GtkDropDown *voice_backend_dropdown;
     GtkStringList *voice_backend_model;
@@ -77,6 +86,7 @@ typedef struct TypioControl {
     guint name_watch_id;
     guint autosave_source_id;
     guint status_clear_source_id;
+    guint engine_order_refresh_source_id;
     gboolean updating_ui;
     gboolean config_seeded;
     gboolean submitting_config;
@@ -114,6 +124,11 @@ void on_display_spin_changed(GtkSpinButton *spin, gpointer user_data);
 void on_display_switch_changed(GObject *object, GParamSpec *pspec, gpointer user_data);
 void on_display_entry_changed(GtkEditable *editable, gpointer user_data);
 void on_engine_selected(GObject *object, GParamSpec *pspec, gpointer user_data);
+void on_engine_order_add_clicked(GtkButton *button, gpointer user_data);
+void on_engine_order_move_up_clicked(GtkButton *button, gpointer user_data);
+void on_engine_order_move_down_clicked(GtkButton *button, gpointer user_data);
+void on_engine_order_remove_clicked(GtkButton *button, gpointer user_data);
+void on_engine_order_reset_clicked(GtkButton *button, gpointer user_data);
 void control_clear_proxy(TypioControl *control);
 void control_refresh_from_proxy(TypioControl *control);
 gboolean control_has_pending_config_change(TypioControl *control);
@@ -122,6 +137,9 @@ void control_queue_autosave(TypioControl *control,
 void control_update_availability_label(TypioControl *control,
                                        const char *message,
                                        gboolean visible);
+void control_load_engine_order_from_config(TypioControl *control,
+                                           const TypioConfig *config);
+void control_refresh_engine_order_editor(TypioControl *control);
 void control_refresh_rime_schema_options(gpointer user_data,
                                          const TypioConfig *config,
                                          const char *configured_value);
@@ -130,6 +148,8 @@ void control_refresh_rime_schema_options(gpointer user_data,
 void control_test_apply_state_binding_value(TypioControl *control,
                                             const ControlStateBinding *binding,
                                             const char *fallback_text);
+void control_test_set_config_text(TypioControl *control,
+                                  GVariant *config_text);
 #endif
 
 GtkWidget *control_build_window(TypioControl *control, GtkApplication *app);

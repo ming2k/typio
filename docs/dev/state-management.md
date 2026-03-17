@@ -194,6 +194,38 @@ When adding a new stateful feature:
 5. make control surfaces read from the correct authority
 6. add regression tests for startup, refresh, and delayed apply cases
 
+For selector-style state such as engine choice, voice backend, and Rime
+schema, the minimum regression bar is:
+
+- `options -> UI`
+  refreshed options must include any explicit unselected state and preserve a
+  configured value even if discovery is incomplete
+- `config -> UI`
+  loading staged config must select the matching option in the widget
+- `UI -> config`
+  user selection must write the correct persisted key, including removing the
+  key when the selector is explicitly unselected
+
+For runtime-driven selectors such as `default_engine`, also require:
+
+- `runtime/status -> UI`
+  the status bus must export the runtime value and the control surface must map
+  that runtime value back to the correct internal selector id, not a display
+  label
+
+Treat selector tests as belonging to one of three categories:
+
+- `config-driven`
+  example: `engines.rime.schema`
+- `runtime-driven`
+  example: `default_engine`
+- `mixed`
+  example: `default_voice_engine`
+
+Do not reuse a config-selector test pattern for a runtime selector just because
+both render as dropdowns. The test contract must match the selector's declared
+`ControlStateValueSource`.
+
 ## Anti-Patterns
 
 Do not:
@@ -204,6 +236,8 @@ Do not:
 - write config from widget defaults before the first daemon seed
 - replace unknown state with the first available dropdown option
 - maintain separate ad-hoc lists of runtime property names in different layers
+- add selector UIs without tests that cover `options -> UI`, `config -> UI`,
+  and `UI -> config`
 
 ## Migration Plan
 

@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <sys/stat.h>
 
 #define TYPIO_CONFIG_FILE_NAME "typio.toml"
@@ -530,6 +531,8 @@ TypioResult typio_instance_set_config_text(TypioInstance *instance, const char *
     TypioConfig *parsed;
     TypioConfig *old_config;
     TypioResult save_result;
+    size_t old_key_count;
+    size_t new_key_count;
 
     if (!instance || !content) {
         return TYPIO_ERROR_INVALID_ARGUMENT;
@@ -538,6 +541,22 @@ TypioResult typio_instance_set_config_text(TypioInstance *instance, const char *
     parsed = typio_config_load_string(content);
     if (!parsed) {
         return TYPIO_ERROR;
+    }
+
+    old_key_count = instance->config ? typio_config_key_count(instance->config) : 0;
+    new_key_count = typio_config_key_count(parsed);
+    if (old_key_count > 0 && new_key_count == 0) {
+        const unsigned char *p = (const unsigned char *)content;
+        while (*p) {
+            if (!isspace(*p) && *p != '#' && *p != ';') {
+                break;
+            }
+            ++p;
+        }
+        typio_log_warning("Rejecting empty replacement config while existing config has %zu keys",
+                          old_key_count);
+        typio_config_free(parsed);
+        return TYPIO_ERROR_INVALID_ARGUMENT;
     }
 
     old_config = instance->config;

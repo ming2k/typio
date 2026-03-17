@@ -74,7 +74,7 @@ static TypioKeyProcessResult basic_process_key([[maybe_unused]] TypioEngine *eng
 
 static const TypioEngineInfo basic_engine_info = {
     .name = "basic",
-    .display_name = "Basic Keyboard",
+    .display_name = "Basic",
     .description = "Built-in basic keyboard engine that commits printable text directly.",
     .version = TYPIO_VERSION,
     .author = "Typio",

@@ -70,6 +70,29 @@ window.background.control-root {
   border-radius: 0;
 }
 
+.preferences row.dragging .preference-row {
+  opacity: 0.55;
+  background-color: alpha(@accent_bg_color, 0.10);
+}
+
+.engine-order-remove-button {
+  min-width: 32px;
+  min-height: 32px;
+  opacity: 0.72;
+}
+
+.engine-order-remove-button:hover {
+  opacity: 1;
+}
+
+.preferences row.drop-before .preference-row {
+  box-shadow: inset 0 3px 0 alpha(@accent_bg_color, 0.85);
+}
+
+.preferences row.drop-after .preference-row {
+  box-shadow: inset 0 -3px 0 alpha(@accent_bg_color, 0.85);
+}
+
 .preferences row:not(:last-child) .preference-row {
   border-bottom: 1px solid alpha(currentColor, 0.08);
 }

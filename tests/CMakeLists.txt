@@ -90,6 +90,9 @@ if(BUILD_CONTROL_PANEL)
     target_compile_options(test_control_config PRIVATE ${GTK4_CFLAGS_OTHER})
     target_link_libraries(test_control_config PRIVATE typio-core ${GTK4_LIBRARIES})
     add_test(NAME test_control_config COMMAND test_control_config)
+    set_tests_properties(test_control_config PROPERTIES
+        ENVIRONMENT "DISPLAY=;WAYLAND_DISPLAY=;GDK_BACKEND="
+    )
 endif()
 
 add_executable(test_startup_guard

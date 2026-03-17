@@ -98,7 +98,8 @@ static void on_name_appeared(GDBusConnection *connection,
                      G_CALLBACK(on_proxy_properties_changed),
                      control);
     control_refresh_from_proxy(control);
-    if (control_has_pending_config_change(control)) {
+    if (control->config_seeded && control->committed_config_text &&
+        control_has_pending_config_change(control)) {
         control_queue_autosave(control, CONTROL_AUTOSAVE_NORMAL);
     }
 }
@@ -129,6 +130,15 @@ static void on_window_destroy([[maybe_unused]] GtkWidget *widget, gpointer user_
     }
     control_clear_proxy(control);
     control_models_cleanup(control);
+    if (control->engine_id_model) {
+        g_ptr_array_unref(control->engine_id_model);
+    }
+    if (control->engine_order_add_id_model) {
+        g_ptr_array_unref(control->engine_order_add_id_model);
+    }
+    if (control->rime_schema_id_model) {
+        g_ptr_array_unref(control->rime_schema_id_model);
+    }
     g_free(control->committed_config_text);
     g_free(control);
 }

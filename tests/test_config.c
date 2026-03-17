@@ -268,6 +268,36 @@ TEST(config_save_load) {
     remove(path);
 }
 
+TEST(config_mixed_top_level_and_dotted_section_roundtrip) {
+    const char *content =
+        "default_engine = \"rime\"\n"
+        "\n"
+        "[engines]\n"
+        "rime.popup_theme = \"auto\"\n"
+        "rime.schema = \"m2k_pinyin\"\n";
+    TypioConfig *config = typio_config_load_string(content);
+    char *rendered;
+    TypioConfig *loaded;
+
+    ASSERT_NOT_NULL(config);
+    ASSERT_STR_EQ(typio_config_get_string(config, "default_engine", ""), "rime");
+    ASSERT_STR_EQ(typio_config_get_string(config, "engines.rime.schema", ""), "m2k_pinyin");
+
+    rendered = typio_config_to_string(config);
+    ASSERT_NOT_NULL(rendered);
+    ASSERT(strstr(rendered, "default_engine = \"rime\"") != NULL);
+    ASSERT(strstr(rendered, "rime.schema = \"m2k_pinyin\"") != NULL);
+
+    loaded = typio_config_load_string(rendered);
+    ASSERT_NOT_NULL(loaded);
+    ASSERT_STR_EQ(typio_config_get_string(loaded, "default_engine", ""), "rime");
+    ASSERT_STR_EQ(typio_config_get_string(loaded, "engines.rime.schema", ""), "m2k_pinyin");
+
+    typio_config_free(loaded);
+    free(rendered);
+    typio_config_free(config);
+}
+
 int main(void) {
     printf("Running config tests:\n");
 
@@ -283,6 +313,7 @@ int main(void) {
     run_test_config_load_string();
     run_test_config_string_array_roundtrip();
     run_test_config_save_load();
+    run_test_config_mixed_top_level_and_dotted_section_roundtrip();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
 

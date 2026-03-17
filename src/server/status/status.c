@@ -222,6 +222,35 @@ static dbus_bool_t append_engine_order_array(DBusMessageIter *iter,
     return dbus_message_iter_close_container(iter, &array);
 }
 
+static dbus_bool_t append_engine_display_names_dict(DBusMessageIter *iter,
+                                                    TypioStatusBus *bus) {
+    DBusMessageIter dict;
+    TypioEngineManager *manager;
+    const char **engines;
+    size_t count = 0;
+
+    if (!dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, "{ss}", &dict)) {
+        return FALSE;
+    }
+
+    manager = bus ? typio_instance_get_engine_manager(bus->instance) : nullptr;
+    engines = manager ? typio_engine_manager_list(manager, &count) : nullptr;
+    for (size_t i = 0; i < count; ++i) {
+        const TypioEngineInfo *info = typio_engine_manager_get_info(manager, engines[i]);
+        const char *name = engines[i];
+        const char *display_name = typio_engine_label_from_info(info);
+
+        if (!name || !*name || !display_name || !*display_name) {
+            continue;
+        }
+        if (!typio_dbus_append_dict_entry_string(&dict, name, display_name)) {
+            return FALSE;
+        }
+    }
+
+    return dbus_message_iter_close_container(iter, &dict);
+}
+
 static dbus_bool_t append_property_variant(DBusMessageIter *iter,
                                            TypioStatusBus *bus,
                                            const char *property) {
@@ -269,6 +298,16 @@ static dbus_bool_t append_property_variant(DBusMessageIter *iter,
             return FALSE;
         }
         if (!append_ordered_engines_array(&variant, bus)) {
+            return FALSE;
+        }
+        return dbus_message_iter_close_container(iter, &variant);
+    }
+
+    if (strcmp(property, TYPIO_STATUS_PROP_ENGINE_DISPLAY_NAMES) == 0) {
+        if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "a{ss}", &variant)) {
+            return FALSE;
+        }
+        if (!append_engine_display_names_dict(&variant, bus)) {
             return FALSE;
         }
         return dbus_message_iter_close_container(iter, &variant);

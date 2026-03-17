@@ -2,6 +2,7 @@
 add_library(typio-core
     core/instance.c
     core/engine.c
+    core/engine_label.c
     core/engine_manager.c
     core/input_context.c
     core/event.c

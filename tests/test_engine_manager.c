@@ -539,6 +539,41 @@ TEST(explicit_engine_order_controls_listing_and_switching) {
     typio_instance_free(instance);
 }
 
+TEST(instance_reload_preserves_default_engine_and_rime_schema) {
+    char root[] = "/tmp/typio-instance-reload-XXXXXX";
+    TypioInstanceConfig config;
+    TypioInstance *instance = create_temp_instance(root, &config);
+    char config_path[1024];
+    FILE *file;
+    char *rendered;
+
+    ASSERT_NOT_NULL(instance);
+    ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config.config_dir) <
+           (int)sizeof(config_path));
+
+    file = fopen(config_path, "w");
+    ASSERT_NOT_NULL(file);
+    ASSERT(fputs(
+        "default_engine = \"rime\"\n"
+        "\n"
+        "[engines]\n"
+        "rime.popup_theme = \"auto\"\n"
+        "rime.schema = \"m2k_pinyin\"\n",
+        file) >= 0);
+    fclose(file);
+
+    ASSERT_EQ(typio_instance_init(instance), TYPIO_OK);
+    ASSERT_EQ(typio_instance_reload_config(instance), TYPIO_OK);
+
+    rendered = typio_instance_get_config_text(instance);
+    ASSERT_NOT_NULL(rendered);
+    ASSERT(strstr(rendered, "default_engine = \"rime\"") != NULL);
+    ASSERT(strstr(rendered, "rime.schema = \"m2k_pinyin\"") != NULL);
+    free(rendered);
+
+    typio_instance_free(instance);
+}
+
 TEST(stable_pair_prefers_recent_engines_and_skips_rapid_persistence) {
     char root[] = "/tmp/typio-engine-mru-XXXXXX";
     TypioInstanceConfig config;
@@ -636,6 +671,7 @@ int main(void) {
     run_test_voice_engine_activation();
     run_test_next_prev_skip_voice();
     run_test_explicit_engine_order_controls_listing_and_switching();
+    run_test_instance_reload_preserves_default_engine_and_rime_schema();
     run_test_unload_voice_engine();
     run_test_stable_pair_prefers_recent_engines_and_skips_rapid_persistence();
     run_test_stable_pair_persists_across_instances();

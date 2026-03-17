@@ -606,9 +606,9 @@ static DBusMessage *handle_menu_getlayout(TypioTray *tray, DBusMessage *msg) {
             bool is_current = tray->engine_name &&
                               strcmp(engines[i], tray->engine_name) == 0;
             if (is_current) {
-                snprintf(label, sizeof(label), "● %s", info->display_name);
+                snprintf(label, sizeof(label), "● %s", typio_engine_label_from_info(info));
             } else {
-                snprintf(label, sizeof(label), "  %s", info->display_name);
+                snprintf(label, sizeof(label), "  %s", typio_engine_label_from_info(info));
             }
             /* Store engine index: IDs 100+ are engine selections */
             build_menu_item(&children, 100 + (int32_t)i, label, nullptr, TRUE);

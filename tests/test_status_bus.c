@@ -238,6 +238,61 @@ static bool dict_contains_string(DBusMessageIter *dict,
     return false;
 }
 
+static bool dict_contains_string_dict_entry(DBusMessageIter *dict,
+                                            const char *key,
+                                            const char *entry_key,
+                                            const char *expected) {
+    DBusMessageIter entry;
+
+    while (dbus_message_iter_get_arg_type(dict) == DBUS_TYPE_DICT_ENTRY) {
+        DBusMessageIter kv;
+        DBusMessageIter variant;
+        DBusMessageIter map;
+        const char *outer_key = nullptr;
+
+        dbus_message_iter_recurse(dict, &entry);
+        kv = entry;
+        if (dbus_message_iter_get_arg_type(&kv) != DBUS_TYPE_STRING) {
+            dbus_message_iter_next(dict);
+            continue;
+        }
+
+        dbus_message_iter_get_basic(&kv, &outer_key);
+        dbus_message_iter_next(&kv);
+        if (dbus_message_iter_get_arg_type(&kv) != DBUS_TYPE_VARIANT) {
+            dbus_message_iter_next(dict);
+            continue;
+        }
+
+        dbus_message_iter_recurse(&kv, &variant);
+        if (strcmp(outer_key, key) == 0 &&
+            dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_ARRAY) {
+            dbus_message_iter_recurse(&variant, &map);
+            while (dbus_message_iter_get_arg_type(&map) == DBUS_TYPE_DICT_ENTRY) {
+                DBusMessageIter map_entry;
+                DBusMessageIter map_kv;
+                const char *map_key = nullptr;
+                const char *map_value = nullptr;
+
+                dbus_message_iter_recurse(&map, &map_entry);
+                map_kv = map_entry;
+                dbus_message_iter_get_basic(&map_kv, &map_key);
+                dbus_message_iter_next(&map_kv);
+                dbus_message_iter_get_basic(&map_kv, &map_value);
+                if (strcmp(map_key, entry_key) == 0) {
+                    return strcmp(map_value, expected) == 0;
+                }
+                dbus_message_iter_next(&map);
+            }
+            return false;
+        }
+
+        dbus_message_iter_next(dict);
+    }
+
+    return false;
+}
+
 static bool reply_contains_active_engine(DBusMessage *reply,
                                          const char *expected_engine) {
     DBusMessageIter iter;
@@ -323,6 +378,19 @@ static bool reply_contains_string_array(DBusMessage *reply,
     ASSERT(dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_ARRAY);
     dbus_message_iter_recurse(&iter, &dict);
     return dict_contains_string_array(&dict, key, expected, expected_count);
+}
+
+static bool reply_contains_string_dict_entry(DBusMessage *reply,
+                                             const char *key,
+                                             const char *entry_key,
+                                             const char *expected) {
+    DBusMessageIter iter;
+    DBusMessageIter dict;
+
+    ASSERT(dbus_message_iter_init(reply, &iter));
+    ASSERT(dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_ARRAY);
+    dbus_message_iter_recurse(&iter, &dict);
+    return dict_contains_string_dict_entry(&dict, key, entry_key, expected);
 }
 
 static TypioResult mock_init(TypioEngine *engine, [[maybe_unused]] TypioInstance *instance) {
@@ -441,6 +509,8 @@ TEST(exports_basic_engine_state_and_emits_change_signal) {
                                            ordered, 1));
         ASSERT(reply_contains_string_array(reply, TYPIO_STATUS_PROP_ENGINE_ORDER,
                                            engine_order, 2));
+        ASSERT(reply_contains_string_dict_entry(reply, TYPIO_STATUS_PROP_ENGINE_DISPLAY_NAMES,
+                                                "basic", "Basic"));
     }
     dbus_message_unref(reply);
 

@@ -1,6 +1,8 @@
 #include "control_internal.h"
+#include "control_widgets.h"
 
 #include "typio/dbus_protocol.h"
+#include "typio/engine_label.h"
 #include "typio/rime_schema_list.h"
 #include "typio/typio.h"
 
@@ -95,6 +97,575 @@ static guint control_find_model_index(GtkStringList *model, const char *value) {
     return GTK_INVALID_LIST_POSITION;
 }
 
+static guint control_engine_order_index(TypioControl *control, const char *engine_name);
+static void control_materialize_current_engine_order(TypioControl *control);
+static void control_queue_engine_order_editor_refresh(TypioControl *control);
+static void control_set_config_text(TypioControl *control, GVariant *config_text);
+
+static const char *control_lookup_engine_display_name(GVariant *display_names,
+                                                      const char *engine_name) {
+    GVariantIter iter;
+    const char *key;
+    const char *value;
+
+    if (!display_names || !engine_name ||
+        !g_variant_is_of_type(display_names, G_VARIANT_TYPE("a{ss}"))) {
+        return NULL;
+    }
+
+    g_variant_iter_init(&iter, display_names);
+    while (g_variant_iter_next(&iter, "{&s&s}", &key, &value)) {
+        if (g_strcmp0(key, engine_name) == 0) {
+            return value;
+        }
+    }
+
+    return NULL;
+}
+
+static guint control_string_list_count(GtkStringList *model) {
+    if (!model) {
+        return 0;
+    }
+
+    return (guint)g_list_model_get_n_items(G_LIST_MODEL(model));
+}
+
+static gboolean control_string_list_contains(GtkStringList *model, const char *value) {
+    return control_find_model_index(model, value) != GTK_INVALID_LIST_POSITION;
+}
+
+static guint control_string_array_count(GPtrArray *values) {
+    return values ? values->len : 0;
+}
+
+static const char *control_string_array_get(GPtrArray *values, guint index) {
+    if (!values || index >= values->len) {
+        return NULL;
+    }
+
+    return g_ptr_array_index(values, index);
+}
+
+static gboolean control_string_array_contains(GPtrArray *values, const char *value) {
+    if (!values || !value) {
+        return FALSE;
+    }
+
+    for (guint i = 0; i < values->len; ++i) {
+        const char *item = g_ptr_array_index(values, i);
+        if (item && g_strcmp0(item, value) == 0) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static void control_clear_string_array(GPtrArray *values) {
+    if (!values) {
+        return;
+    }
+
+    g_ptr_array_set_size(values, 0);
+}
+
+static void control_clear_string_list(GtkStringList *model) {
+    guint count;
+
+    if (!model) {
+        return;
+    }
+
+    count = control_string_list_count(model);
+    if (count > 0) {
+        gtk_string_list_splice(model, 0, count, NULL);
+    }
+}
+
+static void control_append_unique_string(GtkStringList *model, const char *value) {
+    if (!model || !value || !*value || control_string_list_contains(model, value)) {
+        return;
+    }
+
+    gtk_string_list_append(model, value);
+}
+
+static char *control_dup_engine_order_status(TypioControl *control, const char *engine_name) {
+    GString *status;
+    char *default_engine;
+    gboolean is_active = FALSE;
+    gboolean is_default = FALSE;
+    gboolean is_available = FALSE;
+
+    if (!engine_name || !*engine_name) {
+        return g_strdup("");
+    }
+
+    status = g_string_new(NULL);
+    default_engine = control_dup_staged_config_string(control, "default_engine", NULL);
+    is_default = default_engine && g_strcmp0(default_engine, engine_name) == 0;
+    is_available = control_string_array_contains(control->engine_id_model, engine_name);
+
+    if (control && control->engine_dropdown && control->engine_id_model) {
+        guint selected = gtk_drop_down_get_selected(control->engine_dropdown);
+        if (selected != GTK_INVALID_LIST_POSITION) {
+            const char *active = control_string_array_get(control->engine_id_model, selected);
+            is_active = active && g_strcmp0(active, engine_name) == 0;
+        }
+    }
+
+    if (is_active) {
+        g_string_append(status, "Active");
+    }
+    if (is_default) {
+        if (status->len > 0) {
+            g_string_append(status, " · ");
+        }
+        g_string_append(status, "Default");
+    }
+    if (!is_available) {
+        if (status->len > 0) {
+            g_string_append(status, " · ");
+        }
+        g_string_append(status, "Unavailable");
+    }
+
+    g_free(default_engine);
+    return g_string_free(status, FALSE);
+}
+
+static void control_engine_order_reorder_to(TypioControl *control,
+                                            const char *engine_name,
+                                            const char *target_name,
+                                            gboolean place_after) {
+    guint source_index;
+    guint target_index;
+    guint insert_index;
+    char *owned_name;
+    const char *items[2] = {NULL, NULL};
+
+    if (!control || !engine_name || !*engine_name || !target_name || !*target_name ||
+        !control->engine_order_model) {
+        return;
+    }
+
+    control_materialize_current_engine_order(control);
+    source_index = control_engine_order_index(control, engine_name);
+    target_index = control_engine_order_index(control, target_name);
+    if (source_index == GTK_INVALID_LIST_POSITION ||
+        target_index == GTK_INVALID_LIST_POSITION ||
+        source_index == target_index) {
+        return;
+    }
+
+    owned_name = g_strdup(engine_name);
+    gtk_string_list_splice(control->engine_order_model, source_index, 1, NULL);
+    if (source_index < target_index) {
+        target_index--;
+    }
+
+    insert_index = place_after ? target_index + 1 : target_index;
+    items[0] = owned_name;
+    gtk_string_list_splice(control->engine_order_model, insert_index, 0, items);
+    g_free(owned_name);
+    control_queue_engine_order_editor_refresh(control);
+    control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
+}
+
+static void control_engine_order_clear_drop_classes(GtkWidget *widget) {
+    if (!widget) {
+        return;
+    }
+
+    gtk_widget_remove_css_class(widget, "drop-before");
+    gtk_widget_remove_css_class(widget, "drop-after");
+}
+
+static void control_engine_order_update_drop_class(GtkWidget *widget, double y) {
+    int height;
+    gboolean place_after;
+
+    if (!widget) {
+        return;
+    }
+
+    height = gtk_widget_get_height(widget);
+    place_after = y >= (double)height / 2.0;
+    if (place_after) {
+        gtk_widget_remove_css_class(widget, "drop-before");
+        gtk_widget_add_css_class(widget, "drop-after");
+    } else {
+        gtk_widget_remove_css_class(widget, "drop-after");
+        gtk_widget_add_css_class(widget, "drop-before");
+    }
+}
+
+static GdkContentProvider *control_engine_order_drag_prepare(GtkDragSource *source,
+                                                             [[maybe_unused]] double x,
+                                                             [[maybe_unused]] double y,
+                                                             [[maybe_unused]] gpointer user_data) {
+    GtkWidget *widget;
+    const char *engine_name;
+
+    widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(source));
+    engine_name = widget ? g_object_get_data(G_OBJECT(widget), "typio-engine-name") : NULL;
+    if (!engine_name || !*engine_name) {
+        return NULL;
+    }
+
+    return gdk_content_provider_new_typed(G_TYPE_STRING, engine_name);
+}
+
+static void control_engine_order_drag_begin(GtkDragSource *source,
+                                            [[maybe_unused]] GdkDrag *drag,
+                                            [[maybe_unused]] gpointer user_data) {
+    GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(source));
+
+    if (widget) {
+        gtk_widget_add_css_class(widget, "dragging");
+    }
+}
+
+static void control_engine_order_drag_end(GtkDragSource *source,
+                                          [[maybe_unused]] GdkDrag *drag,
+                                          [[maybe_unused]] gboolean delete_data,
+                                          [[maybe_unused]] gpointer user_data) {
+    GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(source));
+
+    if (widget) {
+        gtk_widget_remove_css_class(widget, "dragging");
+        control_engine_order_clear_drop_classes(widget);
+    }
+}
+
+static gboolean control_engine_order_drop_cb(GtkDropTarget *target,
+                                             const GValue *value,
+                                             double x,
+                                             double y,
+                                             gpointer user_data) {
+    TypioControl *control = user_data;
+    GtkWidget *widget;
+    const char *target_name;
+    const char *source_name;
+    gboolean place_after;
+
+    if (!G_VALUE_HOLDS(value, G_TYPE_STRING)) {
+        return FALSE;
+    }
+
+    widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(target));
+    target_name = widget ? g_object_get_data(G_OBJECT(widget), "typio-engine-name") : NULL;
+    source_name = g_value_get_string(value);
+    if (!control || !target_name || !*target_name || !source_name || !*source_name) {
+        return FALSE;
+    }
+
+    control_engine_order_clear_drop_classes(widget);
+    (void)x;
+    place_after = y >= (double)gtk_widget_get_height(widget) / 2.0;
+    control_engine_order_reorder_to(control, source_name, target_name, place_after);
+    return TRUE;
+}
+
+static void control_engine_order_drag_motion_enter(GtkDropControllerMotion *motion,
+                                                   double x,
+                                                   double y,
+                                                   gpointer user_data) {
+    GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(motion));
+
+    (void)x;
+    (void)user_data;
+    control_engine_order_update_drop_class(widget, y);
+}
+
+static void control_engine_order_drag_motion_leave(GtkDropControllerMotion *motion,
+                                                   gpointer user_data) {
+    GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(motion));
+
+    (void)user_data;
+    control_engine_order_clear_drop_classes(widget);
+}
+
+static void control_engine_order_drag_motion(GtkDropControllerMotion *motion,
+                                             double x,
+                                             double y,
+                                             gpointer user_data) {
+    GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(motion));
+
+    (void)x;
+    (void)user_data;
+    control_engine_order_update_drop_class(widget, y);
+}
+
+static GtkWidget *control_build_engine_order_row(TypioControl *control,
+                                                 const char *engine_name,
+                                                 [[maybe_unused]] guint index,
+                                                 [[maybe_unused]] guint total) {
+    GtkWidget *row = gtk_list_box_row_new();
+    GtkWidget *shell = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    GtkWidget *text_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    GtkWidget *title = gtk_label_new(typio_engine_label_fallback(engine_name));
+    GtkWidget *subtitle;
+    GtkWidget *remove = gtk_button_new_from_icon_name("user-trash-symbolic");
+    GtkDragSource *drag_source;
+    GtkDropTarget *drop_target;
+    GtkDropControllerMotion *drop_motion;
+    char *row_name = control_build_debug_name("engine-order-row", engine_name);
+    char *subtitle_text = control_dup_engine_order_status(control, engine_name);
+
+    control_name_widget(row, row_name);
+    g_object_set_data_full(G_OBJECT(row), "typio-engine-name", g_strdup(engine_name), g_free);
+    gtk_widget_add_css_class(shell, "preference-row");
+    gtk_widget_add_css_class(shell, "drag-source");
+    gtk_widget_set_hexpand(text_box, TRUE);
+    gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
+    gtk_widget_add_css_class(title, "preference-title");
+
+    if (!subtitle_text || !*subtitle_text) {
+        g_free(subtitle_text);
+        subtitle_text = g_strdup_printf("Engine id: %s", engine_name);
+    } else {
+        char *with_id = g_strdup_printf("%s · id: %s", subtitle_text, engine_name);
+        g_free(subtitle_text);
+        subtitle_text = with_id;
+    }
+    subtitle = gtk_label_new(subtitle_text);
+    gtk_label_set_xalign(GTK_LABEL(subtitle), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(subtitle), TRUE);
+    gtk_widget_add_css_class(subtitle, "preference-description");
+    g_object_set_data_full(G_OBJECT(remove), "typio-engine-name", g_strdup(engine_name), g_free);
+    control_name_widget(remove, "engine-order-remove-button");
+    gtk_widget_add_css_class(remove, "flat");
+    gtk_widget_add_css_class(remove, "engine-order-remove-button");
+    gtk_widget_set_valign(remove, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(remove, GTK_ALIGN_END);
+    gtk_widget_set_tooltip_text(remove, "Remove from custom order");
+    g_signal_connect(remove, "clicked", G_CALLBACK(on_engine_order_remove_clicked), control);
+
+    gtk_box_append(GTK_BOX(text_box), title);
+    gtk_box_append(GTK_BOX(text_box), subtitle);
+    gtk_box_append(GTK_BOX(shell), text_box);
+    gtk_box_append(GTK_BOX(shell), remove);
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), shell);
+
+    drag_source = gtk_drag_source_new();
+    gtk_drag_source_set_actions(drag_source, GDK_ACTION_MOVE);
+    g_signal_connect(drag_source, "prepare",
+                     G_CALLBACK(control_engine_order_drag_prepare), control);
+    g_signal_connect(drag_source, "drag-begin",
+                     G_CALLBACK(control_engine_order_drag_begin), control);
+    g_signal_connect(drag_source, "drag-end",
+                     G_CALLBACK(control_engine_order_drag_end), control);
+    gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(drag_source));
+
+    drop_target = gtk_drop_target_new(G_TYPE_STRING, GDK_ACTION_MOVE);
+    g_signal_connect(drop_target, "drop",
+                     G_CALLBACK(control_engine_order_drop_cb), control);
+    gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(drop_target));
+
+    drop_motion = GTK_DROP_CONTROLLER_MOTION(gtk_drop_controller_motion_new());
+    g_signal_connect(drop_motion, "enter",
+                     G_CALLBACK(control_engine_order_drag_motion_enter), control);
+    g_signal_connect(drop_motion, "motion",
+                     G_CALLBACK(control_engine_order_drag_motion), control);
+    g_signal_connect(drop_motion, "leave",
+                     G_CALLBACK(control_engine_order_drag_motion_leave), control);
+    gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(drop_motion));
+
+    g_free(row_name);
+    g_free(subtitle_text);
+    return row;
+}
+
+static void control_clear_list_box(GtkListBox *list) {
+    GtkWidget *child;
+
+    if (!list) {
+        return;
+    }
+
+    while ((child = gtk_widget_get_first_child(GTK_WIDGET(list))) != NULL) {
+        gtk_list_box_remove(list, child);
+    }
+}
+
+static gboolean control_has_custom_engine_order(TypioControl *control) {
+    return control && control_string_list_count(control->engine_order_model) > 0;
+}
+
+static guint control_effective_engine_order_count(TypioControl *control) {
+    guint custom_count;
+
+    if (!control) {
+        return 0;
+    }
+
+    custom_count = control_string_list_count(control->engine_order_model);
+    return custom_count > 0 ? custom_count : control_string_array_count(control->engine_id_model);
+}
+
+static const char *control_effective_engine_order_name(TypioControl *control, guint index) {
+    guint custom_count;
+
+    if (!control) {
+        return NULL;
+    }
+
+    custom_count = control_string_list_count(control->engine_order_model);
+    if (custom_count > 0) {
+        return gtk_string_list_get_string(control->engine_order_model, index);
+    }
+
+    return control_string_array_get(control->engine_id_model, index);
+}
+
+static void control_materialize_current_engine_order(TypioControl *control) {
+    const char *items[2] = {NULL, NULL};
+
+    if (!control || !control->engine_order_model || !control->engine_id_model ||
+        control_has_custom_engine_order(control)) {
+        return;
+    }
+
+    for (guint i = 0; i < control_string_array_count(control->engine_id_model); ++i) {
+        char *copy = g_strdup(control_string_array_get(control->engine_id_model, i));
+        if (!copy || !*copy) {
+            g_free(copy);
+            continue;
+        }
+
+        items[0] = copy;
+        gtk_string_list_splice(control->engine_order_model,
+                               control_string_list_count(control->engine_order_model),
+                               0,
+                               items);
+        g_free(copy);
+    }
+}
+
+static void control_update_engine_order_mode_ui(TypioControl *control) {
+    gboolean has_custom;
+
+    if (!control) {
+        return;
+    }
+
+    has_custom = control_has_custom_engine_order(control);
+
+    if (control->engine_order_mode_label) {
+        gtk_label_set_text(
+            control->engine_order_mode_label,
+            has_custom
+                ? "Custom order is active. Drag to reorder or remove engines from the custom list."
+                : "Automatic order is active. This list is currently following the runtime engine discovery order.");
+    }
+
+    if (control->engine_order_reset_button) {
+        gtk_widget_set_visible(GTK_WIDGET(control->engine_order_reset_button), has_custom);
+        gtk_widget_set_sensitive(GTK_WIDGET(control->engine_order_reset_button), has_custom);
+    }
+}
+
+static gboolean control_engine_order_refresh_idle_cb(gpointer user_data) {
+    TypioControl *control = user_data;
+
+    if (!control) {
+        return G_SOURCE_REMOVE;
+    }
+
+    control->engine_order_refresh_source_id = 0;
+    control_refresh_engine_order_editor(control);
+    return G_SOURCE_REMOVE;
+}
+
+static void control_queue_engine_order_editor_refresh(TypioControl *control) {
+    if (!control) {
+        return;
+    }
+
+    if (control->engine_order_refresh_source_id != 0) {
+        return;
+    }
+
+    control->engine_order_refresh_source_id =
+        g_idle_add(control_engine_order_refresh_idle_cb, control);
+}
+
+void control_refresh_engine_order_editor(TypioControl *control) {
+    guint order_count;
+
+    if (!control || !control->engine_order_list ||
+        !control->engine_order_model || !control->engine_order_add_model ||
+        !control->engine_order_add_id_model) {
+        return;
+    }
+
+    control_clear_list_box(control->engine_order_list);
+    control_clear_string_list(control->engine_order_add_model);
+    control_clear_string_array(control->engine_order_add_id_model);
+
+    order_count = control_effective_engine_order_count(control);
+    if (order_count == 0) {
+        gtk_list_box_append(control->engine_order_list,
+                            control_create_preference_row_named(
+                                "keyboard-order-empty-row",
+                                "No keyboard engines available",
+                                "Typio could not find any keyboard engine to display right now.",
+                                NULL));
+    } else {
+        for (guint i = 0; i < order_count; ++i) {
+            const char *engine_name = control_effective_engine_order_name(control, i);
+            if (!engine_name || !*engine_name) {
+                continue;
+            }
+            gtk_list_box_append(control->engine_order_list,
+                                control_build_engine_order_row(control,
+                                                               engine_name,
+                                                               i,
+                                                               order_count));
+        }
+    }
+
+    for (guint i = 0; i < control_string_array_count(control->engine_id_model); ++i) {
+        const char *engine_name = control_string_array_get(control->engine_id_model, i);
+        if (!engine_name || !*engine_name ||
+            control_string_list_contains(control->engine_order_model, engine_name)) {
+            continue;
+        }
+        g_ptr_array_add(control->engine_order_add_id_model, g_strdup(engine_name));
+        gtk_string_list_append(control->engine_order_add_model,
+                               typio_engine_label_fallback(engine_name));
+    }
+
+    if (control->engine_order_add_dropdown) {
+        guint add_count = control_string_list_count(control->engine_order_add_model);
+        gtk_widget_set_sensitive(GTK_WIDGET(control->engine_order_add_dropdown), add_count > 0);
+        gtk_drop_down_set_selected(control->engine_order_add_dropdown,
+                                   add_count > 0 ? 0 : GTK_INVALID_LIST_POSITION);
+    }
+
+    control_update_engine_order_mode_ui(control);
+}
+
+void control_load_engine_order_from_config(TypioControl *control,
+                                           const TypioConfig *config) {
+    size_t order_count;
+
+    if (!control || !control->engine_order_model) {
+        return;
+    }
+
+    control_clear_string_list(control->engine_order_model);
+    order_count = config ? typio_config_get_array_size(config, "engine_order") : 0;
+    for (size_t i = 0; i < order_count; ++i) {
+        const char *engine_name = typio_config_get_array_string(config, "engine_order", i);
+        control_append_unique_string(control->engine_order_model, engine_name);
+    }
+
+    control_refresh_engine_order_editor(control);
+}
+
 static char *control_dup_runtime_string_for_config_key(TypioControl *control,
                                                        const char *config_key) {
     GVariant *value;
@@ -165,6 +736,11 @@ void control_test_apply_state_binding_value(TypioControl *control,
                                             const ControlStateBinding *binding,
                                             const char *fallback_text) {
     control_apply_state_binding_value(control, binding, fallback_text);
+}
+
+void control_test_set_config_text(TypioControl *control,
+                                  GVariant *config_text) {
+    control_set_config_text(control, config_text);
 }
 #endif
 
@@ -261,7 +837,8 @@ gboolean control_has_pending_config_change(TypioControl *control) {
     char *content;
     gboolean pending = FALSE;
 
-    if (!control || !control->config_buffer) {
+    if (!control || !control->config_buffer || !control->config_seeded ||
+        !control->committed_config_text) {
         return FALSE;
     }
 
@@ -300,6 +877,7 @@ static void control_set_config_text(TypioControl *control, GVariant *config_text
     const char *text = "";
     gboolean should_replace_stage;
     gboolean has_pending_local_changes;
+    gboolean has_local_stage;
     char *staged_text;
     char *preferred_voice_backend;
 
@@ -307,14 +885,18 @@ static void control_set_config_text(TypioControl *control, GVariant *config_text
         return;
     }
 
-    if (config_text && g_variant_is_of_type(config_text, G_VARIANT_TYPE_STRING)) {
-        text = g_variant_get_string(config_text, nullptr);
+    if (!config_text || !g_variant_is_of_type(config_text, G_VARIANT_TYPE_STRING)) {
+        g_debug("control_set_config_text: skipping seed because ConfigText is unavailable");
+        return;
     }
 
+    text = g_variant_get_string(config_text, nullptr);
+
     staged_text = control_dup_buffer_text(control);
-    has_pending_local_changes = staged_text &&
-        (!control->committed_config_text ||
-         g_strcmp0(staged_text, control->committed_config_text) != 0);
+    has_local_stage = staged_text && *staged_text;
+    has_pending_local_changes = has_local_stage &&
+        control->committed_config_text &&
+        g_strcmp0(staged_text, control->committed_config_text) != 0;
     should_replace_stage = !has_pending_local_changes ||
         (staged_text && g_strcmp0(staged_text, text) == 0);
 
@@ -343,28 +925,31 @@ static void control_set_config_text(TypioControl *control, GVariant *config_text
 static void control_append_rime_schema(TypioControl *control, const char *schema_id) {
     guint count;
 
-    if (!control || !control->rime_schema_model || !schema_id || !*schema_id) {
+    if (!control || !control->rime_schema_model || !control->rime_schema_id_model ||
+        !schema_id || !*schema_id) {
         return;
     }
 
-    count = (guint)g_list_model_get_n_items(G_LIST_MODEL(control->rime_schema_model));
+    count = control_string_array_count(control->rime_schema_id_model);
     for (guint i = 0; i < count; ++i) {
-        const char *item = gtk_string_list_get_string(control->rime_schema_model, i);
+        const char *item = control_string_array_get(control->rime_schema_id_model, i);
         if (item && g_strcmp0(item, schema_id) == 0) {
             return;
         }
     }
 
+    g_ptr_array_add(control->rime_schema_id_model, g_strdup(schema_id));
     gtk_string_list_append(control->rime_schema_model, schema_id);
 }
 
 static void control_clear_rime_schema_model(TypioControl *control) {
     guint count;
 
-    if (!control || !control->rime_schema_model) {
+    if (!control || !control->rime_schema_model || !control->rime_schema_id_model) {
         return;
     }
 
+    control_clear_string_array(control->rime_schema_id_model);
     count = (guint)g_list_model_get_n_items(G_LIST_MODEL(control->rime_schema_model));
     gtk_string_list_splice(control->rime_schema_model, 0, count, NULL);
 }
@@ -379,13 +964,15 @@ void control_refresh_rime_schema_options(gpointer user_data,
     const char *default_data_dir = NULL;
     char *data_dir_buf = NULL;
 
-    if (!control || !control->rime_schema_model) {
+    if (!control || !control->rime_schema_model || !control->rime_schema_id_model) {
         return;
     }
 
     was_updating_ui = control_is_ui_syncing(control);
     control_begin_ui_sync(control);
     control_clear_rime_schema_model(control);
+    g_ptr_array_add(control->rime_schema_id_model, g_strdup(""));
+    gtk_string_list_append(control->rime_schema_model, "Unselected");
 
     if (parsed_config) {
         rime_config = typio_config_get_section(parsed_config, "engines.rime");
@@ -418,8 +1005,7 @@ void control_refresh_rime_schema_options(gpointer user_data,
     g_debug("control_refresh_rime_schema_model: configured_schema=%s count=%u",
             configured_schema ? configured_schema : "(null)",
             (guint)g_list_model_get_n_items(G_LIST_MODEL(control->rime_schema_model)));
-    gtk_widget_set_sensitive(GTK_WIDGET(control->rime_schema_dropdown),
-                             g_list_model_get_n_items(G_LIST_MODEL(control->rime_schema_model)) > 0);
+    gtk_widget_set_sensitive(GTK_WIDGET(control->rime_schema_dropdown), TRUE);
     control->updating_ui = was_updating_ui;
 
     if (rime_config) {
@@ -491,6 +1077,7 @@ void control_sync_form_from_buffer(TypioControl *control) {
     GtkTextIter end;
     char *content;
     TypioConfig *config;
+    const char *configured_schema;
 
     if (!control || !control->config_buffer) {
         return;
@@ -510,6 +1097,13 @@ void control_sync_form_from_buffer(TypioControl *control) {
 
     control_begin_ui_sync(control);
     control_bindings_load_all(control->bindings, control->binding_count, config);
+    control_load_engine_order_from_config(control, config);
+    configured_schema = typio_config_get_string(config,
+                                                control->rime_schema_state.config_key,
+                                                NULL);
+    control_state_binding_refresh_options(&control->rime_schema_state,
+                                          config,
+                                          configured_schema);
     control_state_binding_load_from_config(&control->rime_schema_state, config);
     if (control->voice_backend_dropdown) {
         const char *voice_backend = typio_config_get_string(config,
@@ -568,11 +1162,27 @@ void control_sync_buffer_from_form(TypioControl *control) {
 
     control_bindings_save_all(control->bindings, control->binding_count, config);
 
+    if (control->engine_order_model) {
+        guint order_count = control_string_list_count(control->engine_order_model);
+        if (order_count > 0) {
+            const char **ordered_names = g_new0(const char *, order_count);
+            for (guint i = 0; i < order_count; ++i) {
+                ordered_names[i] = gtk_string_list_get_string(control->engine_order_model, i);
+            }
+            typio_config_set_string_array(config, "engine_order", ordered_names, order_count);
+            g_free(ordered_names);
+        } else {
+            typio_config_remove(config, "engine_order");
+        }
+    }
+
     if (control->rime_schema_dropdown && control->rime_schema_model) {
         const char *schema = control_state_binding_get_selected_value(&control->rime_schema_state);
         if (schema && *schema) {
             g_debug("control_sync_buffer_from_form: selected_rime_schema=%s", schema);
             control_state_binding_save_to_config(&control->rime_schema_state, config);
+        } else {
+            typio_config_remove(config, control->rime_schema_state.config_key);
         }
     }
 
@@ -624,16 +1234,18 @@ void control_sync_buffer_from_form(TypioControl *control) {
 }
 
 static void control_set_engine_model(TypioControl *control,
-                                     GVariant *engines) {
+                                     GVariant *engines,
+                                     GVariant *display_names) {
     guint count = 0;
 
-    if (!control || !control->engine_model) {
+    if (!control || !control->engine_model || !control->engine_id_model) {
         return;
     }
 
     control_begin_ui_sync(control);
     count = (guint)g_list_model_get_n_items(G_LIST_MODEL(control->engine_model));
     gtk_string_list_splice(control->engine_model, 0, count, nullptr);
+    control_clear_string_array(control->engine_id_model);
 
     if (engines && g_variant_is_of_type(engines, G_VARIANT_TYPE("as"))) {
         GVariantIter iter;
@@ -641,16 +1253,21 @@ static void control_set_engine_model(TypioControl *control,
 
         g_variant_iter_init(&iter, engines);
         while (g_variant_iter_next(&iter, "&s", &name)) {
+            const char *display_name;
             if (is_voice_backend_name(name)) {
                 continue;
             }
-            gtk_string_list_append(control->engine_model, name);
+            g_ptr_array_add(control->engine_id_model, g_strdup(name));
+            display_name = control_lookup_engine_display_name(display_names, name);
+            gtk_string_list_append(control->engine_model,
+                                   display_name ? display_name : typio_engine_label_fallback(name));
         }
     } else {
         gtk_drop_down_set_selected(control->engine_dropdown, GTK_INVALID_LIST_POSITION);
     }
 
     control_end_ui_sync(control);
+    control_refresh_engine_order_editor(control);
 }
 
 static void control_set_voice_backend_model(TypioControl *control,
@@ -685,6 +1302,7 @@ static void control_set_voice_backend_model(TypioControl *control,
 void control_refresh_from_proxy(TypioControl *control) {
     GVariant *active_engine;
     GVariant *available_engines;
+    GVariant *engine_display_names;
     GVariant *config_text;
     const char *active_name = "";
     const char *config_text_str = NULL;
@@ -699,7 +1317,7 @@ void control_refresh_from_proxy(TypioControl *control) {
         g_warning("control_refresh_from_proxy: Typio service unavailable");
         control_update_availability_label(control, "Typio service unavailable", TRUE);
         control_clear_rime_schema_model(control);
-        control_set_engine_model(control, nullptr);
+        control_set_engine_model(control, nullptr, nullptr);
         control_set_voice_backend_model(control, nullptr);
         control_apply_state_binding_value(control, &control->keyboard_engine_state, NULL);
         control_apply_state_binding_value(control, &control->voice_backend_state, NULL);
@@ -715,6 +1333,8 @@ void control_refresh_from_proxy(TypioControl *control) {
     active_engine = control_get_runtime_property_for_config_key(control,
                                                                control->keyboard_engine_state.config_key);
     available_engines = g_dbus_proxy_get_cached_property(control->proxy, TYPIO_STATUS_PROP_ORDERED_ENGINES);
+    engine_display_names = g_dbus_proxy_get_cached_property(control->proxy,
+                                                            TYPIO_STATUS_PROP_ENGINE_DISPLAY_NAMES);
     config_text = g_dbus_proxy_get_cached_property(control->proxy, TYPIO_STATUS_PROP_CONFIG_TEXT);
 
     if (active_engine) {
@@ -737,7 +1357,7 @@ void control_refresh_from_proxy(TypioControl *control) {
                 configured_voice ? configured_voice : "(unset)",
                 configured_schema ? configured_schema : "(unset)");
     }
-    control_set_engine_model(control, available_engines);
+    control_set_engine_model(control, available_engines, engine_display_names);
     control_state_binding_refresh_options(&control->rime_schema_state,
                                           parsed_config,
                                           configured_schema);
@@ -760,6 +1380,9 @@ void control_refresh_from_proxy(TypioControl *control) {
     }
     if (available_engines) {
         g_variant_unref(available_engines);
+    }
+    if (engine_display_names) {
+        g_variant_unref(engine_display_names);
     }
     if (active_engine) {
         g_variant_unref(active_engine);
@@ -940,9 +1563,9 @@ void on_display_dropdown_changed(GObject *object,
         const char *schema = NULL;
         if (control->rime_schema_model && object == G_OBJECT(control->rime_schema_dropdown) &&
             selected != GTK_INVALID_LIST_POSITION) {
-            schema = gtk_string_list_get_string(control->rime_schema_model, selected);
+            schema = control_state_binding_get_selected_value(&control->rime_schema_state);
             g_debug("on_display_dropdown_changed: rime_schema_selected=%s",
-                    schema ? schema : "(null)");
+                    schema ? schema : "(unselected)");
         }
         control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
     }
@@ -975,6 +1598,138 @@ void on_display_entry_changed([[maybe_unused]] GtkEditable *editable,
     }
 }
 
+static guint control_engine_order_index(TypioControl *control, const char *engine_name) {
+    if (!control || !control->engine_order_model) {
+        return GTK_INVALID_LIST_POSITION;
+    }
+
+    return control_find_model_index(control->engine_order_model, engine_name);
+}
+
+static void control_engine_order_move(TypioControl *control,
+                                      const char *engine_name,
+                                      int direction) {
+    guint index;
+    guint count;
+    guint target;
+    char *owned_name;
+    const char *items[2] = {NULL, NULL};
+
+    if (!control || !engine_name || !*engine_name || !control->engine_order_model) {
+        return;
+    }
+
+    control_materialize_current_engine_order(control);
+    index = control_engine_order_index(control, engine_name);
+    count = control_string_list_count(control->engine_order_model);
+    if (index == GTK_INVALID_LIST_POSITION || count < 2) {
+        return;
+    }
+
+    if (direction < 0) {
+        if (index == 0) {
+            return;
+        }
+        target = index - 1;
+    } else {
+        if (index + 1 >= count) {
+            return;
+        }
+        target = index + 1;
+    }
+
+    owned_name = g_strdup(engine_name);
+    gtk_string_list_splice(control->engine_order_model, index, 1, NULL);
+    items[0] = owned_name;
+    gtk_string_list_splice(control->engine_order_model, target, 0, items);
+    g_free(owned_name);
+    control_queue_engine_order_editor_refresh(control);
+    control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
+}
+
+void on_engine_order_reset_clicked([[maybe_unused]] GtkButton *button, gpointer user_data) {
+    TypioControl *control = user_data;
+    guint count;
+
+    if (!control || !control->engine_order_model) {
+        return;
+    }
+
+    count = control_string_list_count(control->engine_order_model);
+    if (count == 0) {
+        return;
+    }
+
+    gtk_string_list_splice(control->engine_order_model, 0, count, NULL);
+    control_queue_engine_order_editor_refresh(control);
+    control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
+}
+
+void on_engine_order_add_clicked([[maybe_unused]] GtkButton *button, gpointer user_data) {
+    TypioControl *control = user_data;
+    guint selected;
+    const char *engine_name;
+    char *owned_name;
+    const char *items[2] = {NULL, NULL};
+
+    if (!control || !control->engine_order_add_dropdown || !control->engine_order_model) {
+        return;
+    }
+
+    selected = gtk_drop_down_get_selected(control->engine_order_add_dropdown);
+    if (selected == GTK_INVALID_LIST_POSITION) {
+        return;
+    }
+
+    engine_name = control_string_array_get(control->engine_order_add_id_model, selected);
+    if (!engine_name || !*engine_name ||
+        control_string_list_contains(control->engine_order_model, engine_name)) {
+        return;
+    }
+
+    control_materialize_current_engine_order(control);
+
+    owned_name = g_strdup(engine_name);
+    items[0] = owned_name;
+    gtk_string_list_splice(control->engine_order_model,
+                           control_string_list_count(control->engine_order_model),
+                           0,
+                           items);
+    g_free(owned_name);
+    control_queue_engine_order_editor_refresh(control);
+    control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
+}
+
+void on_engine_order_move_up_clicked(GtkButton *button, gpointer user_data) {
+    const char *engine_name = g_object_get_data(G_OBJECT(button), "typio-engine-name");
+    control_engine_order_move(user_data, engine_name, -1);
+}
+
+void on_engine_order_move_down_clicked(GtkButton *button, gpointer user_data) {
+    const char *engine_name = g_object_get_data(G_OBJECT(button), "typio-engine-name");
+    control_engine_order_move(user_data, engine_name, 1);
+}
+
+void on_engine_order_remove_clicked(GtkButton *button, gpointer user_data) {
+    TypioControl *control = user_data;
+    const char *engine_name = g_object_get_data(G_OBJECT(button), "typio-engine-name");
+    guint index;
+
+    if (!control || !engine_name || !*engine_name || !control->engine_order_model) {
+        return;
+    }
+
+    control_materialize_current_engine_order(control);
+    index = control_engine_order_index(control, engine_name);
+    if (index == GTK_INVALID_LIST_POSITION) {
+        return;
+    }
+
+    gtk_string_list_splice(control->engine_order_model, index, 1, NULL);
+    control_queue_engine_order_editor_refresh(control);
+    control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
+}
+
 void on_engine_selected(GObject *object,
                         [[maybe_unused]] GParamSpec *pspec,
                         gpointer user_data) {
@@ -991,7 +1746,7 @@ void on_engine_selected(GObject *object,
         return;
     }
 
-    engine_name = gtk_string_list_get_string(control->engine_model, selected);
+    engine_name = control_string_array_get(control->engine_id_model, selected);
     control_activate_engine(control, engine_name);
     control_update_engine_config_panel(control, engine_name);
 }

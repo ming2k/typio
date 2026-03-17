@@ -62,6 +62,81 @@ static char *buffer_text(GtkTextBuffer *buffer) {
     return gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
 }
 
+static guint string_list_count(GtkStringList *model) {
+    return model ? (guint)g_list_model_get_n_items(G_LIST_MODEL(model)) : 0;
+}
+
+static const char *selected_string_array_value(GPtrArray *values, GtkDropDown *dropdown) {
+    guint selected;
+
+    if (!values || !dropdown) {
+        return NULL;
+    }
+
+    selected = gtk_drop_down_get_selected(dropdown);
+    if (selected == GTK_INVALID_LIST_POSITION || selected >= values->len) {
+        return NULL;
+    }
+
+    return g_ptr_array_index(values, selected);
+}
+
+static void assert_string_array_dropdown_selection(GPtrArray *values,
+                                                   GtkDropDown *dropdown,
+                                                   const char *expected) {
+    const char *selected = selected_string_array_value(values, dropdown);
+
+    if (expected) {
+        ASSERT(selected != NULL);
+        ASSERT_STR_EQ(selected, expected);
+    } else {
+        ASSERT(selected == NULL);
+    }
+}
+
+static void assert_config_selector_loads_array_value(GPtrArray *values,
+                                                     GtkDropDown *dropdown,
+                                                     const char *expected) {
+    assert_string_array_dropdown_selection(values, dropdown, expected);
+}
+
+static void assert_string_list_dropdown_selection(GtkStringList *model,
+                                                  GtkDropDown *dropdown,
+                                                  const char *expected) {
+    guint selected;
+    const char *value = NULL;
+
+    ASSERT(model != NULL);
+    ASSERT(dropdown != NULL);
+    selected = gtk_drop_down_get_selected(dropdown);
+    if (selected != GTK_INVALID_LIST_POSITION) {
+        value = gtk_string_list_get_string(model, selected);
+    }
+
+    if (expected) {
+        ASSERT(value != NULL);
+        ASSERT_STR_EQ(value, expected);
+    } else {
+        ASSERT(value == NULL);
+    }
+}
+
+static void assert_runtime_selector_maps_value(ControlStateBinding *binding,
+                                               const char *expected) {
+    const char *selected;
+
+    ASSERT(binding != NULL);
+    control_state_binding_select_value(binding, expected);
+    selected = control_state_binding_get_selected_value(binding);
+
+    if (expected) {
+        ASSERT(selected != NULL);
+        ASSERT_STR_EQ(selected, expected);
+    } else {
+        ASSERT(selected == NULL);
+    }
+}
+
 static void setup_control(TypioControl *control, char *root_template) {
     char whisper_dir[1024];
     char sherpa_dir[1024];
@@ -94,25 +169,35 @@ static void setup_control(TypioControl *control, char *root_template) {
 
 static void cleanup_control(TypioControl *control) {
     control_models_cleanup(control);
+    if (control->engine_id_model) {
+        g_ptr_array_unref(control->engine_id_model);
+    }
+    if (control->engine_order_add_id_model) {
+        g_ptr_array_unref(control->engine_order_add_id_model);
+    }
+    if (control->rime_schema_id_model) {
+        g_ptr_array_unref(control->rime_schema_id_model);
+    }
     g_free(control->committed_config_text);
 }
 
-TEST(window_builds_actions) {
+TEST(page_builds_actions) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
-    GtkApplication *app;
-    GtkWidget *window;
-    GError *error = NULL;
+    GtkWidget *display_page;
+    GtkWidget *engines_page;
+    GtkWidget *shortcuts_page;
 
     setup_control(&control, root);
-    app = gtk_application_new("org.typio.ControlTest", G_APPLICATION_NON_UNIQUE);
-    ASSERT_NOT_NULL(app);
-    ASSERT(g_application_register(G_APPLICATION(app), NULL, &error));
-    ASSERT(error == NULL);
+    display_page = control_build_display_page(&control);
+    engines_page = control_build_engines_page(&control);
+    shortcuts_page = control_build_shortcuts_page(&control);
 
-    window = control_build_window(&control, app);
-    ASSERT_NOT_NULL(window);
+    ASSERT_NOT_NULL(display_page);
+    ASSERT_NOT_NULL(engines_page);
+    ASSERT_NOT_NULL(shortcuts_page);
     ASSERT_NOT_NULL(control.config_status_label);
+    cleanup_control(&control);
 }
 
 TEST(widget_debug_names_are_stable) {
@@ -151,6 +236,24 @@ TEST(state_bindings_are_configured) {
     ASSERT(control.rime_schema_state.source == CONTROL_STATE_VALUE_FROM_CONFIG);
     ASSERT(control.rime_schema_state.dropdown == control.rime_schema_dropdown);
     ASSERT(control.rime_schema_state.refresh_options != NULL);
+
+    cleanup_control(&control);
+}
+
+TEST(keyboard_engine_binding_selects_engine_ids) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+
+    setup_control(&control, root);
+    g_ptr_array_add(control.engine_id_model, g_strdup("basic"));
+    gtk_string_list_append(control.engine_model, "Basic");
+    g_ptr_array_add(control.engine_id_model, g_strdup("rime"));
+    gtk_string_list_append(control.engine_model, "Rime");
+
+    assert_runtime_selector_maps_value(&control.keyboard_engine_state, "rime");
+    assert_string_array_dropdown_selection(control.engine_id_model,
+                                           control.engine_dropdown,
+                                           "rime");
 
     cleanup_control(&control);
 }
@@ -227,6 +330,23 @@ TEST(voice_model_selection_follows_staged_config) {
     cleanup_control(&control);
 }
 
+TEST(voice_backend_loads_selected_value_from_config) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+
+    setup_control(&control, root);
+    control.committed_config_text = g_strdup(
+        "default_voice_engine = \"sherpa-onnx\"\n");
+    write_buffer(control.config_buffer, control.committed_config_text);
+    control_sync_form_from_buffer(&control);
+
+    assert_string_list_dropdown_selection(control.voice_backend_model,
+                                          control.voice_backend_dropdown,
+                                          "sherpa-onnx");
+
+    cleanup_control(&control);
+}
+
 TEST(voice_backend_sync_writes_default_engine_only) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
@@ -297,6 +417,130 @@ TEST(rime_schema_uses_dropdown_selection) {
         "[engines.rime]\n"
         "schema = \"luna_pinyin\"\n");
     write_buffer(control.config_buffer, control.committed_config_text);
+    g_ptr_array_add(control.rime_schema_id_model, g_strdup(""));
+    gtk_string_list_append(control.rime_schema_model, "Unselected");
+    g_ptr_array_add(control.rime_schema_id_model, g_strdup("luna_pinyin"));
+    gtk_string_list_append(control.rime_schema_model, "luna_pinyin");
+    control_sync_form_from_buffer(&control);
+
+    gtk_drop_down_set_selected(control.rime_schema_dropdown, 1);
+    on_display_dropdown_changed(G_OBJECT(control.rime_schema_dropdown), NULL, &control);
+
+    rendered = buffer_text(control.config_buffer);
+    ASSERT(rendered != NULL);
+    ASSERT(strstr(rendered, "schema = \"luna_pinyin\"") != NULL);
+    g_free(rendered);
+
+    cleanup_control(&control);
+}
+
+TEST(rime_schema_loads_selected_value_from_config) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    const char *selected_schema;
+
+    setup_control(&control, root);
+    control.committed_config_text = g_strdup(
+        "[engines.rime]\n"
+        "schema = \"luna_pinyin\"\n");
+    write_buffer(control.config_buffer, control.committed_config_text);
+    g_ptr_array_add(control.rime_schema_id_model, g_strdup(""));
+    gtk_string_list_append(control.rime_schema_model, "Unselected");
+    g_ptr_array_add(control.rime_schema_id_model, g_strdup("luna_pinyin"));
+    gtk_string_list_append(control.rime_schema_model, "luna_pinyin");
+
+    control_sync_form_from_buffer(&control);
+
+    selected_schema = selected_string_array_value(control.rime_schema_id_model,
+                                                  control.rime_schema_dropdown);
+    ASSERT(selected_schema != NULL);
+    ASSERT_STR_EQ(selected_schema, "luna_pinyin");
+    assert_config_selector_loads_array_value(control.rime_schema_id_model,
+                                             control.rime_schema_dropdown,
+                                             "luna_pinyin");
+
+    cleanup_control(&control);
+}
+
+TEST(rime_schema_sync_from_buffer_refreshes_options_before_selection) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+
+    setup_control(&control, root);
+    control.committed_config_text = g_strdup(
+        "[engines.rime]\n"
+        "schema = \"luna_pinyin\"\n");
+    write_buffer(control.config_buffer, control.committed_config_text);
+
+    control_sync_form_from_buffer(&control);
+
+    ASSERT(string_list_count(control.rime_schema_model) >= 2);
+    assert_config_selector_loads_array_value(control.rime_schema_id_model,
+                                             control.rime_schema_dropdown,
+                                             "luna_pinyin");
+
+    cleanup_control(&control);
+}
+
+TEST(initial_config_seed_replaces_empty_buffer) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    char *rendered;
+
+    setup_control(&control, root);
+    write_buffer(control.config_buffer, "");
+    control.committed_config_text = NULL;
+
+    control_test_set_config_text(&control,
+                                 g_variant_new_string("[engines]\n"
+                                                      "rime.schema = \"m2k_pinyin\"\n"));
+
+    rendered = buffer_text(control.config_buffer);
+    ASSERT(rendered != NULL);
+    ASSERT(strstr(rendered, "rime.schema = \"m2k_pinyin\"") != NULL);
+    assert_config_selector_loads_array_value(control.rime_schema_id_model,
+                                             control.rime_schema_dropdown,
+                                             "m2k_pinyin");
+    g_free(rendered);
+
+    cleanup_control(&control);
+}
+
+TEST(rime_schema_refresh_options_preserves_unselected_and_configured_value) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    TypioConfig *config;
+
+    setup_control(&control, root);
+    config = typio_config_new();
+    ASSERT(config != NULL);
+    typio_config_set_string(config, "engines.rime.user_data_dir", "/tmp/typio-missing-rime-dir");
+
+    control_refresh_rime_schema_options(&control, config, "m2k_pinyin");
+
+    ASSERT(string_list_count(control.rime_schema_model) == 2);
+    ASSERT_STR_EQ(gtk_string_list_get_string(control.rime_schema_model, 0), "Unselected");
+    ASSERT_STR_EQ((const char *)g_ptr_array_index(control.rime_schema_id_model, 0), "");
+    ASSERT_STR_EQ(gtk_string_list_get_string(control.rime_schema_model, 1), "m2k_pinyin");
+    ASSERT_STR_EQ((const char *)g_ptr_array_index(control.rime_schema_id_model, 1), "m2k_pinyin");
+
+    typio_config_free(config);
+    cleanup_control(&control);
+}
+
+TEST(rime_schema_unselected_removes_config_key) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    char *rendered;
+
+    setup_control(&control, root);
+    control.committed_config_text = g_strdup(
+        "[engines.rime]\n"
+        "schema = \"luna_pinyin\"\n");
+    write_buffer(control.config_buffer, control.committed_config_text);
+    g_ptr_array_add(control.rime_schema_id_model, g_strdup(""));
+    gtk_string_list_append(control.rime_schema_model, "Unselected");
+    g_ptr_array_add(control.rime_schema_id_model, g_strdup("luna_pinyin"));
     gtk_string_list_append(control.rime_schema_model, "luna_pinyin");
     control_sync_form_from_buffer(&control);
 
@@ -305,7 +549,7 @@ TEST(rime_schema_uses_dropdown_selection) {
 
     rendered = buffer_text(control.config_buffer);
     ASSERT(rendered != NULL);
-    ASSERT(strstr(rendered, "schema = \"luna_pinyin\"") != NULL);
+    ASSERT(strstr(rendered, "schema = \"luna_pinyin\"") == NULL);
     g_free(rendered);
 
     cleanup_control(&control);
@@ -392,6 +636,100 @@ TEST(programmatic_state_binding_updates_do_not_stage_changes) {
     cleanup_control(&control);
 }
 
+TEST(engine_order_roundtrips_and_preserves_default_engine) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    GtkWidget *button;
+    char *rendered;
+
+    setup_control(&control, root);
+    g_ptr_array_add(control.engine_id_model, g_strdup("basic"));
+    gtk_string_list_append(control.engine_model, "Basic");
+    g_ptr_array_add(control.engine_id_model, g_strdup("rime"));
+    gtk_string_list_append(control.engine_model, "Rime");
+    g_ptr_array_add(control.engine_id_model, g_strdup("mozc"));
+    gtk_string_list_append(control.engine_model, "Mozc");
+    control_refresh_engine_order_editor(&control);
+
+    control.committed_config_text = g_strdup(
+        "default_engine = \"basic\"\n"
+        "engine_order = [\"rime\", \"basic\"]\n");
+    write_buffer(control.config_buffer, control.committed_config_text);
+    control_sync_form_from_buffer(&control);
+
+    ASSERT(string_list_count(control.engine_order_model) == 2);
+    ASSERT_STR_EQ(gtk_string_list_get_string(control.engine_order_model, 0), "rime");
+    ASSERT_STR_EQ(gtk_string_list_get_string(control.engine_order_model, 1), "basic");
+    ASSERT(string_list_count(control.engine_order_add_model) == 1);
+    ASSERT_STR_EQ(gtk_string_list_get_string(control.engine_order_add_model, 0), "Mozc");
+
+    gtk_drop_down_set_selected(control.engine_order_add_dropdown, 0);
+    on_engine_order_add_clicked(NULL, &control);
+
+    button = gtk_button_new();
+    g_object_set_data(G_OBJECT(button), "typio-engine-name", "mozc");
+    on_engine_order_move_up_clicked(GTK_BUTTON(button), &control);
+
+    button = gtk_button_new();
+    g_object_set_data(G_OBJECT(button), "typio-engine-name", "rime");
+    on_engine_order_remove_clicked(GTK_BUTTON(button), &control);
+
+    rendered = buffer_text(control.config_buffer);
+    ASSERT(rendered != NULL);
+    ASSERT(strstr(rendered, "default_engine = \"basic\"") != NULL);
+    ASSERT(strstr(rendered, "engine_order = [\"mozc\", \"basic\"]") != NULL);
+    g_free(rendered);
+
+    cleanup_control(&control);
+}
+
+TEST(engine_order_mode_actions_toggle_persistence) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    GtkWidget *button;
+    char *rendered;
+
+    setup_control(&control, root);
+    g_ptr_array_add(control.engine_id_model, g_strdup("basic"));
+    gtk_string_list_append(control.engine_model, "Basic");
+    g_ptr_array_add(control.engine_id_model, g_strdup("rime"));
+    gtk_string_list_append(control.engine_model, "Rime");
+    g_ptr_array_add(control.engine_id_model, g_strdup("mozc"));
+    gtk_string_list_append(control.engine_model, "Mozc");
+    write_buffer(control.config_buffer, "default_engine = \"basic\"\n");
+    control.committed_config_text = g_strdup("default_engine = \"basic\"\n");
+    control_sync_form_from_buffer(&control);
+    control_refresh_engine_order_editor(&control);
+
+    ASSERT(strstr(gtk_label_get_text(control.engine_order_mode_label), "Automatic order") != NULL);
+    ASSERT(!gtk_widget_is_sensitive(GTK_WIDGET(control.engine_order_reset_button)));
+    ASSERT(string_list_count(control.engine_order_add_model) == 0);
+
+    button = gtk_button_new();
+    g_object_set_data(G_OBJECT(button), "typio-engine-name", "rime");
+    on_engine_order_remove_clicked(GTK_BUTTON(button), &control);
+
+    rendered = buffer_text(control.config_buffer);
+    ASSERT(rendered != NULL);
+    ASSERT(strstr(rendered, "engine_order = [\"basic\", \"mozc\"]") != NULL);
+    g_free(rendered);
+    control_refresh_engine_order_editor(&control);
+    ASSERT(strstr(gtk_label_get_text(control.engine_order_mode_label), "Custom order") != NULL);
+    ASSERT(gtk_widget_is_sensitive(GTK_WIDGET(control.engine_order_reset_button)));
+
+    on_engine_order_reset_clicked(control.engine_order_reset_button, &control);
+
+    rendered = buffer_text(control.config_buffer);
+    ASSERT(rendered != NULL);
+    ASSERT(strstr(rendered, "engine_order =") == NULL);
+    ASSERT(strstr(rendered, "default_engine = \"basic\"") != NULL);
+    g_free(rendered);
+    control_refresh_engine_order_editor(&control);
+    ASSERT(strstr(gtk_label_get_text(control.engine_order_mode_label), "Automatic order") != NULL);
+
+    cleanup_control(&control);
+}
+
 TEST(unseeded_form_changes_do_not_dirty_buffer) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
@@ -412,25 +750,49 @@ TEST(unseeded_form_changes_do_not_dirty_buffer) {
     cleanup_control(&control);
 }
 
+TEST(unseeded_control_has_no_pending_change) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+
+    setup_control(&control, root);
+    control.config_seeded = FALSE;
+    write_buffer(control.config_buffer, "");
+
+    ASSERT(!control_has_pending_config_change(&control));
+
+    cleanup_control(&control);
+}
+
 int main(void) {
+    setbuf(stdout, NULL);
     if (!gtk_init_check()) {
         printf("Skipping control config tests: no display available\n");
         return 0;
     }
 
     printf("Running control config tests:\n");
-    run_test_window_builds_actions();
+    run_test_page_builds_actions();
     run_test_widget_debug_names_are_stable();
     run_test_state_bindings_are_configured();
+    run_test_keyboard_engine_binding_selects_engine_ids();
     run_test_form_changes_update_buffer_immediately();
     run_test_voice_model_selection_follows_staged_config();
+    run_test_voice_backend_loads_selected_value_from_config();
     run_test_voice_backend_sync_writes_default_engine_only();
     run_test_notification_settings_roundtrip_through_form();
     run_test_rime_schema_uses_dropdown_selection();
+    run_test_rime_schema_loads_selected_value_from_config();
+    run_test_rime_schema_sync_from_buffer_refreshes_options_before_selection();
+    run_test_initial_config_seed_replaces_empty_buffer();
+    run_test_rime_schema_refresh_options_preserves_unselected_and_configured_value();
+    run_test_rime_schema_unselected_removes_config_key();
     run_test_invalid_voice_backend_selection_does_not_reset_config();
     run_test_unknown_dropdown_value_is_not_replaced_by_first_option();
     run_test_programmatic_state_binding_updates_do_not_stage_changes();
+    run_test_engine_order_roundtrips_and_preserves_default_engine();
+    run_test_engine_order_mode_actions_toggle_persistence();
     run_test_unseeded_form_changes_do_not_dirty_buffer();
+    run_test_unseeded_control_has_no_pending_change();
     printf("\nPassed %d/%d tests\n", tests_passed, tests_run);
     return 0;
 }

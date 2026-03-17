@@ -84,6 +84,47 @@ static const char *control_string_list_value(gpointer user_data, guint index) {
     return gtk_string_list_get_string(model, index);
 }
 
+static guint control_string_array_index(gpointer user_data, const char *value) {
+    GPtrArray *values = user_data;
+
+    if (!values || !value) {
+        return GTK_INVALID_LIST_POSITION;
+    }
+
+    for (guint i = 0; i < values->len; ++i) {
+        const char *item = g_ptr_array_index(values, i);
+        if (item && g_strcmp0(item, value) == 0) {
+            return i;
+        }
+    }
+
+    return GTK_INVALID_LIST_POSITION;
+}
+
+static const char *control_string_array_value(gpointer user_data, guint index) {
+    GPtrArray *values = user_data;
+
+    if (!values || index == GTK_INVALID_LIST_POSITION || index >= values->len) {
+        return NULL;
+    }
+
+    return g_ptr_array_index(values, index);
+}
+
+static guint control_rime_schema_index(gpointer user_data, const char *value) {
+    return control_string_array_index(user_data, value ? value : "");
+}
+
+static const char *control_rime_schema_value(gpointer user_data, guint index) {
+    const char *value = control_string_array_value(user_data, index);
+
+    if (!value || !*value) {
+        return NULL;
+    }
+
+    return value;
+}
+
 static GtkWidget *create_bound_widget(TypioControl *control,
                                       const char *key) {
     const TypioConfigField *field = typio_config_schema_find(key);
@@ -115,6 +156,7 @@ static GtkWidget *build_rime_config(TypioControl *control) {
                                                        "Optional Chinese input settings and schema tuning."));
 
     control->rime_schema_model = gtk_string_list_new(nullptr);
+    control->rime_schema_id_model = g_ptr_array_new_with_free_func(g_free);
     control->rime_schema_dropdown = GTK_DROP_DOWN(
         gtk_drop_down_new(G_LIST_MODEL(control->rime_schema_model), nullptr));
     control_name_widget(GTK_WIDGET(control->rime_schema_dropdown), "rime-schema-dropdown");
@@ -123,9 +165,9 @@ static GtkWidget *build_rime_config(TypioControl *control) {
     control_init_state_binding(&control->rime_schema_state,
                                "engines.rime.schema",
                                control->rime_schema_dropdown,
-                               control->rime_schema_model,
-                               control_string_list_index,
-                               control_string_list_value,
+                               control->rime_schema_id_model,
+                               control_rime_schema_index,
+                               control_rime_schema_value,
                                CONTROL_STATE_VALUE_FROM_CONFIG);
     control->rime_schema_state.options_user_data = control;
     control->rime_schema_state.refresh_options = control_refresh_rime_schema_options;
@@ -134,7 +176,7 @@ static GtkWidget *build_rime_config(TypioControl *control) {
                                                             schema_field && schema_field->ui_label
                                                                 ? schema_field->ui_label
                                                                 : "Schema",
-                                                            "Choose the active schema exposed by the Rime installation.",
+                                                            "Choose the active schema exposed by the Rime installation, or leave it unselected.",
                                                             GTK_WIDGET(control->rime_schema_dropdown)));
 
     gtk_box_append(GTK_BOX(box), list);
@@ -165,6 +207,13 @@ static GtkWidget *build_mozc_config(TypioControl *control) {
 static GtkWidget *build_keyboard_section(TypioControl *control) {
     GtkWidget *box = control_create_panel_box_named("keyboard-section", 14);
     GtkWidget *list = control_create_preferences_list_named("keyboard-list");
+    GtkWidget *order_box;
+    GtkWidget *order_header;
+    GtkWidget *order_editor;
+    GtkWidget *order_mode_box;
+    GtkWidget *order_add_box;
+    GtkWidget *order_add_button;
+    GtkWidget *order_reset_button;
 
     gtk_box_append(GTK_BOX(box),
                    control_create_section_header_named("keyboard-header",
@@ -172,6 +221,7 @@ static GtkWidget *build_keyboard_section(TypioControl *control) {
                                                        "Switch between the built-in engine and installed plugins."));
 
     control->engine_model = gtk_string_list_new(nullptr);
+    control->engine_id_model = g_ptr_array_new_with_free_func(g_free);
     control->engine_dropdown = GTK_DROP_DOWN(
         gtk_drop_down_new(G_LIST_MODEL(control->engine_model), nullptr));
     control_name_widget(GTK_WIDGET(control->engine_dropdown), "keyboard-engine-dropdown");
@@ -180,9 +230,9 @@ static GtkWidget *build_keyboard_section(TypioControl *control) {
     control_init_state_binding(&control->keyboard_engine_state,
                                "default_engine",
                                control->engine_dropdown,
-                               control->engine_model,
-                               control_string_list_index,
-                               control_string_list_value,
+                               control->engine_id_model,
+                               control_string_array_index,
+                               control_string_array_value,
                                CONTROL_STATE_VALUE_FROM_RUNTIME);
     gtk_list_box_append(GTK_LIST_BOX(list),
                         control_create_preference_row_named("keyboard-engine-row",
@@ -213,6 +263,62 @@ static GtkWidget *build_keyboard_section(TypioControl *control) {
     gtk_stack_add_named(control->engine_config_stack, build_mozc_config(control), "mozc");
     gtk_stack_set_visible_child_name(control->engine_config_stack, "empty");
     gtk_box_append(GTK_BOX(box), GTK_WIDGET(control->engine_config_stack));
+
+    order_box = control_create_panel_box_named("keyboard-order-section", 10);
+    order_header = control_create_section_header_named(
+        "keyboard-order-header",
+        "Keyboard engine order",
+        "Pin the engines you want first. Tray menus and next/previous engine switching follow this order.");
+    gtk_box_append(GTK_BOX(order_box), order_header);
+
+    order_mode_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    control_name_widget(order_mode_box, "keyboard-order-mode-box");
+    control->engine_order_mode_label = GTK_LABEL(gtk_label_new(""));
+    control_name_widget(GTK_WIDGET(control->engine_order_mode_label), "keyboard-order-mode-label");
+    gtk_label_set_xalign(control->engine_order_mode_label, 0.0f);
+    gtk_widget_add_css_class(GTK_WIDGET(control->engine_order_mode_label), "preference-description");
+    gtk_box_append(GTK_BOX(order_mode_box), GTK_WIDGET(control->engine_order_mode_label));
+
+    gtk_box_append(GTK_BOX(order_box), order_mode_box);
+
+    control->engine_order_list = GTK_LIST_BOX(control_create_preferences_list_named("keyboard-order-list"));
+    gtk_widget_add_css_class(GTK_WIDGET(control->engine_order_list), "engine-order-list");
+    gtk_box_append(GTK_BOX(order_box), GTK_WIDGET(control->engine_order_list));
+
+    order_editor = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    control_name_widget(order_editor, "keyboard-order-editor");
+    control->engine_order_add_model = gtk_string_list_new(NULL);
+    control->engine_order_add_id_model = g_ptr_array_new_with_free_func(g_free);
+    control->engine_order_add_dropdown = GTK_DROP_DOWN(
+        gtk_drop_down_new(G_LIST_MODEL(control->engine_order_add_model), NULL));
+    control_name_widget(GTK_WIDGET(control->engine_order_add_dropdown), "keyboard-order-add-dropdown");
+    order_add_button = gtk_button_new_with_label("Add to order");
+    control_name_widget(order_add_button, "keyboard-order-add-button");
+    gtk_widget_add_css_class(order_add_button, "control-button");
+    g_signal_connect(order_add_button, "clicked",
+                     G_CALLBACK(on_engine_order_add_clicked), control);
+    order_reset_button = gtk_button_new_with_label("Reset");
+    control->engine_order_reset_button = GTK_BUTTON(order_reset_button);
+    control_name_widget(order_reset_button, "keyboard-order-reset-button");
+    gtk_widget_add_css_class(order_reset_button, "control-button");
+    g_signal_connect(order_reset_button, "clicked",
+                     G_CALLBACK(on_engine_order_reset_clicked), control);
+
+    order_add_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    control_name_widget(order_add_box, "keyboard-order-add-box");
+    gtk_box_append(GTK_BOX(order_add_box), GTK_WIDGET(control->engine_order_add_dropdown));
+    gtk_box_append(GTK_BOX(order_add_box), order_add_button);
+    gtk_box_append(GTK_BOX(order_add_box), order_reset_button);
+    gtk_box_append(GTK_BOX(order_editor), order_add_box);
+    gtk_box_append(GTK_BOX(order_editor),
+                   control_create_empty_note_named(
+                       "keyboard-order-note",
+                       "Remove an engine from the preferred order to let runtime discovery place it later in the list."));
+    gtk_box_append(GTK_BOX(order_box), order_editor);
+    gtk_box_append(GTK_BOX(box), order_box);
+
+    control->engine_order_model = gtk_string_list_new(NULL);
+    control_refresh_engine_order_editor(control);
 
     return box;
 }

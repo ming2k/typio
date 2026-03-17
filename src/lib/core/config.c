@@ -14,6 +14,8 @@
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #define TYPIO_CONFIG_HEADER "# Typio configuration file (TOML-compatible subset)\n\n"
 
@@ -543,13 +545,29 @@ TypioResult typio_config_save_file(const TypioConfig *config, const char *path) 
     ConfigEntry *e;
     char sections[64][256];
     size_t n_sections = 0;
+    char tmp_path[PATH_MAX];
+    const char *slash;
+    int fd;
+    FILE *file;
 
     if (!config || !path) {
         return TYPIO_ERROR_INVALID_ARGUMENT;
     }
 
-    FILE *file = fopen(path, "w");
+    if (strlen(path) + sizeof(".tmp.XXXXXX") >= sizeof(tmp_path)) {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp.XXXXXX", path);
+    fd = mkstemp(tmp_path);
+    if (fd < 0) {
+        return TYPIO_ERROR;
+    }
+
+    file = fdopen(fd, "w");
     if (!file) {
+        close(fd);
+        unlink(tmp_path);
         return TYPIO_ERROR;
     }
 
@@ -598,7 +616,45 @@ TypioResult typio_config_save_file(const TypioConfig *config, const char *path) 
         }
     }
 
-    fclose(file);
+    if (fflush(file) != 0) {
+        fclose(file);
+        unlink(tmp_path);
+        return TYPIO_ERROR;
+    }
+
+    if (fsync(fd) != 0) {
+        fclose(file);
+        unlink(tmp_path);
+        return TYPIO_ERROR;
+    }
+
+    if (fclose(file) != 0) {
+        unlink(tmp_path);
+        return TYPIO_ERROR;
+    }
+
+    if (rename(tmp_path, path) != 0) {
+        unlink(tmp_path);
+        return TYPIO_ERROR;
+    }
+
+    slash = strrchr(path, '/');
+    if (slash) {
+        char dir_path[PATH_MAX];
+        int dir_fd;
+        size_t dir_len = (size_t)(slash - path);
+
+        if (dir_len < sizeof(dir_path)) {
+            memcpy(dir_path, path, dir_len);
+            dir_path[dir_len] = '\0';
+            dir_fd = open(dir_path, O_RDONLY);
+            if (dir_fd >= 0) {
+                fsync(dir_fd);
+                close(dir_fd);
+            }
+        }
+    }
+
     return TYPIO_OK;
 }
 
