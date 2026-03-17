@@ -176,6 +176,7 @@ void typio_wl_session_destroy(TypioWlSession *session) {
         typio_instance_destroy_context(session->frontend->instance, session->ctx);
     }
 
+    free(session->last_preedit_text);
     free(session->pending.surrounding_text);
     free(session->current.surrounding_text);
     free(session);
@@ -185,6 +186,11 @@ void typio_wl_session_reset(TypioWlSession *session) {
     if (!session) {
         return;
     }
+
+    /* Reset preedit change tracking */
+    free(session->last_preedit_text);
+    session->last_preedit_text = nullptr;
+    session->last_preedit_cursor = -1;
 
     /* Reset pending state */
     free(session->pending.surrounding_text);
@@ -471,6 +477,11 @@ static void on_commit_callback([[maybe_unused]] TypioInputContext *ctx, const ch
 
     /* Apply changes */
     typio_wl_commit(session->frontend);
+
+    /* Reset preedit change tracking */
+    free(session->last_preedit_text);
+    session->last_preedit_text = nullptr;
+    session->last_preedit_cursor = -1;
 }
 
 static void on_preedit_callback([[maybe_unused]] TypioInputContext *ctx,
@@ -498,6 +509,7 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
     const TypioPreedit *preedit;
     char *plain_text;
     int cursor_pos = -1;
+    bool preedit_changed;
 
     if (!session || !ctx) {
         return;
@@ -505,13 +517,32 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
 
     preedit = typio_input_context_get_preedit(ctx);
     plain_text = typio_wl_build_plain_preedit(preedit, &cursor_pos);
-    if (!plain_text) {
-        typio_wl_set_preedit(session->frontend, "", -1, -1);
-    } else {
-        typio_wl_set_preedit(session->frontend, plain_text, cursor_pos, cursor_pos);
-        free(plain_text);
+
+    /* Detect whether the preedit actually changed compared to what we
+     * last sent to the application.  When only the candidate highlight
+     * moved (e.g. Up/Down navigation) the preedit stays identical and
+     * we can skip the protocol commit, avoiding an expensive
+     * composition-update round-trip in heavyweight clients like Chrome. */
+    const char *new_text = plain_text ? plain_text : "";
+    const char *old_text = session->last_preedit_text ? session->last_preedit_text : "";
+    preedit_changed = (cursor_pos != session->last_preedit_cursor ||
+                       strcmp(new_text, old_text) != 0);
+
+    /* Always update the popup (lightweight, separate surface). */
+    typio_wl_popup_update(session->frontend, ctx);
+
+    if (preedit_changed) {
+        if (!plain_text) {
+            typio_wl_set_preedit(session->frontend, "", -1, -1);
+        } else {
+            typio_wl_set_preedit(session->frontend, plain_text, cursor_pos, cursor_pos);
+        }
+        typio_wl_commit(session->frontend);
+
+        free(session->last_preedit_text);
+        session->last_preedit_text = plain_text ? typio_strdup(new_text) : nullptr;
+        session->last_preedit_cursor = cursor_pos;
     }
 
-    typio_wl_popup_update(session->frontend, ctx);
-    typio_wl_commit(session->frontend);
+    free(plain_text);
 }

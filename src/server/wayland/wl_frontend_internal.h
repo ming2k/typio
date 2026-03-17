@@ -131,6 +131,10 @@ struct TypioWlSession {
         uint32_t content_purpose;
     } current;
 
+    /* Last preedit sent to app (for change detection) */
+    char *last_preedit_text;
+    int last_preedit_cursor;
+
     /* Back reference */
     TypioWlFrontend *frontend;
 };
