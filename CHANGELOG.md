@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-03-19
+
+### Added
+
+- **Emergency exit shortcut**: Typio now reserves a configurable
+  `shortcuts.emergency_exit` action, defaulting to `Ctrl+Shift+Escape`, to stop
+  the frontend immediately and release the keyboard grab when input routing
+  goes wrong. The control panel exposes the shortcut alongside the existing
+  engine-switch and voice PTT bindings.
+- **Diagnostics helpers**: added `scripts/run_asan.sh` for ASAN/LSAN test runs
+  and `scripts/capture_typio_trace.sh` for capturing verbose runtime traces
+  during freeze or routing failures.
+- **Auxiliary event-loop policy tests**: introduced dedicated regression
+  coverage for tray/status/voice auxiliary FD degradation handling and recent
+  log-dump support.
+
+### Changed
+
+- **Candidate navigation ownership**: when a candidate list is active, arrow
+  keys are now reserved for candidate movement instead of being forwarded
+  through to the focused application, avoiding conflicts with in-app dropdown
+  widgets.
+- **Auxiliary FD degradation**: tray, status bus, and voice completion sources
+  now degrade independently when their poll or dispatch path fails instead of
+  risking a broader Typio event-loop stall.
+- **Runtime observability**: Typio now keeps a ring buffer of recent log lines
+  and dumps them to `state_dir/typio-recent.log` on emergency exit and other
+  controlled shutdown paths, preserving the last visible activity before a
+  failure.
+
 ## [2.1.1] - 2026-03-17
 
 ### Fixed
