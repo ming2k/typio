@@ -101,6 +101,22 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+ASAN/LSAN debug build for leak and memory-corruption hunting:
+
+```bash
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
+cmake --build build-asan
+ASAN_OPTIONS=detect_leaks=1:suppressions=$PWD/tests/asan_suppressions.txt \
+LSAN_OPTIONS=suppressions=$PWD/tests/asan_suppressions.txt \
+ctest --test-dir build-asan --output-on-failure
+```
+
+Or use the helper script:
+
+```bash
+bash scripts/run_asan.sh
+```
+
 Debug build with control panel but no tray icon:
 
 ```bash

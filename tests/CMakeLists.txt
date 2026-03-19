@@ -13,6 +13,13 @@ add_executable(test_config test_config.c)
 target_link_libraries(test_config PRIVATE typio-core)
 add_test(NAME test_config COMMAND test_config)
 
+add_executable(test_recent_log_dump test_recent_log_dump.c)
+target_include_directories(test_recent_log_dump PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/lib
+)
+target_link_libraries(test_recent_log_dump PRIVATE typio-core)
+add_test(NAME test_recent_log_dump COMMAND $<TARGET_FILE:test_recent_log_dump>)
+
 add_executable(test_config_schema test_config_schema.c)
 target_link_libraries(test_config_schema PRIVATE typio-core)
 add_test(NAME test_config_schema COMMAND test_config_schema)
@@ -139,6 +146,27 @@ target_include_directories(test_repeat_guard PRIVATE
     ${CMAKE_SOURCE_DIR}/src/server/wayland
 )
 add_test(NAME test_repeat_guard COMMAND test_repeat_guard)
+
+add_executable(test_frontend_aux
+    test_frontend_aux.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/frontend_aux.c
+)
+target_include_directories(test_frontend_aux PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+)
+add_test(NAME test_frontend_aux COMMAND $<TARGET_FILE:test_frontend_aux>)
+
+add_executable(test_candidate_guard
+    test_candidate_guard.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/candidate_guard.c
+)
+target_include_directories(test_candidate_guard PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+    ${XKBCOMMON_INCLUDE_DIRS}
+)
+target_link_libraries(test_candidate_guard PRIVATE typio-core)
+add_test(NAME test_candidate_guard COMMAND test_candidate_guard)
 
 add_executable(test_key_arbiter
     test_key_arbiter.c

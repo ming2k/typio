@@ -86,6 +86,7 @@ TEST(apply_defaults_empty_config) {
     ASSERT_STR_EQ(typio_config_get_string(config, "engines.rime.popup_theme", ""), "auto");
     ASSERT_STR_EQ(typio_config_get_string(config, "engines.rime.candidate_layout", ""), "horizontal");
     ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.switch_engine", ""), "Ctrl+Shift");
+    ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.emergency_exit", ""), "Ctrl+Shift+Escape");
     ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.voice_ptt", ""), "Super+v");
 
     typio_config_free(config);

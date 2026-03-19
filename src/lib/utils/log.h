@@ -12,12 +12,17 @@
 extern "C" {
 #endif
 
+#define TYPIO_LOG_RECENT_CAPACITY 256
+
 /* Set global log level */
 void typio_log_set_level(TypioLogLevel level);
 TypioLogLevel typio_log_get_level(void);
 
 /* Set log callback */
 void typio_log_set_callback(TypioLogCallback callback, void *user_data);
+void typio_log_set_recent_dump_path(const char *path);
+bool typio_log_dump_recent(const char *path);
+bool typio_log_dump_recent_to_configured_path(const char *reason);
 
 /* Logging functions */
 void typio_log(TypioLogLevel level, const char *format, ...);

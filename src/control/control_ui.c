@@ -556,6 +556,19 @@ GtkWidget *control_build_shortcuts_page(TypioControl *control) {
                                                             "Cycle the active engine without opening the panel.",
                                                             GTK_WIDGET(control->shortcut_switch_engine_btn)));
 
+    control->shortcut_emergency_exit_btn = GTK_BUTTON(
+        gtk_button_new_with_label("Ctrl+Shift+Escape"));
+    control_name_widget(GTK_WIDGET(control->shortcut_emergency_exit_btn),
+                        "shortcut-emergency-exit-button");
+    gtk_widget_add_css_class(GTK_WIDGET(control->shortcut_emergency_exit_btn), "control-button");
+    g_signal_connect(control->shortcut_emergency_exit_btn, "clicked",
+                     G_CALLBACK(shortcut_btn_clicked), control);
+    gtk_list_box_append(GTK_LIST_BOX(list),
+                        control_create_preference_row_named("shortcut-emergency-exit-row",
+                                                            "Emergency exit",
+                                                            "Immediately stop Typio and release control when input routing misbehaves.",
+                                                            GTK_WIDGET(control->shortcut_emergency_exit_btn)));
+
     control->shortcut_voice_ptt_btn = GTK_BUTTON(
         gtk_button_new_with_label("Super+v"));
     control_name_widget(GTK_WIDGET(control->shortcut_voice_ptt_btn), "shortcut-voice-ptt-button");

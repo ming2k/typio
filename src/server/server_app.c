@@ -16,6 +16,9 @@
 static TypioServerApp *g_active_app = nullptr;
 
 static void typio_server_signal_handler([[maybe_unused]] int sig) {
+    if (g_active_app) {
+        g_active_app->shutdown_requested_by_signal = true;
+    }
 #ifdef HAVE_WAYLAND
     if (g_active_app && g_active_app->wl_frontend) {
         typio_wl_frontend_stop(g_active_app->wl_frontend);
@@ -286,6 +289,28 @@ static void typio_server_install_signal_handlers(TypioServerApp *app) {
     signal(SIGTERM, typio_server_signal_handler);
 }
 
+static void typio_server_configure_recent_log_dump(TypioServerApp *app) {
+    const char *state_dir;
+
+    if (!app || !app->instance) {
+        return;
+    }
+
+    state_dir = typio_instance_get_state_dir(app->instance);
+    if (!state_dir || !*state_dir) {
+        return;
+    }
+
+    if (snprintf(app->recent_log_dump_path, sizeof(app->recent_log_dump_path),
+                 "%s/%s", state_dir, "typio-recent.log") >=
+        (int)sizeof(app->recent_log_dump_path)) {
+        app->recent_log_dump_path[0] = '\0';
+        return;
+    }
+
+    typio_log_set_recent_dump_path(app->recent_log_dump_path);
+}
+
 bool typio_server_app_init(TypioServerApp *app,
                            const TypioInstanceConfig *config,
                            bool verbose,
@@ -319,6 +344,8 @@ bool typio_server_app_init(TypioServerApp *app,
         app->instance = nullptr;
         return false;
     }
+
+    typio_server_configure_recent_log_dump(app);
 
     return true;
 }
@@ -501,6 +528,12 @@ void typio_server_app_shutdown(TypioServerApp *app) {
 int typio_server_app_finish(TypioServerApp *app, int exit_code) {
     if (!app) {
         return exit_code;
+    }
+
+    if ((exit_code != 0 || app->shutdown_requested_by_signal) &&
+        app->recent_log_dump_path[0] != '\0') {
+        typio_log_dump_recent_to_configured_path(
+            app->shutdown_requested_by_signal ? "signal shutdown" : "non-zero exit");
     }
 
     if (app->restart_requested && exit_code == 0) {

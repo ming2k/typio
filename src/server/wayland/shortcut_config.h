@@ -32,6 +32,7 @@ typedef struct {
  */
 typedef struct {
     TypioShortcutBinding switch_engine;     /* default: Ctrl+Shift */
+    TypioShortcutBinding emergency_exit;    /* default: Ctrl+Shift+Escape */
     TypioShortcutBinding voice_ptt;         /* default: Super+v */
 } TypioShortcutConfig;
 

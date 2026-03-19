@@ -4,6 +4,7 @@
  */
 
 #include "wl_frontend.h"
+#include "frontend_aux.h"
 #include "wl_frontend_internal.h"
 #include "typio/typio.h"
 #include "utils/log.h"
@@ -68,11 +69,13 @@ static void frontend_refresh_runtime_config(TypioWlFrontend *frontend) {
     typio_shortcut_config_load(&frontend->shortcuts, config);
     {
         char *sw = typio_shortcut_format(&frontend->shortcuts.switch_engine);
+        char *ee = typio_shortcut_format(&frontend->shortcuts.emergency_exit);
         char *ptt = typio_shortcut_format(&frontend->shortcuts.voice_ptt);
         typio_log(TYPIO_LOG_INFO,
-                  "Config reload: shortcuts switch_engine=%s voice_ptt=%s",
-                  sw ? sw : "(none)", ptt ? ptt : "(none)");
+                  "Config reload: shortcuts switch_engine=%s emergency_exit=%s voice_ptt=%s",
+                  sw ? sw : "(none)", ee ? ee : "(none)", ptt ? ptt : "(none)");
         free(sw);
+        free(ee);
         free(ptt);
     }
 
@@ -209,10 +212,13 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
                                typio_instance_get_config(instance));
     {
         char *se = typio_shortcut_format(&frontend->shortcuts.switch_engine);
+        char *ee = typio_shortcut_format(&frontend->shortcuts.emergency_exit);
         char *ptt = typio_shortcut_format(&frontend->shortcuts.voice_ptt);
-        typio_log(TYPIO_LOG_INFO, "Shortcuts: switch_engine=%s, voice_ptt=%s",
-                  se ? se : "(none)", ptt ? ptt : "(none)");
+        typio_log(TYPIO_LOG_INFO,
+                  "Shortcuts: switch_engine=%s, emergency_exit=%s, voice_ptt=%s",
+                  se ? se : "(none)", ee ? ee : "(none)", ptt ? ptt : "(none)");
         free(se);
+        free(ee);
         free(ptt);
     }
 
@@ -405,6 +411,13 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 #endif
 #ifdef HAVE_VOICE
     int voice_fd = frontend->voice ? typio_voice_service_get_fd(frontend->voice) : -1;
+    bool voice_disabled = false;
+#endif
+#ifdef HAVE_SYSTRAY
+    bool tray_disabled = false;
+#endif
+#ifdef HAVE_STATUS_BUS
+    bool status_disabled = false;
 #endif
 
     while (frontend->running) {
@@ -429,7 +442,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 
 #ifdef HAVE_SYSTRAY
         int idx_tray = -1;
-        if (tray_fd >= 0) {
+        if (!tray_disabled && tray_fd >= 0) {
             idx_tray = nfds;
             fds[nfds++] = (struct pollfd){ .fd = tray_fd, .events = POLLIN };
         }
@@ -437,7 +450,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 
         int idx_status = -1;
 #ifdef HAVE_STATUS_BUS
-        if (status_fd >= 0) {
+        if (!status_disabled && status_fd >= 0) {
             idx_status = nfds;
             fds[nfds++] = (struct pollfd){ .fd = status_fd, .events = POLLIN };
         }
@@ -445,7 +458,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 
 #ifdef HAVE_VOICE
         int idx_voice = -1;
-        if (voice_fd >= 0) {
+        if (!voice_disabled && voice_fd >= 0) {
             idx_voice = nfds;
             fds[nfds++] = (struct pollfd){ .fd = voice_fd, .events = POLLIN };
         }
@@ -505,19 +518,68 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 #ifdef HAVE_SYSTRAY
         /* Handle tray D-Bus events */
         if (idx_tray >= 0 && fds[idx_tray].revents) {
-            if (fds[idx_tray].revents & POLLIN) {
-                typio_tray_dispatch(frontend->tray);
+            TypioWlAuxState tray_state = { .fd = tray_fd, .disabled = tray_disabled };
+            if (typio_wl_aux_should_disable_on_revents(fds[idx_tray].revents)) {
+                typio_log(TYPIO_LOG_WARNING,
+                          "Disabling tray integration after poll error: revents=0x%x",
+                          fds[idx_tray].revents);
+                tray_state = typio_wl_aux_apply_transition(tray_state,
+                                                           fds[idx_tray].revents,
+                                                           0,
+                                                           -1);
+            } else if (fds[idx_tray].revents & POLLIN) {
+                int dispatch_result = typio_tray_dispatch(frontend->tray);
+                if (typio_wl_aux_should_disable_on_dispatch_result(dispatch_result)) {
+                    typio_log(TYPIO_LOG_WARNING,
+                              "Disabling tray integration after dispatch failure");
+                    tray_state = typio_wl_aux_apply_transition(tray_state,
+                                                               fds[idx_tray].revents,
+                                                               dispatch_result,
+                                                               -1);
+                } else {
+                    tray_state = typio_wl_aux_apply_transition(
+                        tray_state,
+                        fds[idx_tray].revents,
+                        dispatch_result,
+                        frontend->tray ? typio_tray_get_fd(frontend->tray) : -1);
+                }
             }
-            tray_fd = frontend->tray ? typio_tray_get_fd(frontend->tray) : -1;
+            tray_fd = tray_state.fd;
+            tray_disabled = tray_state.disabled;
         }
 #endif
 
 #ifdef HAVE_STATUS_BUS
         if (idx_status >= 0 && fds[idx_status].revents) {
-            if (fds[idx_status].revents & POLLIN) {
-                typio_status_bus_dispatch(frontend->status_bus);
+            TypioWlAuxState status_state = { .fd = status_fd, .disabled = status_disabled };
+            if (typio_wl_aux_should_disable_on_revents(fds[idx_status].revents)) {
+                typio_log(TYPIO_LOG_WARNING,
+                          "Disabling status bus after poll error: revents=0x%x",
+                          fds[idx_status].revents);
+                status_state = typio_wl_aux_apply_transition(status_state,
+                                                             fds[idx_status].revents,
+                                                             0,
+                                                             -1);
+            } else if (fds[idx_status].revents & POLLIN) {
+                int dispatch_result =
+                    typio_status_bus_dispatch(frontend->status_bus);
+                if (typio_wl_aux_should_disable_on_dispatch_result(dispatch_result)) {
+                    typio_log(TYPIO_LOG_WARNING,
+                              "Disabling status bus after dispatch failure");
+                    status_state = typio_wl_aux_apply_transition(status_state,
+                                                                 fds[idx_status].revents,
+                                                                 dispatch_result,
+                                                                 -1);
+                } else {
+                    status_state = typio_wl_aux_apply_transition(
+                        status_state,
+                        fds[idx_status].revents,
+                        dispatch_result,
+                        frontend->status_bus ? typio_status_bus_get_fd(frontend->status_bus) : -1);
+                }
             }
-            status_fd = frontend->status_bus ? typio_status_bus_get_fd(frontend->status_bus) : -1;
+            status_fd = status_state.fd;
+            status_disabled = status_state.disabled;
         }
 #endif
 
@@ -528,13 +590,31 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 
 #ifdef HAVE_VOICE
         /* Handle voice inference completion */
-        if (idx_voice >= 0 && (fds[idx_voice].revents & POLLIN)) {
-            TypioInputContext *ctx = frontend->session ?
-                frontend->session->ctx : nullptr;
-            typio_voice_service_dispatch(frontend->voice, ctx);
-            /* Clear the "Processing..." preedit */
-            typio_wl_set_preedit(frontend, "", 0, 0);
-            typio_wl_commit(frontend);
+        if (idx_voice >= 0 && fds[idx_voice].revents) {
+            TypioWlAuxState voice_state = { .fd = voice_fd, .disabled = voice_disabled };
+            if (typio_wl_aux_should_disable_on_revents(fds[idx_voice].revents)) {
+                typio_log(TYPIO_LOG_WARNING,
+                          "Disabling voice eventfd after poll error: revents=0x%x",
+                          fds[idx_voice].revents);
+                voice_state = typio_wl_aux_apply_transition(voice_state,
+                                                            fds[idx_voice].revents,
+                                                            0,
+                                                            -1);
+            } else if (fds[idx_voice].revents & POLLIN) {
+                TypioInputContext *ctx = frontend->session ?
+                    frontend->session->ctx : nullptr;
+                typio_voice_service_dispatch(frontend->voice, ctx);
+                /* Clear the "Processing..." preedit */
+                typio_wl_set_preedit(frontend, "", 0, 0);
+                typio_wl_commit(frontend);
+                voice_state = typio_wl_aux_apply_transition(
+                    voice_state,
+                    fds[idx_voice].revents,
+                    0,
+                    frontend->voice ? typio_voice_service_get_fd(frontend->voice) : -1);
+            }
+            voice_fd = voice_state.fd;
+            voice_disabled = voice_state.disabled;
         }
 #endif
 

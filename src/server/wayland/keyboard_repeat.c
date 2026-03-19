@@ -6,6 +6,7 @@
 
 #include "keyboard_repeat.h"
 
+#include "candidate_guard.h"
 #include "key_debug.h"
 #include "repeat_guard.h"
 #include "vk_bridge.h"
@@ -221,6 +222,14 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
         };
 
         if (!typio_input_context_process_key(session->ctx, &event)) {
+            if (typio_wl_candidate_guard_should_consume(session->ctx,
+                                                        repeat_keysym)) {
+                keyboard_repeat_trace(keyboard, "repeat-engine", keyboard->repeat_key,
+                                      event.keysym, event.modifiers, event.unicode,
+                                      repeat_state,
+                                      "reserved for candidates");
+                return;
+            }
             keyboard_repeat_trace(keyboard, "repeat-forward", keyboard->repeat_key,
                                   event.keysym, event.modifiers, event.unicode,
                                   TYPIO_KEY_FORWARDED,

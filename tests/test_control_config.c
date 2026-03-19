@@ -213,6 +213,8 @@ TEST(widget_debug_names_are_stable) {
                   "field-notifications-enable");
     ASSERT_STR_EQ(gtk_widget_get_name(GTK_WIDGET(control.shortcut_switch_engine_btn)),
                   "shortcut-switch-engine-button");
+    ASSERT_STR_EQ(gtk_widget_get_name(GTK_WIDGET(control.shortcut_emergency_exit_btn)),
+                  "shortcut-emergency-exit-button");
     ASSERT_STR_EQ(gtk_widget_get_name(GTK_WIDGET(control.rime_schema_dropdown)),
                   "rime-schema-dropdown");
 

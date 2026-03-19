@@ -145,6 +145,13 @@ static const TypioConfigField schema_fields[] = {
         .ui_section = "shortcuts",
     },
     {
+        .key = "shortcuts.emergency_exit",
+        .type = TYPIO_FIELD_STRING,
+        .def.s = "Ctrl+Shift+Escape",
+        .ui_label = "Emergency exit",
+        .ui_section = "shortcuts",
+    },
+    {
         .key = "shortcuts.voice_ptt",
         .type = TYPIO_FIELD_STRING,
         .def.s = "Super+v",

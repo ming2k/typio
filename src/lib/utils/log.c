@@ -7,10 +7,17 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <time.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 
 static TypioLogLevel g_log_level = TYPIO_LOG_INFO;
 static TypioLogCallback g_log_callback = nullptr;
 static void *g_log_user_data = nullptr;
+static char g_recent_logs[TYPIO_LOG_RECENT_CAPACITY][1024];
+static size_t g_recent_log_count = 0;
+static size_t g_recent_log_start = 0;
+static char *g_recent_dump_path = nullptr;
 
 void typio_log_set_level(TypioLogLevel level) {
     g_log_level = level;
@@ -25,6 +32,11 @@ void typio_log_set_callback(TypioLogCallback callback, void *user_data) {
     g_log_user_data = user_data;
 }
 
+void typio_log_set_recent_dump_path(const char *path) {
+    free(g_recent_dump_path);
+    g_recent_dump_path = path ? strdup(path) : nullptr;
+}
+
 static const char *level_name(TypioLogLevel level) {
     switch (level) {
         case TYPIO_LOG_DEBUG:   return "DEBUG";
@@ -33,6 +45,56 @@ static const char *level_name(TypioLogLevel level) {
         case TYPIO_LOG_ERROR:   return "ERROR";
         default: return "UNKNOWN";
     }
+}
+
+static void store_recent_log_line(const char *line) {
+    size_t index;
+
+    if (!line)
+        return;
+
+    if (g_recent_log_count < TYPIO_LOG_RECENT_CAPACITY) {
+        index = (g_recent_log_start + g_recent_log_count) % TYPIO_LOG_RECENT_CAPACITY;
+        g_recent_log_count++;
+    } else {
+        index = g_recent_log_start;
+        g_recent_log_start = (g_recent_log_start + 1) % TYPIO_LOG_RECENT_CAPACITY;
+    }
+
+    snprintf(g_recent_logs[index], sizeof(g_recent_logs[index]), "%s", line);
+}
+
+bool typio_log_dump_recent(const char *path) {
+    FILE *fp;
+
+    if (!path || !*path)
+        return false;
+
+    fp = fopen(path, "w");
+    if (!fp)
+        return false;
+
+    for (size_t i = 0; i < g_recent_log_count; ++i) {
+        size_t index = (g_recent_log_start + i) % TYPIO_LOG_RECENT_CAPACITY;
+        fprintf(fp, "%s\n", g_recent_logs[index]);
+    }
+
+    fclose(fp);
+    return true;
+}
+
+bool typio_log_dump_recent_to_configured_path(const char *reason) {
+    bool ok;
+
+    if (!g_recent_dump_path || !*g_recent_dump_path)
+        return false;
+
+    ok = typio_log_dump_recent(g_recent_dump_path);
+    if (ok && reason && *reason) {
+        fprintf(stderr, "[typio] [INFO] Dumped recent logs to %s (%s)\n",
+                g_recent_dump_path, reason);
+    }
+    return ok;
 }
 
 void typio_log(TypioLogLevel level, const char *format, ...) {
@@ -46,15 +108,20 @@ void typio_log(TypioLogLevel level, const char *format, ...) {
     vsnprintf(message, sizeof(message), format, args);
     va_end(args);
 
+    /* Default: render full line once so stderr and recent-log dump match. */
+    time_t now = time(nullptr);
+    struct tm *tm_info = localtime(&now);
+    char time_buf[32];
+    char rendered[1200];
+
+    strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm_info);
+    snprintf(rendered, sizeof(rendered), "[%s] [%s] %s",
+             time_buf, level_name(level), message);
+    store_recent_log_line(rendered);
+
     if (g_log_callback) {
         g_log_callback(level, message, g_log_user_data);
     } else {
-        /* Default: print to stderr */
-        time_t now = time(nullptr);
-        struct tm *tm_info = localtime(&now);
-        char time_buf[32];
-        strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm_info);
-
-        fprintf(stderr, "[%s] [%s] %s\n", time_buf, level_name(level), message);
+        fprintf(stderr, "%s\n", rendered);
     }
 }

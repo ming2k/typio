@@ -251,6 +251,10 @@ void typio_shortcut_config_defaults(TypioShortcutConfig *sc) {
     sc->switch_engine.modifiers = TYPIO_MOD_CTRL | TYPIO_MOD_SHIFT;
     sc->switch_engine.keysym = 0;
 
+    /* Ctrl+Shift+Escape for emergency shutdown */
+    sc->emergency_exit.modifiers = TYPIO_MOD_CTRL | TYPIO_MOD_SHIFT;
+    sc->emergency_exit.keysym = XKB_KEY_Escape;
+
     /* Super+v for voice push-to-talk */
     sc->voice_ptt.modifiers = TYPIO_MOD_SUPER;
     sc->voice_ptt.keysym = XKB_KEY_v;
@@ -270,6 +274,10 @@ void typio_shortcut_config_load(TypioShortcutConfig *sc,
     val = typio_config_get_string(config, "shortcuts.switch_engine", NULL);
     if (val && typio_shortcut_parse(val, &parsed))
         sc->switch_engine = parsed;
+
+    val = typio_config_get_string(config, "shortcuts.emergency_exit", NULL);
+    if (val && typio_shortcut_parse(val, &parsed))
+        sc->emergency_exit = parsed;
 
     val = typio_config_get_string(config, "shortcuts.voice_ptt", NULL);
     if (val && typio_shortcut_parse(val, &parsed))

@@ -90,10 +90,32 @@ Logs go to stderr. To keep a trace:
 typio --verbose 2>&1 | tee typio.log
 ```
 
+Or use the helper script:
+
+```bash
+bash scripts/capture_typio_trace.sh /tmp/typio-trace.log
+```
+
 Keyboard trace lines include both raw key data and the resolved text
 character when XKB can derive one, for example `unicode=U+0061 char='a'`.
 They also carry `seq=...`, `phase=...`, and `topic=...` so related events can
 be correlated in order.
+
+## When Input and Tray Both Stop Responding
+
+If Typio still starts but later all Typio-routed input stops working and the
+tray menu also stops responding:
+
+```bash
+bash scripts/capture_typio_trace.sh /tmp/typio-freeze.log
+```
+
+Reproduce the failure, then keep:
+
+- `/tmp/typio-freeze.log`
+- whether `Ctrl+Shift+Escape` still exits Typio
+- compositor name and version
+- the last `poll error`, `dispatch failure`, `grab`, `key`, and `im` lines
 
 ## Validate the Binary and Library
 

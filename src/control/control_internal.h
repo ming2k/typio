@@ -79,6 +79,7 @@ typedef struct TypioControl {
     GtkWidget *whisper_models_frame;
     GtkWidget *sherpa_models_frame;
     GtkButton *shortcut_switch_engine_btn;
+    GtkButton *shortcut_emergency_exit_btn;
     GtkButton *shortcut_voice_ptt_btn;
     GtkButton *shortcut_recording_btn;
     GtkTextBuffer *config_buffer;

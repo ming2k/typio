@@ -1186,6 +1186,12 @@ void control_sync_form_from_buffer(TypioControl *control) {
                                                      "shortcuts.switch_engine",
                                                      "Ctrl+Shift"));
     }
+    if (control->shortcut_emergency_exit_btn) {
+        gtk_button_set_label(control->shortcut_emergency_exit_btn,
+                             typio_config_get_string(config,
+                                                     "shortcuts.emergency_exit",
+                                                     "Ctrl+Shift+Escape"));
+    }
     if (control->shortcut_voice_ptt_btn) {
         gtk_button_set_label(control->shortcut_voice_ptt_btn,
                              typio_config_get_string(config,
@@ -1275,6 +1281,12 @@ void control_sync_buffer_from_form(TypioControl *control) {
         const char *val = gtk_button_get_label(control->shortcut_switch_engine_btn);
         if (val && *val) {
             typio_config_set_string(config, "shortcuts.switch_engine", val);
+        }
+    }
+    if (control->shortcut_emergency_exit_btn) {
+        const char *val = gtk_button_get_label(control->shortcut_emergency_exit_btn);
+        if (val && *val) {
+            typio_config_set_string(config, "shortcuts.emergency_exit", val);
         }
     }
     if (control->shortcut_voice_ptt_btn) {

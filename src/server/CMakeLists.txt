@@ -30,6 +30,8 @@ if(HAVE_WAYLAND)
 
     list(APPEND TYPIO_SERVER_SOURCES
         wayland/boundary_bridge.c
+        wayland/candidate_guard.c
+        wayland/frontend_aux.c
         wayland/key_arbiter.c
         wayland/key_debug.c
         wayland/key_tracking.c

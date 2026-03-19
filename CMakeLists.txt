@@ -31,6 +31,8 @@ option(ENABLE_STATUS_BUS "Enable D-Bus runtime status/control interface" ON)
 option(ENABLE_SYSTRAY "Enable StatusNotifierItem tray support" OFF)
 option(BUILD_WHISPER "Build Whisper voice input support" OFF)
 option(BUILD_SHERPA_ONNX "Build sherpa-onnx voice input support" OFF)
+option(ENABLE_ASAN "Enable AddressSanitizer (LeakSanitizer included where supported)" OFF)
+option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 set(TYPIO_AUTOSTART_DIR "/etc/xdg/autostart" CACHE PATH
     "Directory where the Typio desktop autostart entry is installed")
 
@@ -39,6 +41,16 @@ set(TYPIO_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}")
 set(TYPIO_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}")
 set(TYPIO_INSTALL_DATADIR "${CMAKE_INSTALL_DATADIR}/typio")
 set(TYPIO_INSTALL_ENGINEDIR "${CMAKE_INSTALL_LIBDIR}/typio/engines")
+
+if(ENABLE_ASAN)
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address)
+endif()
+
+if(ENABLE_UBSAN)
+    add_compile_options(-fsanitize=undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=undefined)
+endif()
 
 find_package(PkgConfig REQUIRED)
 

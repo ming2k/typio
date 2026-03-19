@@ -7,9 +7,11 @@
 #include "key_route.h"
 
 #include "boundary_bridge.h"
+#include "candidate_guard.h"
 #include "key_debug.h"
 #include "key_tracking_access.h"
 #include "monotonic_time.h"
+#include "shortcut_config.h"
 #include "shortcut_chord.h"
 #include "startup_guard.h"
 #include "vk_bridge.h"
@@ -20,10 +22,6 @@
 #include "utils/log.h"
 
 #include <xkbcommon/xkbcommon-keysyms.h>
-
-#ifdef HAVE_VOICE
-#include "shortcut_config.h"
-#endif
 
 static bool key_route_is_shift_keysym(uint32_t keysym) {
     return keysym == XKB_KEY_Shift_L || keysym == XKB_KEY_Shift_R;
@@ -83,6 +81,16 @@ static bool key_route_is_app_shortcut(uint32_t keysym, uint32_t modifiers) {
     default:
         return true;
     }
+}
+
+static bool key_route_binding_matches_press(const TypioShortcutBinding *binding,
+                                            uint32_t keysym,
+                                            uint32_t modifiers) {
+    if (!binding || binding->keysym == 0)
+        return false;
+
+    return keysym == binding->keysym &&
+           (modifiers & binding->modifiers) == binding->modifiers;
 }
 
 void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
@@ -160,6 +168,19 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         return;
     }
 
+    if (key_route_binding_matches_press(&frontend->shortcuts.emergency_exit,
+                                        keysym, modifiers)) {
+        typio_log(TYPIO_LOG_WARNING,
+                  "Emergency exit shortcut triggered: keycode=%u keysym=0x%x mods=0x%x",
+                  key, keysym, modifiers);
+        typio_log_dump_recent_to_configured_path("emergency exit shortcut");
+        key_route_trace(keyboard, "press-stop", key, keysym, modifiers, unicode,
+                        TYPIO_KEY_IDLE, "emergency exit shortcut");
+        typio_wl_keyboard_release_grab(keyboard);
+        typio_wl_frontend_stop(frontend);
+        return;
+    }
+
 #ifdef HAVE_VOICE
     const TypioShortcutBinding *ptt = &frontend->shortcuts.voice_ptt;
     typio_log(TYPIO_LOG_DEBUG,
@@ -234,7 +255,13 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
                       typio_wl_xkb_effective_modifiers(keyboard));
         }
 
-        if (!handled || is_modifier) {
+        if (!handled &&
+            typio_wl_candidate_guard_should_consume(session->ctx, keysym)) {
+            key_route_trace(keyboard, "press-engine", key, keysym, modifiers, unicode,
+                            TYPIO_KEY_IDLE, "reserved for candidates");
+            typio_log(TYPIO_LOG_DEBUG,
+                      "Reserved navigation key for candidate UI");
+        } else if (!handled || is_modifier) {
             typio_wl_vk_forward_key(keyboard, time, key, WL_KEYBOARD_KEY_STATE_PRESSED, unicode);
             key_set_state(frontend, key, TYPIO_KEY_FORWARDED);
             key_route_trace(keyboard, "press-forward", key, keysym, modifiers, unicode,
@@ -417,6 +444,12 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                           keyboard->physical_modifiers,
                           typio_wl_xkb_effective_modifiers(keyboard));
             }
+            if (!handled &&
+                typio_wl_candidate_guard_should_consume(session->ctx, keysym)) {
+                key_route_trace(keyboard, "release-engine", key, keysym,
+                                modifiers, unicode, kstate,
+                                "reserved for candidates");
+            }
         }
         key_clear_tracking(frontend, key);
         return;
@@ -446,6 +479,13 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                       modifiers,
                       keyboard->physical_modifiers,
                       typio_wl_xkb_effective_modifiers(keyboard));
+        }
+        if (!handled &&
+            typio_wl_candidate_guard_should_consume(session->ctx, keysym)) {
+            key_route_trace(keyboard, "release-engine", key, keysym, modifiers, unicode,
+                            TYPIO_KEY_IDLE, "reserved for candidates");
+            key_clear_tracking(frontend, key);
+            return;
         }
     }
 
