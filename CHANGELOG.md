@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-03-19
+
+### Added
+
+- **Desktop launcher for Typio**: installed a visible
+  `share/applications/typio.desktop` entry alongside the existing autostart
+  entry, so desktop launchers such as `drun` can start Typio manually.
+
 ## [2.1.2] - 2026-03-19
 
 ### Added
