@@ -1,10 +1,10 @@
 #ifndef TYPIO_BUILD_CONFIG_H
 #define TYPIO_BUILD_CONFIG_H
 
-#define TYPIO_VERSION "2.1.1"
+#define TYPIO_VERSION "2.1.4"
 #define TYPIO_VERSION_MAJOR 2
 #define TYPIO_VERSION_MINOR 1
-#define TYPIO_VERSION_PATCH 1
+#define TYPIO_VERSION_PATCH 4
 
 #define TYPIO_INSTALL_PREFIX "/usr/local"
 #define TYPIO_ENGINE_DIR "/usr/local/lib/typio/engines"

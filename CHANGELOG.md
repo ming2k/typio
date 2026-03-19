@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.4] - 2026-03-19
+
+### Changed
+
+- **Rime session lifecycle**: Rime sessions are now treated as input-context
+  state instead of transient focus state, so runtime options such as
+  `ascii_mode` survive focus churn and engine switches within the same
+  context while composition UI is still cleared on focus loss.
+
 ## [2.1.3] - 2026-03-19
 
 ### Added
