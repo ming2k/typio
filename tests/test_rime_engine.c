@@ -322,11 +322,147 @@ TEST(switch_back_to_rime_first_shift_toggles_latin_mode) {
     typio_instance_free(instance);
 }
 
+TEST(refocus_preserves_latin_mode) {
+    char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
+    char config_dir[1024];
+    char data_dir[1024];
+    char config_path[1024];
+    TypioInstanceConfig config = {};
+    CaptureState capture = {};
+    TypioKeyEvent *shift_press;
+    TypioKeyEvent *shift_release;
+    TypioEngineManager *manager;
+    TypioEngine *active;
+    const char *icon;
+
+    ASSERT_NOT_NULL(mkdtemp(temp_root));
+    ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", temp_root) < (int)sizeof(config_dir));
+    ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) < (int)sizeof(data_dir));
+    ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) < (int)sizeof(config_path));
+
+    ASSERT(ensure_dir(config_dir));
+    ASSERT(ensure_dir(data_dir));
+    ASSERT(write_file(config_path,
+                      "default_engine = \"rime\"\n"
+                      "[engines.rime]\n"
+                      "schema = \"luna_pinyin\"\n"));
+
+    config.config_dir = config_dir;
+    config.data_dir = data_dir;
+    config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
+    config.default_engine = "rime";
+
+    TypioInstance *instance = typio_instance_new_with_config(&config);
+    ASSERT_NOT_NULL(instance);
+    ASSERT_EQ(typio_instance_init(instance), TYPIO_OK);
+    typio_instance_set_status_icon_changed_callback(instance, capture_status_icon, &capture);
+
+    TypioInputContext *ctx = typio_instance_create_context(instance);
+    ASSERT_NOT_NULL(ctx);
+    typio_input_context_focus_in(ctx);
+
+    shift_press = shift_event(TYPIO_EVENT_KEY_PRESS);
+    shift_release = shift_event(TYPIO_EVENT_KEY_RELEASE);
+    ASSERT_NOT_NULL(shift_press);
+    ASSERT_NOT_NULL(shift_release);
+
+    (void)typio_input_context_process_key(ctx, shift_press);
+    (void)typio_input_context_process_key(ctx, shift_release);
+    ASSERT(capture.status_icon != nullptr);
+    ASSERT_STR_EQ(capture.status_icon, "typio-rime-latin");
+
+    typio_input_context_focus_out(ctx);
+    typio_input_context_focus_in(ctx);
+
+    manager = typio_instance_get_engine_manager(instance);
+    ASSERT_NOT_NULL(manager);
+    active = typio_engine_manager_get_active(manager);
+    ASSERT_NOT_NULL(active);
+    icon = active->ops->get_status_icon ? active->ops->get_status_icon(active, ctx) : nullptr;
+    ASSERT_NOT_NULL(icon);
+    ASSERT_STR_EQ(icon, "typio-rime-latin");
+
+    typio_key_event_free(shift_press);
+    typio_key_event_free(shift_release);
+    free_capture(&capture);
+    typio_instance_destroy_context(instance, ctx);
+    typio_instance_free(instance);
+}
+
+TEST(engine_switch_preserves_latin_mode_within_context) {
+    char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
+    char config_dir[1024];
+    char data_dir[1024];
+    char config_path[1024];
+    TypioInstanceConfig config = {};
+    CaptureState capture = {};
+    TypioKeyEvent *shift_press;
+    TypioKeyEvent *shift_release;
+    TypioEngineManager *manager;
+    TypioEngine *active;
+    const char *icon;
+
+    ASSERT_NOT_NULL(mkdtemp(temp_root));
+    ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", temp_root) < (int)sizeof(config_dir));
+    ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) < (int)sizeof(data_dir));
+    ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) < (int)sizeof(config_path));
+
+    ASSERT(ensure_dir(config_dir));
+    ASSERT(ensure_dir(data_dir));
+    ASSERT(write_file(config_path,
+                      "default_engine = \"rime\"\n"
+                      "[engines.rime]\n"
+                      "schema = \"luna_pinyin\"\n"));
+
+    config.config_dir = config_dir;
+    config.data_dir = data_dir;
+    config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
+    config.default_engine = "rime";
+
+    TypioInstance *instance = typio_instance_new_with_config(&config);
+    ASSERT_NOT_NULL(instance);
+    ASSERT_EQ(typio_instance_init(instance), TYPIO_OK);
+    typio_instance_set_status_icon_changed_callback(instance, capture_status_icon, &capture);
+
+    TypioInputContext *ctx = typio_instance_create_context(instance);
+    ASSERT_NOT_NULL(ctx);
+    typio_input_context_focus_in(ctx);
+
+    shift_press = shift_event(TYPIO_EVENT_KEY_PRESS);
+    shift_release = shift_event(TYPIO_EVENT_KEY_RELEASE);
+    ASSERT_NOT_NULL(shift_press);
+    ASSERT_NOT_NULL(shift_release);
+
+    (void)typio_input_context_process_key(ctx, shift_press);
+    (void)typio_input_context_process_key(ctx, shift_release);
+    ASSERT(capture.status_icon != nullptr);
+    ASSERT_STR_EQ(capture.status_icon, "typio-rime-latin");
+
+    manager = typio_instance_get_engine_manager(instance);
+    ASSERT_NOT_NULL(manager);
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "basic"), TYPIO_OK);
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "rime"), TYPIO_OK);
+
+    active = typio_engine_manager_get_active(manager);
+    ASSERT_NOT_NULL(active);
+    icon = active->ops->get_status_icon ? active->ops->get_status_icon(active, ctx) : nullptr;
+    ASSERT_NOT_NULL(icon);
+    ASSERT_STR_EQ(icon, "typio-rime-latin");
+
+    typio_key_event_free(shift_press);
+    typio_key_event_free(shift_release);
+    free_capture(&capture);
+    typio_instance_destroy_context(instance, ctx);
+    typio_instance_free(instance);
+}
+
 int main(void) {
     printf("Running rime integration tests:\n");
     run_test_load_and_compose();
     run_test_switch_to_rime_first_shift_toggles_latin_mode();
     run_test_switch_back_to_rime_first_shift_toggles_latin_mode();
+    run_test_refocus_preserves_latin_mode();
+    run_test_engine_switch_preserves_latin_mode_within_context();
     printf("\nPassed %d/%d tests\n", tests_passed, tests_run);
     return 0;
 }

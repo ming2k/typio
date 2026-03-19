@@ -20,6 +20,12 @@
 #define TYPIO_RIME_SHARED_DATA_DIR "/usr/share/rime-data"
 #endif
 
+/*
+ * Rime session is owned by the input context rather than the transient focus
+ * state. Losing focus should clear composition UI, but the session itself
+ * lives until the context is destroyed so runtime options like ascii_mode can
+ * survive focus churn and engine switches within the same context.
+ */
 #define TYPIO_RIME_SESSION_KEY "rime.session"
 #define TYPIO_RIME_DEFAULT_SCHEMA "luna_pinyin"
 enum {
@@ -254,14 +260,6 @@ static uint32_t typio_rime_modifiers_to_mask(uint32_t modifiers) {
 static void typio_rime_clear_state(TypioInputContext *ctx) {
     typio_input_context_clear_preedit(ctx);
     typio_input_context_clear_candidates(ctx);
-}
-
-static void typio_rime_discard_session(TypioInputContext *ctx) {
-    if (!ctx) {
-        return;
-    }
-
-    typio_input_context_set_property(ctx, TYPIO_RIME_SESSION_KEY, nullptr, nullptr);
 }
 
 static bool typio_rime_apply_schema(TypioRimeSession *session) {
@@ -567,8 +565,8 @@ static void typio_rime_reset(TypioEngine *engine, TypioInputContext *ctx) {
 }
 
 static void typio_rime_focus_out(TypioEngine *engine, TypioInputContext *ctx) {
+    /* Focus loss ends composition, not the context-owned Rime session. */
     typio_rime_reset(engine, ctx);
-    typio_rime_discard_session(ctx);
 }
 
 static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
