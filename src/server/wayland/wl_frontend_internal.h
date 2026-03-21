@@ -12,6 +12,7 @@
 #include "shortcut_config.h"
 #include "lifecycle.h"
 #include "keyboard_repeat.h"
+#include "identity.h"
 #include "startup_guard.h"
 #include "vk_bridge.h"
 #include "typio/types.h"
@@ -175,6 +176,8 @@ struct TypioWlFrontend {
     TypioWlSession *session;
     TypioWlKeyboard *keyboard;
     TypioWlPopup *popup;
+    TypioWlIdentityProvider *identity_provider;
+    TypioWlIdentity current_identity;
 
 #ifdef HAVE_STATUS_BUS
     TypioStatusBus *status_bus;

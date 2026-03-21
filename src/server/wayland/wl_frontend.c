@@ -5,6 +5,7 @@
 
 #include "wl_frontend.h"
 #include "frontend_aux.h"
+#include "identity.h"
 #include "wl_frontend_internal.h"
 #include "typio/typio.h"
 #include "utils/log.h"
@@ -308,6 +309,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
 
     /* Set up input method listener */
     typio_wl_input_method_setup(frontend);
+    frontend->identity_provider = typio_wl_identity_provider_new(instance);
 
     /* Create virtual keyboard for forwarding unhandled keys */
     if (frontend->vk_manager && frontend->seat) {
@@ -659,6 +661,9 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
         typio_wl_session_destroy(frontend->session);
         frontend->session = nullptr;
     }
+    typio_wl_frontend_clear_identity(frontend);
+    typio_wl_identity_provider_free(frontend->identity_provider);
+    frontend->identity_provider = nullptr;
 
     /* Clean up keyboard */
     if (frontend->keyboard) {

@@ -189,6 +189,12 @@ static void typio_server_on_engine_change(TypioInstance *instance,
     manager = typio_instance_get_engine_manager(app->instance);
     active = manager ? typio_engine_manager_get_active(manager) : nullptr;
     if (active) {
+#ifdef HAVE_WAYLAND
+        if (app && app->wl_frontend) {
+            typio_wl_frontend_remember_active_engine(app->wl_frontend,
+                                                     typio_engine_get_name(active));
+        }
+#endif
         typio_log(TYPIO_LOG_INFO, "Engine changed to: %s", typio_engine_get_name(active));
     }
 }

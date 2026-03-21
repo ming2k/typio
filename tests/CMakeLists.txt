@@ -156,6 +156,25 @@ target_include_directories(test_frontend_aux PRIVATE
 )
 add_test(NAME test_frontend_aux COMMAND $<TARGET_FILE:test_frontend_aux>)
 
+add_executable(test_identity
+    test_identity.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/identity.c
+)
+target_include_directories(test_identity PRIVATE
+    ${CMAKE_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}/src/server/wayland-protocols
+    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/server
+    ${CMAKE_SOURCE_DIR}/src/server/tray
+    ${CMAKE_SOURCE_DIR}/src/server/voice
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+    ${DBUS_INCLUDE_DIRS}
+    ${WAYLAND_CLIENT_INCLUDE_DIRS}
+    ${XKBCOMMON_INCLUDE_DIRS}
+)
+target_link_libraries(test_identity PRIVATE typio-core)
+add_test(NAME test_identity COMMAND $<TARGET_FILE:test_identity>)
+
 add_executable(test_candidate_guard
     test_candidate_guard.c
     ${CMAKE_SOURCE_DIR}/src/server/wayland/candidate_guard.c

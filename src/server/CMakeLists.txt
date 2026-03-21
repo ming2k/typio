@@ -32,6 +32,7 @@ if(HAVE_WAYLAND)
         wayland/boundary_bridge.c
         wayland/candidate_guard.c
         wayland/frontend_aux.c
+        wayland/identity.c
         wayland/key_arbiter.c
         wayland/key_debug.c
         wayland/key_tracking.c

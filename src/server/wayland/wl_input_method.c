@@ -4,6 +4,7 @@
  */
 
 #include "wl_frontend_internal.h"
+#include "identity.h"
 #include "preedit_format.h"
 #include "wl_trace.h"
 #include "typio/typio.h"
@@ -385,6 +386,9 @@ static void im_handle_done(void *data, [[maybe_unused]] struct zwp_input_method_
 
         typio_log(TYPIO_LOG_INFO, "Input context focused");
         typio_input_context_focus_in(frontend->session->ctx);
+        typio_wl_frontend_refresh_identity(frontend);
+        typio_wl_frontend_restore_identity_engine(frontend);
+        engine = active_engine(frontend);
 
         if (!engine) {
             typio_log(TYPIO_LOG_WARNING, "No active engine, skipping keyboard grab");
@@ -439,6 +443,7 @@ static void im_handle_done(void *data, [[maybe_unused]] struct zwp_input_method_
 
         typio_wl_lifecycle_hard_reset_keyboard(frontend, "focus out");
         typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_INACTIVE, "focus out complete");
+        typio_wl_frontend_clear_identity(frontend);
         set_pending_reactivation(frontend, false);
         trace_session_state(frontend, "done_focus_out_complete");
     } else {
