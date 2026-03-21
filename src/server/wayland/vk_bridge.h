@@ -13,10 +13,23 @@
 struct TypioWlKeyboard;
 struct TypioWlFrontend;
 
+typedef enum {
+    TYPIO_WL_VK_STATE_ABSENT = 0,
+    TYPIO_WL_VK_STATE_NEEDS_KEYMAP,
+    TYPIO_WL_VK_STATE_READY,
+    TYPIO_WL_VK_STATE_BROKEN,
+} TypioWlVirtualKeyboardState;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+const char *typio_wl_vk_state_name(TypioWlVirtualKeyboardState state);
+void typio_wl_vk_set_state(struct TypioWlFrontend *frontend,
+                           TypioWlVirtualKeyboardState state,
+                           const char *reason);
+bool typio_wl_vk_is_ready(struct TypioWlFrontend *frontend,
+                          const char *operation);
 void typio_wl_vk_forward_key(struct TypioWlKeyboard *keyboard,
                              uint32_t time,
                              uint32_t key,

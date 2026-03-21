@@ -11,8 +11,92 @@
 #include "wl_trace.h"
 #include "utils/log.h"
 
+#include <inttypes.h>
 #include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
+
+const char *typio_wl_vk_state_name(TypioWlVirtualKeyboardState state) {
+    switch (state) {
+    case TYPIO_WL_VK_STATE_ABSENT:
+        return "absent";
+    case TYPIO_WL_VK_STATE_NEEDS_KEYMAP:
+        return "needs_keymap";
+    case TYPIO_WL_VK_STATE_READY:
+        return "ready";
+    case TYPIO_WL_VK_STATE_BROKEN:
+        return "broken";
+    default:
+        return "unknown";
+    }
+}
+
+void typio_wl_vk_set_state(TypioWlFrontend *frontend,
+                           TypioWlVirtualKeyboardState state,
+                           const char *reason) {
+    TypioWlVirtualKeyboardState previous;
+    TypioLogLevel level;
+
+    if (!frontend)
+        return;
+
+    previous = frontend->virtual_keyboard_state;
+    frontend->virtual_keyboard_state = state;
+    frontend->virtual_keyboard_has_keymap = state == TYPIO_WL_VK_STATE_READY;
+
+    if (previous == state)
+        return;
+
+    typio_wl_trace(frontend,
+                   "vk_state",
+                   "from=%s to=%s reason=%s dropped=%" PRIu64,
+                   typio_wl_vk_state_name(previous),
+                   typio_wl_vk_state_name(state),
+                   reason ? reason : "no reason",
+                   frontend->virtual_keyboard_drop_count);
+
+    level = TYPIO_LOG_INFO;
+    if (state == TYPIO_WL_VK_STATE_ABSENT)
+        level = TYPIO_LOG_WARNING;
+    else if (state == TYPIO_WL_VK_STATE_BROKEN)
+        level = TYPIO_LOG_ERROR;
+
+    typio_log(level,
+              "Virtual keyboard state changed: %s -> %s (%s, dropped=%" PRIu64 ")",
+              typio_wl_vk_state_name(previous),
+              typio_wl_vk_state_name(state),
+              reason ? reason : "no reason",
+              frontend->virtual_keyboard_drop_count);
+}
+
+bool typio_wl_vk_is_ready(TypioWlFrontend *frontend,
+                          const char *operation) {
+    uint64_t drops;
+
+    if (!frontend)
+        return false;
+
+    if (frontend->virtual_keyboard &&
+        frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_NEEDS_KEYMAP &&
+        frontend->virtual_keyboard_has_keymap) {
+        typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_READY,
+                              "keymap available");
+    }
+
+    if (frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_READY)
+        return true;
+
+    frontend->virtual_keyboard_drop_count++;
+    drops = frontend->virtual_keyboard_drop_count;
+    if (drops == 1 || drops % 50 == 0) {
+        typio_log(TYPIO_LOG_WARNING,
+                  "Dropped virtual keyboard %s: state=%s drops=%" PRIu64,
+                  operation ? operation : "event",
+                  typio_wl_vk_state_name(frontend->virtual_keyboard_state),
+                  drops);
+    }
+
+    return false;
+}
 
 void typio_wl_vk_forward_key(struct TypioWlKeyboard *keyboard,
                              uint32_t time,
@@ -27,8 +111,7 @@ void typio_wl_vk_forward_key(struct TypioWlKeyboard *keyboard,
         return;
 
     frontend = keyboard->frontend;
-    if (!frontend || !frontend->virtual_keyboard ||
-        !frontend->virtual_keyboard_has_keymap)
+    if (!frontend || !typio_wl_vk_is_ready(frontend, "key"))
         return;
 
     frontend->active_generation_vk_dirty = true;
@@ -57,8 +140,7 @@ void typio_wl_vk_forward_modifiers(struct TypioWlKeyboard *keyboard,
         return;
 
     frontend = keyboard->frontend;
-    if (!frontend || !frontend->virtual_keyboard ||
-        !frontend->virtual_keyboard_has_keymap)
+    if (!frontend || !typio_wl_vk_is_ready(frontend, "modifier update"))
         return;
 
     frontend->active_generation_vk_dirty = true;
@@ -76,8 +158,7 @@ void typio_wl_vk_forward_modifier_state(TypioWlFrontend *frontend,
                                         uint32_t mods_latched,
                                         uint32_t mods_locked,
                                         uint32_t group) {
-    if (!frontend || !frontend->virtual_keyboard ||
-        !frontend->virtual_keyboard_has_keymap)
+    if (!frontend || !typio_wl_vk_is_ready(frontend, "modifier carry"))
         return;
 
     frontend->active_generation_vk_dirty = true;
@@ -97,7 +178,7 @@ void typio_wl_vk_release_forwarded_keys(TypioWlFrontend *frontend,
     bool use_generic_name;
 
     if (!frontend || !frontend->virtual_keyboard ||
-        !frontend->virtual_keyboard_has_keymap)
+        !typio_wl_vk_is_ready(frontend, "hard reset"))
         return;
 
     time = (uint32_t)typio_wl_monotonic_ms();
@@ -129,8 +210,7 @@ void typio_wl_vk_release_forwarded_keys(TypioWlFrontend *frontend,
 }
 
 void typio_wl_vk_reset_modifiers(TypioWlFrontend *frontend) {
-    if (!frontend || !frontend->virtual_keyboard ||
-        !frontend->virtual_keyboard_has_keymap)
+    if (!frontend || !typio_wl_vk_is_ready(frontend, "modifier reset"))
         return;
 
     typio_wl_trace(frontend,
@@ -162,11 +242,15 @@ void typio_wl_vk_forward_keymap(TypioWlFrontend *frontend,
         return;
 
     vk_fd = dup(fd);
-    if (vk_fd < 0)
+    if (vk_fd < 0) {
+        typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_BROKEN,
+                              "failed to duplicate keymap fd");
         return;
+    }
 
     zwp_virtual_keyboard_v1_keymap(frontend->virtual_keyboard, format, vk_fd, size);
-    frontend->virtual_keyboard_has_keymap = true;
+    typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_READY,
+                          "received compositor keymap");
     typio_wl_trace(frontend,
                    "keymap",
                    "stage=forwarded_to_vk format=%u size=%u",

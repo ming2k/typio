@@ -160,7 +160,9 @@ struct TypioWlFrontend {
     /* Virtual keyboard for forwarding unhandled keys */
     struct zwp_virtual_keyboard_manager_v1 *vk_manager;
     struct zwp_virtual_keyboard_v1 *virtual_keyboard;
+    TypioWlVirtualKeyboardState virtual_keyboard_state;
     bool virtual_keyboard_has_keymap;
+    uint64_t virtual_keyboard_drop_count;
     TypioKeyTrackState key_states[TYPIO_WL_MAX_TRACKED_KEYS];
     uint32_t key_generations[TYPIO_WL_MAX_TRACKED_KEYS];
     uint32_t active_key_generation;

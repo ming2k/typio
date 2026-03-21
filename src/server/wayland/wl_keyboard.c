@@ -365,8 +365,37 @@ static void kb_handle_key(void *data,
                           uint32_t state) {
     TypioWlKeyboard *keyboard = data;
     TypioWlFrontend *frontend = keyboard->frontend;
+    xkb_keysym_t keysym;
+    uint32_t unicode;
+    uint32_t modifiers;
 
-    if (!keyboard->xkb_state || !frontend->session)
+    if (!keyboard->xkb_state)
+        return;
+
+    keysym = xkb_state_key_get_one_sym(keyboard->xkb_state, key + 8);
+    unicode = xkb_state_key_get_utf32(keyboard->xkb_state, key + 8);
+    modifiers = keyboard_event_modifiers(keyboard, (uint32_t)keysym, state);
+
+    if (state == WL_KEYBOARD_KEY_STATE_PRESSED &&
+        typio_wl_key_route_reserved_action(&frontend->shortcuts,
+                                           (uint32_t)keysym, modifiers) ==
+            TYPIO_WL_RESERVED_ACTION_EMERGENCY_EXIT) {
+        keyboard_trace_event(keyboard,
+                             "dispatch-stop",
+                             key, (uint32_t)keysym, modifiers, unicode,
+                             key_get_state(frontend, key),
+                             "emergency exit early path");
+        typio_log(TYPIO_LOG_WARNING,
+                  "Emergency exit shortcut triggered before normal routing: keycode=%u keysym=0x%x mods=0x%x phase=%s",
+                  key, (uint32_t)keysym, modifiers,
+                  typio_wl_lifecycle_phase_name(frontend->lifecycle_phase));
+        typio_log_dump_recent_to_configured_path("emergency exit shortcut");
+        typio_wl_keyboard_release_grab(keyboard);
+        typio_wl_frontend_stop(frontend);
+        return;
+    }
+
+    if (!frontend->session)
         return;
     if (!typio_wl_lifecycle_phase_allows_key_events(frontend->lifecycle_phase))
         return;
@@ -374,12 +403,6 @@ static void kb_handle_key(void *data,
     TypioWlSession *session = frontend->session;
     if (!session->ctx || !typio_input_context_is_focused(session->ctx))
         return;
-
-    /* XKB conversion */
-    xkb_keysym_t keysym = xkb_state_key_get_one_sym(keyboard->xkb_state,
-                                                     key + 8);
-    uint32_t unicode = xkb_state_key_get_utf32(keyboard->xkb_state, key + 8);
-    uint32_t modifiers = keyboard_event_modifiers(keyboard, keysym, state);
 
     keyboard_trace_event(keyboard,
                          state == WL_KEYBOARD_KEY_STATE_PRESSED ? "dispatch-press" : "dispatch-release",

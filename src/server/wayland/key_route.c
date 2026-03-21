@@ -83,14 +83,72 @@ static bool key_route_is_app_shortcut(uint32_t keysym, uint32_t modifiers) {
     }
 }
 
-static bool key_route_binding_matches_press(const TypioShortcutBinding *binding,
-                                            uint32_t keysym,
-                                            uint32_t modifiers) {
+const char *typio_wl_key_route_class_name(TypioWlKeyRouteClass route_class) {
+    switch (route_class) {
+    case TYPIO_WL_KEY_ROUTE_TYPIO_RESERVED:
+        return "typio_reserved";
+    case TYPIO_WL_KEY_ROUTE_APPLICATION_SHORTCUT:
+        return "application_shortcut";
+    case TYPIO_WL_KEY_ROUTE_NONE:
+    default:
+        return "none";
+    }
+}
+
+const char *typio_wl_reserved_action_name(TypioWlReservedAction action) {
+    switch (action) {
+    case TYPIO_WL_RESERVED_ACTION_EMERGENCY_EXIT:
+        return "emergency_exit";
+    case TYPIO_WL_RESERVED_ACTION_VOICE_PTT:
+        return "voice_ptt";
+    case TYPIO_WL_RESERVED_ACTION_NONE:
+    default:
+        return "none";
+    }
+}
+
+bool typio_wl_key_route_binding_matches_press(const TypioShortcutBinding *binding,
+                                              uint32_t keysym,
+                                              uint32_t modifiers) {
     if (!binding || binding->keysym == 0)
         return false;
 
     return keysym == binding->keysym &&
            (modifiers & binding->modifiers) == binding->modifiers;
+}
+
+TypioWlReservedAction typio_wl_key_route_reserved_action(
+    const TypioShortcutConfig *shortcuts,
+    uint32_t keysym,
+    uint32_t modifiers) {
+    if (!shortcuts)
+        return TYPIO_WL_RESERVED_ACTION_NONE;
+
+    if (typio_wl_key_route_binding_matches_press(&shortcuts->emergency_exit,
+                                                 keysym, modifiers)) {
+        return TYPIO_WL_RESERVED_ACTION_EMERGENCY_EXIT;
+    }
+
+    if (typio_wl_key_route_binding_matches_press(&shortcuts->voice_ptt,
+                                                 keysym, modifiers)) {
+        return TYPIO_WL_RESERVED_ACTION_VOICE_PTT;
+    }
+
+    return TYPIO_WL_RESERVED_ACTION_NONE;
+}
+
+TypioWlKeyRouteClass typio_wl_key_route_classify_shortcut(
+    const TypioShortcutConfig *shortcuts,
+    uint32_t keysym,
+    uint32_t modifiers) {
+    if (typio_wl_key_route_reserved_action(shortcuts, keysym, modifiers) !=
+        TYPIO_WL_RESERVED_ACTION_NONE)
+        return TYPIO_WL_KEY_ROUTE_TYPIO_RESERVED;
+
+    if (key_route_is_app_shortcut(keysym, modifiers))
+        return TYPIO_WL_KEY_ROUTE_APPLICATION_SHORTCUT;
+
+    return TYPIO_WL_KEY_ROUTE_NONE;
 }
 
 void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
@@ -104,6 +162,8 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
     TypioKeyTrackState kstate = key_get_state(frontend, key);
     uint64_t now_ms = typio_wl_monotonic_ms();
     TypioWlStartupSuppressReason suppress_reason;
+    TypioWlKeyRouteClass route_class;
+    TypioWlReservedAction reserved_action;
 
     if (kstate == TYPIO_KEY_RELEASED_PENDING) {
         key_route_trace(keyboard, "press-ignore", key, keysym, modifiers, unicode,
@@ -168,8 +228,20 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         return;
     }
 
-    if (key_route_binding_matches_press(&frontend->shortcuts.emergency_exit,
-                                        keysym, modifiers)) {
+    route_class = typio_wl_key_route_classify_shortcut(&frontend->shortcuts,
+                                                       keysym, modifiers);
+    reserved_action = typio_wl_key_route_reserved_action(&frontend->shortcuts,
+                                                         keysym, modifiers);
+
+    if (route_class != TYPIO_WL_KEY_ROUTE_NONE) {
+        key_route_trace(keyboard, "press-classify", key, keysym, modifiers,
+                        unicode, kstate,
+                        route_class == TYPIO_WL_KEY_ROUTE_TYPIO_RESERVED
+                            ? typio_wl_reserved_action_name(reserved_action)
+                            : typio_wl_key_route_class_name(route_class));
+    }
+
+    if (reserved_action == TYPIO_WL_RESERVED_ACTION_EMERGENCY_EXIT) {
         typio_log(TYPIO_LOG_WARNING,
                   "Emergency exit shortcut triggered: keycode=%u keysym=0x%x mods=0x%x",
                   key, keysym, modifiers);
@@ -187,7 +259,8 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
               "PTT check: keysym=0x%x mods=0x%x ptt_keysym=0x%x ptt_mods=0x%x voice_available=%s",
               keysym, modifiers, ptt->keysym, ptt->modifiers,
               typio_voice_service_is_available(frontend->voice) ? "yes" : "no");
-    if (keysym == ptt->keysym &&
+    if (reserved_action == TYPIO_WL_RESERVED_ACTION_VOICE_PTT &&
+        keysym == ptt->keysym &&
         (modifiers & ptt->modifiers) == ptt->modifiers) {
         if (typio_voice_service_is_available(frontend->voice)) {
             typio_voice_service_start(frontend->voice);
@@ -217,7 +290,7 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
     }
 #endif
 
-    if (key_route_is_app_shortcut(keysym, modifiers)) {
+    if (route_class == TYPIO_WL_KEY_ROUTE_APPLICATION_SHORTCUT) {
         typio_wl_vk_forward_key(keyboard, time, key, WL_KEYBOARD_KEY_STATE_PRESSED, unicode);
         key_set_state(frontend, key, TYPIO_KEY_APP_SHORTCUT);
         key_route_trace(keyboard, "press-forward", key, keysym, modifiers, unicode,

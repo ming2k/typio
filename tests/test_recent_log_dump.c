@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <regex.h>
 
 static int tests_run = 0;
 static int tests_passed = 0;
@@ -39,6 +40,8 @@ TEST(dumps_recent_logs_to_requested_file) {
     int fd = mkstemp(path);
     FILE *fp;
     char buf[4096];
+    regex_t timestamp_pattern;
+    int regex_ok;
 
     ASSERT(fd >= 0);
     close(fd);
@@ -58,6 +61,13 @@ TEST(dumps_recent_logs_to_requested_file) {
 
     ASSERT(strstr(buf, "alpha") != NULL);
     ASSERT(strstr(buf, "beta") != NULL);
+
+    regex_ok = regcomp(&timestamp_pattern,
+                       "\\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\\] \\[(INFO|WARN)\\]",
+                       REG_EXTENDED);
+    ASSERT(regex_ok == 0);
+    ASSERT(regexec(&timestamp_pattern, buf, 0, NULL, 0) == 0);
+    regfree(&timestamp_pattern);
 
     unlink(path);
     typio_log_set_recent_dump_path(NULL);

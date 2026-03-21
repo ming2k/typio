@@ -315,12 +315,18 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
             zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(
                 frontend->vk_manager, frontend->seat);
         if (frontend->virtual_keyboard) {
+            typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_NEEDS_KEYMAP,
+                                  "virtual keyboard object created");
             typio_log(TYPIO_LOG_INFO, "Virtual keyboard created for key forwarding");
         } else {
+            typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_BROKEN,
+                                  "create_virtual_keyboard returned null");
             typio_log(TYPIO_LOG_WARNING,
                       "Failed to create virtual keyboard; unhandled keys will be lost");
         }
     } else {
+        typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_ABSENT,
+                              "virtual keyboard manager unavailable");
         typio_log(TYPIO_LOG_WARNING,
                   "No virtual keyboard manager; unhandled keys will be lost");
     }
@@ -685,6 +691,8 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
 
     /* Clean up Wayland objects */
     if (frontend->virtual_keyboard) {
+        typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_ABSENT,
+                              "frontend shutdown");
         zwp_virtual_keyboard_v1_destroy(frontend->virtual_keyboard);
     }
     if (frontend->vk_manager) {

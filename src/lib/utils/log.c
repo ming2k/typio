@@ -114,7 +114,7 @@ void typio_log(TypioLogLevel level, const char *format, ...) {
     char time_buf[32];
     char rendered[1200];
 
-    strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm_info);
+    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
     snprintf(rendered, sizeof(rendered), "[%s] [%s] %s",
              time_buf, level_name(level), message);
     store_recent_log_line(rendered);
