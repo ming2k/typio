@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.5] - 2026-03-21
+
+### Added
+
+- **Focused-app identity tracking**: introduced a dedicated focused-app
+  identity layer for the Wayland frontend, including initial `niri` support
+  and regression coverage for the new abstraction.
+
+### Changed
+
+- **Virtual keyboard observability and shortcut routing**: improved key-route
+  and virtual-keyboard diagnostics while tightening shortcut routing behavior
+  through the Wayland frontend.
+- **Repository cleanup**: removed the committed `build-headless/` output tree
+  so release history no longer carries generated binaries and protocol output.
+
 ## [2.1.4] - 2026-03-19
 
 ### Changed
