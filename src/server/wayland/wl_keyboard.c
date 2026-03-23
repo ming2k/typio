@@ -184,7 +184,7 @@ TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend) {
     keyboard_reset_tracking(frontend);
     keyboard->frontend = frontend;
     keyboard->suppress_stale_keys = true;
-    keyboard->created_at_ms = typio_wl_monotonic_ms();
+    keyboard->created_at_epoch = frontend->dispatch_epoch;
     typio_wl_key_arbiter_init(&keyboard->arbiter);
 
     keyboard->repeat_timer_fd = timerfd_create(CLOCK_MONOTONIC,
@@ -399,6 +399,11 @@ static void kb_handle_key(void *data,
         !typio_wl_lifecycle_phase_allows_key_events(frontend->lifecycle_phase) ||
         !frontend->session->ctx ||
         !typio_input_context_is_focused(frontend->session->ctx)) {
+        keyboard_trace_event(keyboard,
+                             state == WL_KEYBOARD_KEY_STATE_PRESSED ? "guard-reject-press" : "guard-reject-release",
+                             key, (uint32_t)keysym, modifiers, unicode,
+                             key_get_state(frontend, key),
+                             typio_wl_lifecycle_phase_name(frontend->lifecycle_phase));
         /* Even though we cannot route this event, honour key releases
          * so that the repeat timer does not keep firing forever after
          * the physical key has been lifted. */

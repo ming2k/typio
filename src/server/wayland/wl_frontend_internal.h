@@ -95,10 +95,13 @@ struct TypioWlKeyboard {
     uint32_t repeat_time;   /* Timestamp of the original press */
     bool repeating;         /* Whether a key is currently repeating */
 
-    /* Startup guard: suppress stale keys held from previous grab */
+    /* Startup guard: suppress stale keys held from previous grab.
+     * Keys that arrive as presses within the first two Wayland dispatch
+     * epochs after the grab is created are treated as compositor re-sends
+     * of already-held keys, not genuine new user input. */
     bool suppress_stale_keys;
     size_t startup_suppressed_count;
-    uint64_t created_at_ms;
+    uint64_t created_at_epoch;
 
     /* Key event arbiter for system shortcut detection */
     TypioKeyArbiter arbiter;
@@ -194,6 +197,12 @@ struct TypioWlFrontend {
 
     /* Protocol serial: must increment on every done, even without a session */
     uint32_t im_serial;
+
+    /* Wayland dispatch epoch — incremented after each wl_display_dispatch.
+     * Used by the startup guard to deterministically identify stale key
+     * presses re-sent by the compositor when a new keyboard grab is
+     * established, replacing the previous time-based 50ms window. */
+    uint64_t dispatch_epoch;
 
     /* Event loop state */
     volatile bool running;

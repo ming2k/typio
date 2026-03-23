@@ -110,13 +110,14 @@ static bool rebuild_keyboard_grab(TypioWlFrontend *frontend,
         return false;
     }
 
+    bool had_keyboard = frontend->keyboard != NULL;
     typio_wl_trace(frontend,
                    "keyboard_grab",
                    "action=rebuild begin reason=%s phase=%s focused=%s existing_keyboard=%s",
                    reset_reason ? reset_reason : "keyboard rebuild",
                    typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
                    session_is_focused(frontend) ? "yes" : "no",
-                   frontend->keyboard ? "yes" : "no");
+                   had_keyboard ? "yes" : "no");
     typio_wl_lifecycle_hard_reset_keyboard(frontend,
                                            reset_reason ? reset_reason : "keyboard rebuild");
     frontend->keyboard = typio_wl_keyboard_create(frontend);
@@ -133,10 +134,17 @@ static bool rebuild_keyboard_grab(TypioWlFrontend *frontend,
         return false;
     }
 
+    /* Only suppress stale keys when rebuilding an existing grab.
+     * When no previous grab existed (fresh activation after auto-focus),
+     * the re-sent key is the first time the IME sees it — not stale. */
+    if (!had_keyboard) {
+        frontend->keyboard->suppress_stale_keys = false;
+    }
+
     typio_wl_trace(frontend,
                    "keyboard_grab",
-                   "action=rebuild result=ok created_at_ms=%" PRIu64 " suppress_stale_keys=%s",
-                   frontend->keyboard->created_at_ms,
+                   "action=rebuild result=ok created_at_epoch=%" PRIu64 " suppress_stale_keys=%s",
+                   frontend->keyboard->created_at_epoch,
                    frontend->keyboard->suppress_stale_keys ? "yes" : "no");
     return true;
 }
@@ -433,6 +441,8 @@ static void im_handle_done(void *data, [[maybe_unused]] struct zwp_input_method_
             return;
         }
 
+        typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_ACTIVE,
+                                     "reactivation complete");
         set_pending_reactivation(frontend, false);
         trace_session_state(frontend, "done_reactivation_complete");
     } else if (!now_active && was_active) {

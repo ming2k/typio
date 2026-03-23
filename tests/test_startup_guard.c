@@ -29,26 +29,39 @@ static int tests_passed = 0;
         } \
     } while (0)
 
-TEST(ignores_stale_presses_during_short_window) {
-    ASSERT(typio_wl_startup_guard_should_ignore_stale_press(1000, 1020));
-    ASSERT(typio_wl_startup_guard_should_ignore_stale_press(
-        1000, 1000 + TYPIO_WL_STARTUP_STALE_KEY_GUARD_MS));
+TEST(guard_window_same_epoch) {
+    ASSERT(typio_wl_startup_guard_is_in_guard_window(10, 10));
 }
 
-TEST(allows_presses_after_stale_window) {
-    ASSERT(!typio_wl_startup_guard_should_ignore_stale_press(
-        1000, 1001 + TYPIO_WL_STARTUP_STALE_KEY_GUARD_MS));
+TEST(guard_window_epoch_plus_one) {
+    ASSERT(typio_wl_startup_guard_is_in_guard_window(10, 11));
 }
 
-TEST(cleans_up_orphan_releases_during_short_window) {
-    ASSERT(typio_wl_startup_guard_should_cleanup_stale_release(1000, 1020));
-    ASSERT(typio_wl_startup_guard_should_cleanup_stale_release(
-        1000, 1000 + TYPIO_WL_STARTUP_STALE_KEY_GUARD_MS));
+TEST(guard_window_epoch_plus_two) {
+    ASSERT(typio_wl_startup_guard_is_in_guard_window(10, 12));
 }
 
-TEST(allows_orphan_releases_after_stale_window) {
-    ASSERT(!typio_wl_startup_guard_should_cleanup_stale_release(
-        1000, 1001 + TYPIO_WL_STARTUP_STALE_KEY_GUARD_MS));
+TEST(guard_window_epoch_plus_three_outside) {
+    ASSERT(!typio_wl_startup_guard_is_in_guard_window(10, 13));
+}
+
+TEST(guard_window_current_before_created) {
+    ASSERT(!typio_wl_startup_guard_is_in_guard_window(10, 5));
+}
+
+TEST(classify_suppresses_stale_in_window) {
+    ASSERT(typio_wl_startup_guard_classify_press(10, 11, true) ==
+           TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY);
+}
+
+TEST(classify_allows_after_window) {
+    ASSERT(typio_wl_startup_guard_classify_press(10, 13, true) ==
+           TYPIO_WL_STARTUP_SUPPRESS_NONE);
+}
+
+TEST(classify_allows_when_suppress_disabled) {
+    ASSERT(typio_wl_startup_guard_classify_press(10, 11, false) ==
+           TYPIO_WL_STARTUP_SUPPRESS_NONE);
 }
 
 TEST(cleans_up_shortcut_orphan_releases_with_blocking_modifiers) {
@@ -72,28 +85,18 @@ TEST(does_not_treat_plain_releases_as_shortcut_orphan_cleanup) {
         TYPIO_MOD_SHIFT, false));
 }
 
-TEST(classifies_stale_press_before_enter_guard) {
-    ASSERT(typio_wl_startup_guard_classify_press(
-        1000, 1020, true) ==
-        TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY);
-}
-
-TEST(allows_non_enter_after_stale_window) {
-    ASSERT(typio_wl_startup_guard_classify_press(
-        1000, 1200, false) ==
-        TYPIO_WL_STARTUP_SUPPRESS_NONE);
-}
-
 int main(void) {
     printf("Running startup guard tests:\n");
-    run_test_ignores_stale_presses_during_short_window();
-    run_test_allows_presses_after_stale_window();
-    run_test_cleans_up_orphan_releases_during_short_window();
-    run_test_allows_orphan_releases_after_stale_window();
+    run_test_guard_window_same_epoch();
+    run_test_guard_window_epoch_plus_one();
+    run_test_guard_window_epoch_plus_two();
+    run_test_guard_window_epoch_plus_three_outside();
+    run_test_guard_window_current_before_created();
+    run_test_classify_suppresses_stale_in_window();
+    run_test_classify_allows_after_window();
+    run_test_classify_allows_when_suppress_disabled();
     run_test_cleans_up_shortcut_orphan_releases_with_blocking_modifiers();
     run_test_does_not_treat_plain_releases_as_shortcut_orphan_cleanup();
-    run_test_classifies_stale_press_before_enter_guard();
-    run_test_allows_non_enter_after_stale_window();
     printf("\nPassed %d/%d tests\n", tests_passed, tests_run);
     return 0;
 }

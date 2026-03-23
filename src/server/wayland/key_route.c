@@ -10,7 +10,6 @@
 #include "candidate_guard.h"
 #include "key_debug.h"
 #include "key_tracking_access.h"
-#include "monotonic_time.h"
 #include "shortcut_config.h"
 #include "shortcut_chord.h"
 #include "startup_guard.h"
@@ -160,7 +159,6 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
                                       uint32_t time) {
     TypioWlFrontend *frontend = keyboard->frontend;
     TypioKeyTrackState kstate = key_get_state(frontend, key);
-    uint64_t now_ms = typio_wl_monotonic_ms();
     TypioWlStartupSuppressReason suppress_reason;
     TypioWlKeyRouteClass route_class;
     TypioWlReservedAction reserved_action;
@@ -205,8 +203,8 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
     key_claim_current_generation(frontend, key);
 
     suppress_reason = typio_wl_startup_guard_classify_press(
-        keyboard->created_at_ms,
-        now_ms,
+        keyboard->created_at_epoch,
+        frontend->dispatch_epoch,
         keyboard->suppress_stale_keys);
 
     if (keyboard->suppress_stale_keys &&
@@ -358,7 +356,6 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                                         uint32_t time) {
     TypioWlFrontend *frontend = keyboard->frontend;
     TypioKeyTrackState kstate = key_get_state(frontend, key);
-    uint64_t now_ms = typio_wl_monotonic_ms();
 
     if (keyboard->repeating && keyboard->repeat_key == key)
         keyboard->repeat_timer_fd >= 0 ? (void)0 : (void)0;
@@ -452,8 +449,8 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
             bool is_modifier = typio_key_event_is_modifier_only(&release_event);
             bool should_cleanup_stale_release =
                 !is_modifier &&
-                (typio_wl_startup_guard_should_cleanup_stale_release(
-                 keyboard->created_at_ms, now_ms) ||
+                (typio_wl_startup_guard_is_in_guard_window(
+                 keyboard->created_at_epoch, frontend->dispatch_epoch) ||
                  typio_wl_boundary_bridge_should_forward_orphan_release_cleanup(
                      keysym,
                      modifiers,

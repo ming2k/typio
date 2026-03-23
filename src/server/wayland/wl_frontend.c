@@ -532,6 +532,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
                 return -1;
             }
             wl_display_dispatch_pending(frontend->display);
+            frontend->dispatch_epoch++;
         } else {
             wl_display_cancel_read(frontend->display);
         }
