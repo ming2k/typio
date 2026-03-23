@@ -148,7 +148,6 @@ static GtkWidget *create_bound_widget(TypioControl *control,
 static GtkWidget *build_rime_config(TypioControl *control) {
     GtkWidget *box = control_create_panel_box_named("rime-config-section", 12);
     GtkWidget *list = control_create_preferences_list_named("rime-config-list");
-    const TypioConfigField *schema_field = typio_config_schema_find("engines.rime.schema");
 
     gtk_box_append(GTK_BOX(box),
                    control_create_section_header_named("rime-config-header",
@@ -168,14 +167,12 @@ static GtkWidget *build_rime_config(TypioControl *control) {
                                control->rime_schema_id_model,
                                control_rime_schema_index,
                                control_rime_schema_value,
-                               CONTROL_STATE_VALUE_FROM_CONFIG);
+                               CONTROL_STATE_VALUE_FROM_RUNTIME);
     control->rime_schema_state.options_user_data = control;
     control->rime_schema_state.refresh_options = control_refresh_rime_schema_options;
     gtk_list_box_append(GTK_LIST_BOX(list),
                         control_create_preference_row_named("rime-schema-row",
-                                                            schema_field && schema_field->ui_label
-                                                                ? schema_field->ui_label
-                                                                : "Schema",
+                                                            "Schema",
                                                             "",
                                                             GTK_WIDGET(control->rime_schema_dropdown)));
 
@@ -185,22 +182,11 @@ static GtkWidget *build_rime_config(TypioControl *control) {
 
 static GtkWidget *build_mozc_config(TypioControl *control) {
     GtkWidget *box = control_create_panel_box_named("mozc-config-section", 12);
-    GtkWidget *list = control_create_preferences_list_named("mozc-config-list");
 
     gtk_box_append(GTK_BOX(box),
                    control_create_section_header_named("mozc-config-header",
                                                        "Mozc",
-                                                       "Japanese candidate paging and engine-specific settings."));
-
-    control->mozc_page_size_spin = GTK_SPIN_BUTTON(
-        create_bound_widget(control, "engines.mozc.page_size"));
-    gtk_list_box_append(GTK_LIST_BOX(list),
-                        control_create_preference_row_named("mozc-page-size-row",
-                                                            "Candidate page size",
-                                                            "Limit how many candidates appear in each page.",
-                                                            GTK_WIDGET(control->mozc_page_size_spin)));
-
-    gtk_box_append(GTK_BOX(box), list);
+                                                       "Mozc manages candidate paging through its own configuration."));
     return box;
 }
 
@@ -607,7 +593,7 @@ GtkWidget *control_build_display_page(TypioControl *control) {
                                                        "Tune the popup layout and panel notifications without leaving the session."));
 
     control->popup_theme_dropdown = GTK_DROP_DOWN(
-        create_bound_widget(control, "engines.rime.popup_theme"));
+        create_bound_widget(control, "display.popup_theme"));
     gtk_list_box_append(GTK_LIST_BOX(appearance_list),
                         control_create_preference_row_named("popup-theme-row",
                                                             "Popup theme",
@@ -615,7 +601,7 @@ GtkWidget *control_build_display_page(TypioControl *control) {
                                                             GTK_WIDGET(control->popup_theme_dropdown)));
 
     control->candidate_layout_dropdown = GTK_DROP_DOWN(
-        create_bound_widget(control, "engines.rime.candidate_layout"));
+        create_bound_widget(control, "display.candidate_layout"));
     gtk_list_box_append(GTK_LIST_BOX(appearance_list),
                         control_create_preference_row_named("candidate-layout-row",
                                                             "Candidate layout",
@@ -623,7 +609,7 @@ GtkWidget *control_build_display_page(TypioControl *control) {
                                                             GTK_WIDGET(control->candidate_layout_dropdown)));
 
     control->font_size_spin = GTK_SPIN_BUTTON(
-        create_bound_widget(control, "engines.rime.font_size"));
+        create_bound_widget(control, "display.font_size"));
     gtk_list_box_append(GTK_LIST_BOX(appearance_list),
                         control_create_preference_row_named("font-size-row",
                                                             "Font size",

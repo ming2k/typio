@@ -68,7 +68,8 @@ Methods:
 
 `ActiveEngineState` is an `a{sv}` map containing stable engine metadata plus
 top-level engine config keys prefixed as `config.*`, such as
-`config.schema` or `config.page_size` for Rime. Typio emits the standard
+`config.shared_data_dir` for Rime. The active Rime schema is exposed
+separately through the `RimeSchema` property. Typio emits the standard
 `org.freedesktop.DBus.Properties.PropertiesChanged` signal when these values
 change, so richer shells and widgets can react without relying on tray icon
 changes alone.

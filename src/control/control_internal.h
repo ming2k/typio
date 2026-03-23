@@ -71,7 +71,6 @@ typedef struct TypioControl {
     GtkDropDown *rime_schema_dropdown;
     GtkStringList *rime_schema_model;
     GPtrArray *rime_schema_id_model;
-    GtkSpinButton *mozc_page_size_spin;
     GtkDropDown *voice_backend_dropdown;
     GtkStringList *voice_backend_model;
     GtkDropDown *voice_model_dropdown;

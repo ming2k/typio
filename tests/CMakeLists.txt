@@ -59,6 +59,19 @@ if(HAVE_SYSTRAY)
     target_link_libraries(test_tray_icon_pixmap PRIVATE ${CAIRO_PANGO_LIBRARIES})
     add_test(NAME test_tray_icon_pixmap COMMAND test_tray_icon_pixmap)
 
+    add_executable(test_server_app
+        test_server_app.c
+        ${CMAKE_SOURCE_DIR}/src/server/server_app.c
+    )
+    target_compile_definitions(test_server_app PRIVATE TYPIO_SERVER_TEST)
+    target_include_directories(test_server_app PRIVATE
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}/src/server
+        ${CMAKE_SOURCE_DIR}/src/lib
+    )
+    target_link_libraries(test_server_app PRIVATE typio-core)
+    add_test(NAME test_server_app COMMAND test_server_app)
+
 endif()
 
 if(HAVE_STATUS_BUS)

@@ -1,7 +1,7 @@
 /**
  * @file config_schema.h
  * @brief Static config schema registry — single source of truth for all
- *        configuration fields, their defaults, legacy aliases, and UI metadata.
+ *        configuration fields, their defaults, and UI metadata.
  */
 
 #ifndef TYPIO_CONFIG_SCHEMA_H
@@ -23,7 +23,7 @@ typedef enum {
 } TypioFieldType;
 
 typedef struct TypioConfigField {
-    const char *key;            /* canonical dotted key, e.g. "engines.rime.font_size" */
+    const char *key;            /* canonical dotted key, e.g. "display.font_size" */
     TypioFieldType type;
     union {
         const char *s;
@@ -31,8 +31,6 @@ typedef struct TypioConfigField {
         bool b;
         double f;
     } def;                      /* default value */
-    const char *legacy_key;     /* first legacy alias, or NULL */
-    const char *legacy_key2;    /* second legacy alias, or NULL */
 
     /* UI metadata (ignored by server-side code) */
     const char *ui_label;
@@ -58,15 +56,6 @@ const char *typio_config_schema_runtime_property(const char *key);
  * @brief Apply default values from the schema for any key not already present.
  */
 void typio_config_apply_defaults(TypioConfig *config);
-
-/**
- * @brief Migrate legacy keys to their canonical equivalents.
- *
- * For each field that has a legacy_key (or legacy_key2), if the legacy key
- * exists in @p config but the canonical key does not, copy the value and
- * remove the legacy entry.
- */
-void typio_config_migrate_legacy(TypioConfig *config);
 
 /**
  * @brief Get the full schema table.

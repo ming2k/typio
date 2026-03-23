@@ -39,13 +39,12 @@ Rules:
 - only the daemon writes it
 - control surfaces mutate config through daemon APIs such as
   `SetConfigText`
-- config defaults and legacy migration happen daemon-side
+- config defaults happen daemon-side
 
 Examples:
 
 - `default_engine`
 - `default_voice_engine`
-- `engines.rime.schema`
 - `shortcuts.voice_ptt`
 
 ### Runtime State
@@ -66,6 +65,7 @@ Current runtime properties include:
 - `ActiveVoiceEngine`
 - `AvailableEngines`
 - `ActiveEngineState`
+- `RimeSchema`
 - `ConfigText`
 
 ### Local Staged Edits
@@ -113,9 +113,9 @@ Examples:
   Read runtime from `ActiveVoiceEngine`
   Persist via `default_voice_engine`
 - Rime schema selector
-  Read persisted selection from staged config
+  Read runtime selection from `RimeSchema`
   Read available choices from shared schema discovery
-  Persist via `engines.rime.schema`
+  Persist via XDG state and `SetRimeSchema`
 
 ## Control-State Bindings
 
@@ -151,8 +151,8 @@ Current selector mapping in `typio-control`:
   value source: `RUNTIME_THEN_CONFIG`
   options source: `AvailableEngines`
 - Rime schema
-  config key: `engines.rime.schema`
-  value source: `FROM_CONFIG`
+  state key: `schema` in `rime-state.toml`
+  value source: `FROM_RUNTIME`
   options source: `typio_rime_schema_list_load()`
 
 This binding layer exists to prevent control-surface code from repeating
@@ -216,7 +216,7 @@ For runtime-driven selectors such as `default_engine`, also require:
 Treat selector tests as belonging to one of three categories:
 
 - `config-driven`
-  example: `engines.rime.schema`
+  example: `display.popup_theme`
 - `runtime-driven`
   example: `default_engine`
 - `mixed`

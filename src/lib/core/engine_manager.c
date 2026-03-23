@@ -897,11 +897,17 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
     manager->active_keyboard_index = index;
     manager->last_switch_ms = now_ms;
 
+    /* Dynamic status icons belong to the previously active engine.
+     * Clear the cache before rebinding so static-icon engines do not
+     * inherit a stale tray icon from Rime. */
+    typio_instance_clear_status_icon(manager->instance);
+
     engine_manager_rebind_focused_context(manager,
                                           current ? current->instance : nullptr,
                                           entry->instance);
 
-    /* Notify instance */
+    /* Publish the engine change only after focused-context rebind has
+     * finished so tray/state observers see a consistent engine+icon+session. */
     typio_instance_notify_engine_changed(manager->instance, entry->info);
 
     return TYPIO_OK;

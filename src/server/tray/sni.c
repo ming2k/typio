@@ -81,9 +81,7 @@ static bool tray_load_rime_menu_info(TypioTray *tray, TypioTrayRimeMenuInfo *inf
         return false;
     }
 
-    if (shared_list.current_schema) {
-        info->current_schema = typio_strdup(shared_list.current_schema);
-    }
+    info->current_schema = typio_instance_dup_rime_schema(tray->instance);
     if (shared_list.user_data_dir) {
         info->user_data_dir = typio_strdup(shared_list.user_data_dir);
     }

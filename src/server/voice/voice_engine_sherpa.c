@@ -41,30 +41,6 @@ static TypioResult sherpa_engine_init(TypioEngine *engine,
         model = typio_config_get_string(ecfg, "model", NULL);
     }
 
-    /* Legacy fallback: [voice] section */
-    if (!model) {
-        TypioConfig *config = typio_instance_get_config(instance);
-        if (config) {
-            const char *backend = typio_config_get_string(config,
-                                                           "voice.backend", NULL);
-            if (backend && (strcmp(backend, "sherpa-onnx") == 0 ||
-                            strcmp(backend, "sherpa") == 0)) {
-                if (!language) {
-                    language = typio_config_get_string(config,
-                                                       "voice.language", NULL);
-                }
-                if (!model) {
-                    model = typio_config_get_string(config,
-                                                     "voice.model", NULL);
-                }
-            }
-            if (model && !ecfg) {
-                typio_log_warning("Sherpa-ONNX config from [voice] is "
-                                  "deprecated; use [engines.sherpa-onnx] instead");
-            }
-        }
-    }
-
     TypioVoiceBackend *backend = typio_voice_backend_sherpa_new(data_dir,
                                                                  language,
                                                                  model);

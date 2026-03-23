@@ -27,7 +27,7 @@
  * survive focus churn and engine switches within the same context.
  */
 #define TYPIO_RIME_SESSION_KEY "rime.session"
-#define TYPIO_RIME_DEFAULT_SCHEMA "luna_pinyin"
+#define TYPIO_RIME_DEFAULT_SCHEMA ""
 enum {
     TYPIO_RIME_SHIFT_MASK = (1 << 0),
     TYPIO_RIME_LOCK_MASK = (1 << 1),
@@ -109,6 +109,7 @@ static bool typio_rime_path_exists(const char *path) {
 static TypioResult typio_rime_load_config(TypioEngine *engine,
                                           TypioInstance *instance,
                                           TypioRimeConfig *config) {
+    char *persisted_schema;
     const char *data_dir;
     TypioConfig *engine_config = nullptr;
     char *default_user_dir;
@@ -129,20 +130,20 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
         return TYPIO_ERROR_OUT_OF_MEMORY;
     }
 
+    persisted_schema = typio_instance_dup_rime_schema(instance);
+    if (persisted_schema && *persisted_schema) {
+        free(config->schema);
+        config->schema = persisted_schema;
+        persisted_schema = nullptr;
+    }
     engine_config = typio_instance_get_engine_config(instance, "rime");
     if (!engine_config) {
         return TYPIO_OK;
     }
 
-    const char *schema = typio_config_get_string(engine_config, "schema", nullptr);
     const char *shared_data_dir = typio_config_get_string(engine_config, "shared_data_dir", nullptr);
     const char *user_data_dir = typio_config_get_string(engine_config, "user_data_dir", nullptr);
     const bool full_check = typio_config_get_bool(engine_config, "full_check", false);
-
-    if (schema && *schema) {
-        free(config->schema);
-        config->schema = typio_strdup(schema);
-    }
     if (shared_data_dir && *shared_data_dir) {
         char *expanded = typio_rime_expand_path(shared_data_dir);
         free(config->shared_data_dir);
@@ -156,6 +157,7 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
     config->full_check = full_check;
 
     typio_config_free(engine_config);
+    free(persisted_schema);
 
     if (!config->schema || !config->shared_data_dir || !config->user_data_dir) {
         typio_rime_free_config(config);
@@ -730,7 +732,7 @@ static void typio_rime_apply_runtime_config(TypioEngine *engine) {
 static TypioResult typio_rime_reload_config(TypioEngine *engine) {
     TypioRimeState *state = typio_engine_get_user_data(engine);
     TypioConfig *engine_config;
-    const char *schema;
+    char *schema;
 
     if (!state) {
         return TYPIO_ERROR_NOT_INITIALIZED;
@@ -740,16 +742,14 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
         return TYPIO_OK;
     }
 
+    schema = typio_instance_dup_rime_schema(engine->instance);
+    free(state->config.schema);
+    state->config.schema = schema ? schema : typio_strdup(TYPIO_RIME_DEFAULT_SCHEMA);
+
     engine_config = typio_instance_get_engine_config(engine->instance, "rime");
     if (!engine_config) {
+        typio_rime_apply_runtime_config(engine);
         return TYPIO_OK;
-    }
-
-    schema = typio_config_get_string(engine_config, "schema", nullptr);
-
-    if (schema && *schema) {
-        free(state->config.schema);
-        state->config.schema = typio_strdup(schema);
     }
 
     if (typio_config_has_key(engine_config, "shared_data_dir") ||

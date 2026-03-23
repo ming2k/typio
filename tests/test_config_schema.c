@@ -42,7 +42,7 @@ static int tests_passed = 0;
 
 /* Test: schema lookup */
 TEST(schema_find_existing) {
-    const TypioConfigField *f = typio_config_schema_find("engines.rime.font_size");
+    const TypioConfigField *f = typio_config_schema_find("display.font_size");
     ASSERT_NOT_NULL(f);
     ASSERT_EQ(f->type, TYPIO_FIELD_INT);
     ASSERT_EQ(f->def.i, 11);
@@ -78,13 +78,12 @@ TEST(apply_defaults_empty_config) {
     typio_config_apply_defaults(config);
 
     /* Check that defaults were applied */
-    ASSERT_EQ(typio_config_get_int(config, "engines.rime.font_size", 0), 11);
-    ASSERT_EQ(typio_config_get_int(config, "engines.mozc.page_size", 0), 9);
+    ASSERT_EQ(typio_config_get_int(config, "display.font_size", 0), 11);
     ASSERT(typio_config_get_bool(config, "notifications.enable", false));
     ASSERT(typio_config_get_bool(config, "notifications.startup_checks", false));
     ASSERT_EQ(typio_config_get_int(config, "notifications.cooldown_ms", 0), 15000);
-    ASSERT_STR_EQ(typio_config_get_string(config, "engines.rime.popup_theme", ""), "auto");
-    ASSERT_STR_EQ(typio_config_get_string(config, "engines.rime.candidate_layout", ""), "horizontal");
+    ASSERT_STR_EQ(typio_config_get_string(config, "display.popup_theme", ""), "auto");
+    ASSERT_STR_EQ(typio_config_get_string(config, "display.candidate_layout", ""), "horizontal");
     ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.switch_engine", ""), "Ctrl+Shift");
     ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.emergency_exit", ""), "Ctrl+Shift+Escape");
     ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.voice_ptt", ""), "Super+v");
@@ -97,143 +96,17 @@ TEST(apply_defaults_preserves_existing) {
     ASSERT_NOT_NULL(config);
 
     /* Set a non-default value */
-    typio_config_set_int(config, "engines.rime.font_size", 14);
+    typio_config_set_int(config, "display.font_size", 14);
 
     typio_config_apply_defaults(config);
 
     /* Existing values should NOT be overwritten */
-    ASSERT_EQ(typio_config_get_int(config, "engines.rime.font_size", 0), 14);
+    ASSERT_EQ(typio_config_get_int(config, "display.font_size", 0), 14);
 
     /* Missing values should get defaults */
     ASSERT(typio_config_get_bool(config, "notifications.enable", false));
 
     typio_config_free(config);
-}
-
-/* Test: legacy migration */
-TEST(migrate_legacy_voice_backend) {
-    TypioConfig *config = typio_config_new();
-    ASSERT_NOT_NULL(config);
-
-    typio_config_set_string(config, "voice.backend", "whisper");
-
-    typio_config_migrate_legacy(config);
-
-    /* Legacy key should be removed */
-    ASSERT(!typio_config_has_key(config, "voice.backend"));
-    /* Canonical key should have the value */
-    ASSERT_STR_EQ(typio_config_get_string(config, "default_voice_engine", ""), "whisper");
-
-    typio_config_free(config);
-}
-
-TEST(migrate_legacy_whisper_model) {
-    TypioConfig *config = typio_config_new();
-    ASSERT_NOT_NULL(config);
-
-    typio_config_set_string(config, "whisper.model", "large");
-
-    typio_config_migrate_legacy(config);
-
-    ASSERT(!typio_config_has_key(config, "whisper.model"));
-    ASSERT_STR_EQ(typio_config_get_string(config, "engines.whisper.model", ""), "large");
-
-    typio_config_free(config);
-}
-
-TEST(migrate_legacy_canonical_takes_precedence) {
-    TypioConfig *config = typio_config_new();
-    ASSERT_NOT_NULL(config);
-
-    /* Both canonical and legacy exist */
-    typio_config_set_string(config, "default_voice_engine", "sherpa-onnx");
-    typio_config_set_string(config, "voice.backend", "whisper");
-
-    typio_config_migrate_legacy(config);
-
-    /* Canonical should win, legacy removed */
-    ASSERT_STR_EQ(typio_config_get_string(config, "default_voice_engine", ""), "sherpa-onnx");
-    ASSERT(!typio_config_has_key(config, "voice.backend"));
-
-    typio_config_free(config);
-}
-
-TEST(migrate_legacy_voice_language) {
-    TypioConfig *config = typio_config_new();
-    ASSERT_NOT_NULL(config);
-
-    /* whisper.language is unambiguous — always goes to engines.whisper */
-    typio_config_set_string(config, "whisper.language", "en");
-
-    typio_config_migrate_legacy(config);
-
-    ASSERT(!typio_config_has_key(config, "whisper.language"));
-    ASSERT_STR_EQ(typio_config_get_string(config, "engines.whisper.language", ""), "en");
-
-    typio_config_free(config);
-}
-
-TEST(migrate_shared_voice_model_routes_to_sherpa) {
-    TypioConfig *config = typio_config_new();
-    ASSERT_NOT_NULL(config);
-
-    /* voice.backend = sherpa-onnx  +  voice.model = sensevoice
-     * → default_voice_engine = sherpa-onnx, engines.sherpa-onnx.model = sensevoice */
-    typio_config_set_string(config, "voice.backend", "sherpa-onnx");
-    typio_config_set_string(config, "voice.model", "sensevoice");
-    typio_config_set_string(config, "voice.language", "auto");
-
-    typio_config_migrate_legacy(config);
-
-    ASSERT(!typio_config_has_key(config, "voice.backend"));
-    ASSERT(!typio_config_has_key(config, "voice.model"));
-    ASSERT(!typio_config_has_key(config, "voice.language"));
-    ASSERT_STR_EQ(typio_config_get_string(config, "default_voice_engine", ""), "sherpa-onnx");
-    ASSERT_STR_EQ(typio_config_get_string(config, "engines.sherpa-onnx.model", ""), "sensevoice");
-    ASSERT_STR_EQ(typio_config_get_string(config, "engines.sherpa-onnx.language", ""), "auto");
-    /* whisper should NOT get the sherpa model */
-    ASSERT(!typio_config_has_key(config, "engines.whisper.model"));
-
-    typio_config_free(config);
-}
-
-TEST(migrate_shared_voice_model_routes_to_whisper) {
-    TypioConfig *config = typio_config_new();
-    ASSERT_NOT_NULL(config);
-
-    /* voice.backend = whisper  +  voice.model = large */
-    typio_config_set_string(config, "voice.backend", "whisper");
-    typio_config_set_string(config, "voice.model", "large");
-
-    typio_config_migrate_legacy(config);
-
-    ASSERT_STR_EQ(typio_config_get_string(config, "default_voice_engine", ""), "whisper");
-    ASSERT_STR_EQ(typio_config_get_string(config, "engines.whisper.model", ""), "large");
-    ASSERT(!typio_config_has_key(config, "engines.sherpa-onnx.model"));
-
-    typio_config_free(config);
-}
-
-TEST(migrate_shared_voice_model_no_backend_defaults_whisper) {
-    TypioConfig *config = typio_config_new();
-    ASSERT_NOT_NULL(config);
-
-    /* No voice.backend — voice.model defaults to whisper engine */
-    typio_config_set_string(config, "voice.model", "tiny");
-
-    typio_config_migrate_legacy(config);
-
-    ASSERT_STR_EQ(typio_config_get_string(config, "engines.whisper.model", ""), "tiny");
-    ASSERT(!typio_config_has_key(config, "voice.model"));
-
-    typio_config_free(config);
-}
-
-/* Test: mozc page_size default stays available */
-TEST(mozc_page_size_default) {
-    const TypioConfigField *mozc = typio_config_schema_find("engines.mozc.page_size");
-    ASSERT_NOT_NULL(mozc);
-    ASSERT_EQ(mozc->def.i, 9);
 }
 
 TEST(stateful_engine_keys_expose_runtime_property) {
@@ -259,37 +132,34 @@ TEST(schema_fields_enumeration) {
     }
 }
 
-/* Test: full lifecycle (load legacy string → migrate → apply defaults) */
+/* Test: full lifecycle (load string → apply defaults) */
 TEST(full_lifecycle) {
-    const char *legacy_config =
-        "[voice]\n"
-        "backend = \"whisper\"\n"
+    const char *config_text =
+        "default_voice_engine = \"whisper\"\n"
+        "[engines.whisper]\n"
         "model = \"tiny\"\n"
         "language = \"zh\"\n"
         "\n"
         "[engines.rime]\n"
-        "schema = \"luna_pinyin\"\n";
+        "shared_data_dir = \"/usr/share/rime-data\"\n";
 
-    TypioConfig *config = typio_config_load_string(legacy_config);
+    TypioConfig *config = typio_config_load_string(config_text);
     ASSERT_NOT_NULL(config);
 
-    typio_config_migrate_legacy(config);
     typio_config_apply_defaults(config);
 
-    /* Legacy keys migrated */
+    /* Canonical values preserved */
     ASSERT_STR_EQ(typio_config_get_string(config, "default_voice_engine", ""), "whisper");
-    ASSERT(!typio_config_has_key(config, "voice.backend"));
-    /* Shared voice.model/language routed to whisper (matching backend) */
     ASSERT_STR_EQ(typio_config_get_string(config, "engines.whisper.model", ""), "tiny");
-    ASSERT(!typio_config_has_key(config, "voice.model"));
-    ASSERT(!typio_config_has_key(config, "voice.language"));
+    ASSERT_STR_EQ(typio_config_get_string(config, "engines.whisper.language", ""), "zh");
 
     /* Defaults applied */
-    ASSERT_EQ(typio_config_get_int(config, "engines.rime.font_size", 0), 11);
-    ASSERT_STR_EQ(typio_config_get_string(config, "engines.rime.popup_theme", ""), "auto");
+    ASSERT_EQ(typio_config_get_int(config, "display.font_size", 0), 11);
+    ASSERT_STR_EQ(typio_config_get_string(config, "display.popup_theme", ""), "auto");
 
     /* Existing values preserved */
-    ASSERT_STR_EQ(typio_config_get_string(config, "engines.rime.schema", ""), "luna_pinyin");
+    ASSERT_STR_EQ(typio_config_get_string(config, "engines.rime.shared_data_dir", ""),
+                  "/usr/share/rime-data");
 
     typio_config_free(config);
 }
@@ -303,14 +173,6 @@ int main(void) {
     run_test_runtime_property_lookup();
     run_test_apply_defaults_empty_config();
     run_test_apply_defaults_preserves_existing();
-    run_test_migrate_legacy_voice_backend();
-    run_test_migrate_legacy_whisper_model();
-    run_test_migrate_legacy_canonical_takes_precedence();
-    run_test_migrate_legacy_voice_language();
-    run_test_migrate_shared_voice_model_routes_to_sherpa();
-    run_test_migrate_shared_voice_model_routes_to_whisper();
-    run_test_migrate_shared_voice_model_no_backend_defaults_whisper();
-    run_test_mozc_page_size_default();
     run_test_stateful_engine_keys_expose_runtime_property();
     run_test_schema_fields_enumeration();
     run_test_full_lifecycle();

@@ -72,52 +72,13 @@ static void typio_server_print_startup_banner(TypioServerApp *app) {
 }
 
 #ifdef HAVE_SYSTRAY
-static bool typio_server_write_rime_schema_config(TypioServerApp *app,
-                                                  const char *schema_name) {
-    const char *data_dir;
-    char user_data_dir[512];
-    TypioConfig *config;
-    TypioResult result;
-
+static bool typio_server_write_rime_schema_state(TypioServerApp *app,
+                                                 const char *schema_name) {
     if (!app || !app->instance || !schema_name || !*schema_name) {
         return false;
     }
 
-    data_dir = typio_instance_get_data_dir(app->instance);
-    if (!data_dir) {
-        return false;
-    }
-
-    if (snprintf(user_data_dir, sizeof(user_data_dir), "%s/rime", data_dir) >=
-        (int) sizeof(user_data_dir)) {
-        return false;
-    }
-
-    config = typio_instance_get_config(app->instance);
-    if (!config) {
-        return false;
-    }
-
-    typio_config_set_string(config, "engines.rime.schema", schema_name);
-    if (!typio_config_has_key(config, "engines.rime.user_data_dir")) {
-        typio_config_set_string(config, "engines.rime.user_data_dir", user_data_dir);
-    }
-    if (!typio_config_has_key(config, "engines.rime.popup_theme")) {
-        typio_config_set_string(config, "engines.rime.popup_theme", "auto");
-    }
-    if (!typio_config_has_key(config, "engines.rime.candidate_layout")) {
-        typio_config_set_string(config, "engines.rime.candidate_layout", "horizontal");
-    }
-    if (!typio_config_has_key(config, "engines.rime.font_size")) {
-        typio_config_set_int(config, "engines.rime.font_size", 11);
-    }
-
-    result = typio_instance_save_config(app->instance);
-    if (result != TYPIO_OK) {
-        return false;
-    }
-
-    return typio_instance_reload_config(app->instance) == TYPIO_OK;
+    return typio_instance_set_rime_schema(app->instance, schema_name) == TYPIO_OK;
 }
 
 static void typio_server_update_tray_engine_status(TypioServerApp *app) {
@@ -133,9 +94,12 @@ static void typio_server_update_tray_engine_status(TypioServerApp *app) {
     manager = typio_instance_get_engine_manager(app->instance);
     active = manager ? typio_engine_manager_get_active(manager) : nullptr;
     engine_name = active ? typio_engine_get_name(active) : nullptr;
-    icon_name = (active && active->info && active->info->icon)
-                    ? active->info->icon
-                    : "typio-keyboard";
+    icon_name = typio_instance_get_last_status_icon(app->instance);
+    if (!icon_name || !*icon_name) {
+        icon_name = (active && active->info && active->info->icon)
+                        ? active->info->icon
+                        : "typio-keyboard";
+    }
     typio_tray_set_icon(app->tray, icon_name);
     typio_tray_update_engine(app->tray, engine_name, active != nullptr);
 }
@@ -262,7 +226,7 @@ static void typio_server_tray_menu_callback([[maybe_unused]] TypioTray *tray,
     if (strncmp(action, "rime-schema:", 12) == 0) {
         const char *schema_name = action + 12;
 
-        if (typio_server_write_rime_schema_config(app, schema_name) &&
+        if (typio_server_write_rime_schema_state(app, schema_name) &&
             typio_instance_reload_config(app->instance) == TYPIO_OK) {
             typio_server_update_tray_engine_status(app);
 #ifdef HAVE_STATUS_BUS
@@ -555,3 +519,25 @@ int typio_server_app_finish(TypioServerApp *app, int exit_code) {
 
     return exit_code;
 }
+
+#ifdef TYPIO_SERVER_TEST
+void typio_server_test_update_tray_engine_status(TypioServerApp *app) {
+#ifdef HAVE_SYSTRAY
+    typio_server_update_tray_engine_status(app);
+#else
+    (void)app;
+#endif
+}
+
+void typio_server_test_on_engine_change(TypioInstance *instance,
+                                        const TypioEngineInfo *engine,
+                                        void *user_data) {
+    typio_server_on_engine_change(instance, engine, user_data);
+}
+
+void typio_server_test_on_status_icon_change(TypioInstance *instance,
+                                             const char *icon_name,
+                                             void *user_data) {
+    typio_server_on_status_icon_change(instance, icon_name, user_data);
+}
+#endif

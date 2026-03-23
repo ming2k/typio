@@ -19,6 +19,8 @@
 #include <sys/stat.h>
 
 #define TYPIO_CONFIG_FILE_NAME "typio.toml"
+#define TYPIO_RIME_STATE_FILE "rime-state.toml"
+#define TYPIO_RIME_STATE_KEY "schema"
 
 static void build_config_path(char *buffer, size_t buffer_size,
                               const char *config_dir, const char *file_name) {
@@ -27,6 +29,96 @@ static void build_config_path(char *buffer, size_t buffer_size,
     }
 
     snprintf(buffer, buffer_size, "%s/%s", config_dir, file_name);
+}
+
+static char *build_state_path(TypioInstance *instance, const char *file_name) {
+    const char *state_dir;
+    size_t len;
+    char *path;
+
+    state_dir = typio_instance_get_state_dir(instance);
+    if (!state_dir || !file_name) {
+        return nullptr;
+    }
+
+    len = strlen(state_dir) + strlen(file_name) + 2;
+    path = calloc(len, sizeof(char));
+    if (!path) {
+        return nullptr;
+    }
+
+    snprintf(path, len, "%s/%s", state_dir, file_name);
+    return path;
+}
+
+static char *instance_dup_state_string(TypioInstance *instance,
+                                       const char *file_name,
+                                       const char *key) {
+    TypioConfig *state;
+    char *path;
+    const char *value;
+    char *copy = nullptr;
+
+    if (!instance || !file_name || !key || !*key) {
+        return nullptr;
+    }
+
+    path = build_state_path(instance, file_name);
+    if (!path) {
+        return nullptr;
+    }
+
+    state = typio_config_load_file(path);
+    free(path);
+    if (!state) {
+        return nullptr;
+    }
+
+    value = typio_config_get_string(state, key, nullptr);
+    if (value && *value) {
+        copy = typio_strdup(value);
+    }
+
+    typio_config_free(state);
+    return copy;
+}
+
+static TypioResult instance_set_state_string(TypioInstance *instance,
+                                             const char *file_name,
+                                             const char *key,
+                                             const char *value) {
+    TypioConfig *state;
+    char *path;
+    TypioResult result;
+
+    if (!instance || !file_name || !key || !*key) {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    path = build_state_path(instance, file_name);
+    if (!path) {
+        return TYPIO_ERROR_OUT_OF_MEMORY;
+    }
+
+    state = typio_config_load_file(path);
+    if (!state) {
+        state = typio_config_new();
+    }
+    if (!state) {
+        free(path);
+        return TYPIO_ERROR_OUT_OF_MEMORY;
+    }
+
+    if (value && *value) {
+        typio_config_set_string(state, key, value);
+    } else {
+        typio_config_remove(state, key);
+    }
+
+    result = typio_config_save_file(state, path);
+    typio_config_free(state);
+    free(path);
+    return result;
 }
 
 struct TypioInstance {
@@ -420,6 +512,19 @@ void typio_instance_notify_status_icon(TypioInstance *instance,
     }
 }
 
+void typio_instance_clear_status_icon(TypioInstance *instance) {
+    if (!instance || !instance->last_status_icon) {
+        return;
+    }
+
+    free(instance->last_status_icon);
+    instance->last_status_icon = nullptr;
+}
+
+const char *typio_instance_get_last_status_icon(TypioInstance *instance) {
+    return instance ? instance->last_status_icon : nullptr;
+}
+
 const char *typio_instance_get_config_dir(TypioInstance *instance) {
     return instance ? instance->config_dir : nullptr;
 }
@@ -517,6 +622,32 @@ TypioResult typio_instance_save_config(TypioInstance *instance) {
                       instance->config_dir, TYPIO_CONFIG_FILE_NAME);
 
     return typio_config_save_file(instance->config, config_path);
+}
+
+char *typio_instance_dup_rime_schema(TypioInstance *instance) {
+    char *schema;
+    const char *legacy_schema;
+
+    if (!instance) {
+        return nullptr;
+    }
+
+    schema = instance_dup_state_string(instance, TYPIO_RIME_STATE_FILE, TYPIO_RIME_STATE_KEY);
+    if (schema) {
+        return schema;
+    }
+
+    legacy_schema = instance->config
+        ? typio_config_get_string(instance->config, "engines.rime.schema", nullptr)
+        : nullptr;
+    return (legacy_schema && *legacy_schema) ? typio_strdup(legacy_schema) : nullptr;
+}
+
+TypioResult typio_instance_set_rime_schema(TypioInstance *instance, const char *schema) {
+    return instance_set_state_string(instance,
+                                     TYPIO_RIME_STATE_FILE,
+                                     TYPIO_RIME_STATE_KEY,
+                                     schema);
 }
 
 char *typio_instance_get_config_text(TypioInstance *instance) {

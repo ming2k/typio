@@ -540,9 +540,6 @@ static const TypioPopupPalette *popup_resolve_palette(TypioPopupThemeMode theme_
 }
 
 static void popup_load_render_config(TypioWlPopup *popup, TypioPopupRenderConfig *config) {
-    TypioEngineManager *manager;
-    TypioEngine *engine;
-    TypioConfig *engine_config;
     const char *theme;
     const char *layout;
 
@@ -554,41 +551,37 @@ static void popup_load_render_config(TypioWlPopup *popup, TypioPopupRenderConfig
     config->layout_mode = TYPIO_POPUP_LAYOUT_HORIZONTAL;
     config->font_size = TYPIO_POPUP_DEFAULT_FONT_SIZE;
 
-    manager = typio_instance_get_engine_manager(popup->frontend->instance);
-    engine = manager ? typio_engine_manager_get_active(manager) : nullptr;
-    if (!engine || strcmp(typio_engine_get_name(engine), "rime") != 0) {
-        goto finalize;
+    {
+        TypioConfig *global_config = typio_instance_get_config(
+            popup->frontend->instance);
+        if (global_config) {
+            theme = typio_config_get_string(global_config, "display.popup_theme",
+                                            nullptr);
+            layout = typio_config_get_string(global_config,
+                                             "display.candidate_layout",
+                                             nullptr);
+
+            if (theme && strcmp(theme, "dark") == 0) {
+                config->theme_mode = TYPIO_POPUP_THEME_DARK;
+            } else if (theme && strcmp(theme, "light") == 0) {
+                config->theme_mode = TYPIO_POPUP_THEME_LIGHT;
+            }
+
+            if (layout && strcmp(layout, "vertical") == 0) {
+                config->layout_mode = TYPIO_POPUP_LAYOUT_VERTICAL;
+            }
+
+            config->font_size = typio_config_get_int(
+                global_config, "display.font_size",
+                TYPIO_POPUP_DEFAULT_FONT_SIZE);
+            if (config->font_size < 6) {
+                config->font_size = 6;
+            } else if (config->font_size > 72) {
+                config->font_size = 72;
+            }
+        }
     }
 
-    engine_config = typio_instance_get_engine_config(popup->frontend->instance, "rime");
-    if (!engine_config) {
-        goto finalize;
-    }
-
-    theme = typio_config_get_string(engine_config, "popup_theme", nullptr);
-    layout = typio_config_get_string(engine_config, "candidate_layout", nullptr);
-
-    if (theme && strcmp(theme, "dark") == 0) {
-        config->theme_mode = TYPIO_POPUP_THEME_DARK;
-    } else if (theme && strcmp(theme, "light") == 0) {
-        config->theme_mode = TYPIO_POPUP_THEME_LIGHT;
-    }
-
-    if (layout && strcmp(layout, "vertical") == 0) {
-        config->layout_mode = TYPIO_POPUP_LAYOUT_VERTICAL;
-    }
-
-    config->font_size = typio_config_get_int(engine_config, "font_size",
-                                              TYPIO_POPUP_DEFAULT_FONT_SIZE);
-    if (config->font_size < 6) {
-        config->font_size = 6;
-    } else if (config->font_size > 72) {
-        config->font_size = 72;
-    }
-
-    typio_config_free(engine_config);
-
-finalize:
     snprintf(config->font_desc, sizeof(config->font_desc),
              "Sans %d", config->font_size);
     snprintf(config->page_font_desc, sizeof(config->page_font_desc),

@@ -72,6 +72,9 @@ static GVariant *control_get_runtime_property_for_config_key(TypioControl *contr
     }
 
     property_name = typio_config_schema_runtime_property(config_key);
+    if (!property_name && g_strcmp0(config_key, "engines.rime.schema") == 0) {
+        property_name = TYPIO_STATUS_PROP_RIME_SCHEMA;
+    }
     if (!property_name) {
         return NULL;
     }
@@ -100,6 +103,8 @@ static guint control_find_model_index(GtkStringList *model, const char *value) {
 static guint control_engine_order_index(TypioControl *control, const char *engine_name);
 static void control_materialize_current_engine_order(TypioControl *control);
 static void control_queue_engine_order_editor_refresh(TypioControl *control);
+static char *control_dup_runtime_string_for_config_key(TypioControl *control,
+                                                       const char *config_key);
 static void control_set_config_text(TypioControl *control, GVariant *config_text);
 static void control_set_engine_model(TypioControl *control,
                                      GVariant *engines,
@@ -1036,6 +1041,7 @@ void control_refresh_rime_schema_options(gpointer user_data,
     control_clear_rime_schema_model(control);
     g_ptr_array_add(control->rime_schema_id_model, g_strdup(""));
     gtk_string_list_append(control->rime_schema_model, "Unselected");
+    memset(&list, 0, sizeof(list));
 
     if (parsed_config) {
         rime_config = typio_config_get_section(parsed_config, "engines.rime");
@@ -1140,7 +1146,7 @@ void control_sync_form_from_buffer(TypioControl *control) {
     GtkTextIter end;
     char *content;
     TypioConfig *config;
-    const char *configured_schema;
+    char *configured_schema;
 
     if (!control || !control->config_buffer) {
         return;
@@ -1161,13 +1167,12 @@ void control_sync_form_from_buffer(TypioControl *control) {
     control_begin_ui_sync(control);
     control_bindings_load_all(control->bindings, control->binding_count, config);
     control_load_engine_order_from_config(control, config);
-    configured_schema = typio_config_get_string(config,
-                                                control->rime_schema_state.config_key,
-                                                NULL);
+    configured_schema = control_dup_runtime_string_for_config_key(
+        control, control->rime_schema_state.config_key);
     control_state_binding_refresh_options(&control->rime_schema_state,
                                           config,
                                           configured_schema);
-    control_state_binding_load_from_config(&control->rime_schema_state, config);
+    control_apply_state_binding_value(control, &control->rime_schema_state, NULL);
     if (control->voice_backend_dropdown) {
         const char *voice_backend = typio_config_get_string(config,
                                                             control->voice_backend_state.config_key,
@@ -1200,6 +1205,7 @@ void control_sync_form_from_buffer(TypioControl *control) {
     }
 
     control_end_ui_sync(control);
+    g_free(configured_schema);
     typio_config_free(config);
 }
 
@@ -1245,24 +1251,12 @@ void control_sync_buffer_from_form(TypioControl *control) {
         }
     }
 
-    if (control->rime_schema_dropdown && control->rime_schema_model) {
-        const char *schema = control_state_binding_get_selected_value(&control->rime_schema_state);
-        if (schema && *schema) {
-            g_debug("control_sync_buffer_from_form: selected_rime_schema=%s", schema);
-            control_state_binding_save_to_config(&control->rime_schema_state, config);
-        } else {
-            typio_config_remove(config, control->rime_schema_state.config_key);
-        }
-    }
-
     selected = gtk_drop_down_get_selected(control->voice_backend_dropdown);
     voice_backend = control_voice_backend_id(control, selected);
     has_voice_backend_selection = voice_backend && *voice_backend;
     g_debug("control_sync_buffer_from_form: voice_backend=%s (dropdown=%u)",
             voice_backend ? voice_backend : "(unset)", selected);
     if (has_voice_backend_selection) {
-        typio_config_remove(config, "voice.backend");
-        typio_config_remove(config, "voice.model");
         control_state_binding_save_to_config(&control->voice_backend_state, config);
 
         selected = gtk_drop_down_get_selected(control->voice_model_dropdown);
@@ -1383,7 +1377,7 @@ void control_refresh_from_proxy(TypioControl *control) {
     const char *active_name = "";
     const char *config_text_str = NULL;
     TypioConfig *parsed_config = NULL;
-    const char *configured_schema = NULL;
+    char *configured_schema = NULL;
 
     if (!control) {
         return;
@@ -1423,9 +1417,8 @@ void control_refresh_from_proxy(TypioControl *control) {
     if (config_text && g_variant_is_of_type(config_text, G_VARIANT_TYPE_STRING)) {
         config_text_str = g_variant_get_string(config_text, NULL);
         parsed_config = typio_config_load_string(config_text_str);
-        configured_schema = parsed_config
-            ? typio_config_get_string(parsed_config, control->rime_schema_state.config_key, NULL)
-            : NULL;
+        configured_schema = control_dup_runtime_string_for_config_key(
+            control, control->rime_schema_state.config_key);
     }
 
     g_debug("control_refresh_from_proxy: entering");
@@ -1469,6 +1462,7 @@ void control_refresh_from_proxy(TypioControl *control) {
     if (active_engine) {
         g_variant_unref(active_engine);
     }
+    g_free(configured_schema);
     if (parsed_config) {
         typio_config_free(parsed_config);
     }
@@ -1648,6 +1642,17 @@ void on_display_dropdown_changed(GObject *object,
             schema = control_state_binding_get_selected_value(&control->rime_schema_state);
             g_debug("on_display_dropdown_changed: rime_schema_selected=%s",
                     schema ? schema : "(unselected)");
+            if (control->proxy && g_dbus_proxy_get_name_owner(control->proxy)) {
+                g_dbus_proxy_call(control->proxy,
+                                  TYPIO_STATUS_METHOD_SET_RIME_SCHEMA,
+                                  g_variant_new("(s)", schema ? schema : ""),
+                                  G_DBUS_CALL_FLAGS_NONE,
+                                  -1,
+                                  nullptr,
+                                  nullptr,
+                                  NULL);
+            }
+            return;
         }
         control_stage_form_change(control, CONTROL_AUTOSAVE_FAST);
     }

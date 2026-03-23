@@ -261,6 +261,7 @@ static dbus_bool_t append_property_variant(DBusMessageIter *iter,
     const char *active_name = engine ? typio_engine_get_name(engine) : "";
     const char *active_voice_name = voice_engine ? typio_engine_get_name(voice_engine) : "";
     char *config_text;
+    char *rime_schema;
 
     if (strcmp(property, TYPIO_STATUS_PROP_VERSION) == 0) {
         const char *version = TYPIO_VERSION;
@@ -343,6 +344,25 @@ static dbus_bool_t append_property_variant(DBusMessageIter *iter,
         return dbus_message_iter_close_container(iter, &variant);
     }
 
+    if (strcmp(property, TYPIO_STATUS_PROP_RIME_SCHEMA) == 0) {
+        const char *schema = "";
+        rime_schema = (bus && bus->instance) ? typio_instance_dup_rime_schema(bus->instance)
+                                             : nullptr;
+        if (rime_schema) {
+            schema = rime_schema;
+        }
+        if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "s", &variant)) {
+            free(rime_schema);
+            return FALSE;
+        }
+        if (!dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &schema)) {
+            free(rime_schema);
+            return FALSE;
+        }
+        free(rime_schema);
+        return dbus_message_iter_close_container(iter, &variant);
+    }
+
     if (strcmp(property, TYPIO_STATUS_PROP_CONFIG_TEXT) == 0) {
         const char *text = "";
         config_text = (bus && bus->instance) ? typio_instance_get_config_text(bus->instance) : nullptr;
@@ -410,6 +430,7 @@ static DBusMessage *status_handle_properties_getall(TypioStatusBus *bus,
         TYPIO_STATUS_PROP_ENGINE_ORDER,
         TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE,
         TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE,
+        TYPIO_STATUS_PROP_RIME_SCHEMA,
         TYPIO_STATUS_PROP_CONFIG_TEXT,
     };
 
@@ -531,6 +552,35 @@ static DBusMessage *status_handle_set_config_text(TypioStatusBus *bus,
     return dbus_message_new_method_return(msg);
 }
 
+static DBusMessage *status_handle_set_rime_schema(TypioStatusBus *bus,
+                                                  DBusMessage *msg) {
+    const char *schema = nullptr;
+    TypioResult result;
+
+    if (!dbus_message_get_args(msg, nullptr,
+                               DBUS_TYPE_STRING, &schema,
+                               DBUS_TYPE_INVALID) ||
+        !schema) {
+        return dbus_message_new_error(msg, DBUS_ERROR_INVALID_ARGS,
+                                      "SetRimeSchema expects a string");
+    }
+
+    result = bus ? typio_instance_set_rime_schema(bus->instance, schema) : TYPIO_ERROR;
+    if (result != TYPIO_OK) {
+        return dbus_message_new_error(msg, DBUS_ERROR_FAILED,
+                                      "Failed to persist Rime schema");
+    }
+
+    result = bus ? typio_instance_reload_config(bus->instance) : TYPIO_ERROR;
+    if (result != TYPIO_OK) {
+        return dbus_message_new_error(msg, DBUS_ERROR_FAILED,
+                                      "Failed to reload Typio after schema change");
+    }
+
+    typio_status_bus_emit_properties_changed(bus);
+    return dbus_message_new_method_return(msg);
+}
+
 static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection *conn,
                                                 DBusMessage *msg,
                                                 void *user_data) {
@@ -572,8 +622,10 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
             "    <property name=\"" TYPIO_STATUS_PROP_ENGINE_ORDER "\" type=\"as\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE "\" type=\"s\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE "\" type=\"a{sv}\" access=\"read\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_RIME_SCHEMA "\" type=\"s\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_CONFIG_TEXT "\" type=\"s\" access=\"read\"/>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_ACTIVATE_ENGINE "\"><arg name=\"engine\" type=\"s\" direction=\"in\"/></method>\n"
+            "    <method name=\"" TYPIO_STATUS_METHOD_SET_RIME_SCHEMA "\"><arg name=\"schema\" type=\"s\" direction=\"in\"/></method>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_SET_CONFIG_TEXT "\"><arg name=\"content\" type=\"s\" direction=\"in\"/></method>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_RELOAD_CONFIG "\"/>\n"
             "  </interface>\n"
@@ -591,6 +643,8 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
                interface[0] == '\0') {
         if (strcmp(member, TYPIO_STATUS_METHOD_ACTIVATE_ENGINE) == 0) {
             reply = status_handle_activate_engine(bus, msg);
+        } else if (strcmp(member, TYPIO_STATUS_METHOD_SET_RIME_SCHEMA) == 0) {
+            reply = status_handle_set_rime_schema(bus, msg);
         } else if (strcmp(member, TYPIO_STATUS_METHOD_SET_CONFIG_TEXT) == 0) {
             reply = status_handle_set_config_text(bus, msg);
         } else if (strcmp(member, TYPIO_STATUS_METHOD_RELOAD_CONFIG) == 0) {

@@ -41,38 +41,6 @@ static TypioResult whisper_engine_init(TypioEngine *engine,
         model = typio_config_get_string(ecfg, "model", NULL);
     }
 
-    /* Legacy fallback: [voice] section */
-    if (!model) {
-        TypioConfig *config = typio_instance_get_config(instance);
-        if (config) {
-            const char *backend = typio_config_get_string(config,
-                                                           "voice.backend", NULL);
-            if (!backend || strcmp(backend, "whisper") == 0) {
-                if (!language) {
-                    language = typio_config_get_string(config,
-                                                       "voice.language", NULL);
-                }
-                if (!model) {
-                    model = typio_config_get_string(config,
-                                                     "voice.model", NULL);
-                }
-            }
-            /* Also check legacy [whisper] section */
-            if (!language) {
-                language = typio_config_get_string(config,
-                                                    "whisper.language", NULL);
-            }
-            if (!model) {
-                model = typio_config_get_string(config,
-                                                 "whisper.model", NULL);
-            }
-            if (model && !ecfg) {
-                typio_log_warning("Whisper config from [voice]/[whisper] is "
-                                  "deprecated; use [engines.whisper] instead");
-            }
-        }
-    }
-
     if (!model) {
         model = "base";
     }
@@ -132,4 +100,3 @@ const TypioEngineInfo *typio_engine_get_info_whisper(void) {
 TypioEngine *typio_engine_create_whisper(void) {
     return typio_engine_new(&whisper_engine_info, &whisper_engine_ops);
 }
-

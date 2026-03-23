@@ -81,7 +81,7 @@ bool typio_input_context_get_surrounding(TypioInputContext *ctx,
 ## Config API
 
 `TypioConfig` stores TOML-compatible flat keys such as `default_engine` or
-`engines.rime.schema`.
+`engines.rime.shared_data_dir`.
 
 ```c
 TypioConfig *typio_config_new(void);

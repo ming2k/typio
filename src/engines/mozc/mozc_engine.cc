@@ -824,15 +824,10 @@ static TypioResult mozc_load_config(TypioEngine *engine,
 
     const char *server =
         typio_config_get_string(engine_config, "server_path", nullptr);
-    int page_size =
-        typio_config_get_int(engine_config, "page_size", config->page_size);
 
     if (server && *server) {
         free(config->server_path);
         config->server_path = typio_strdup(server);
-    }
-    if (page_size > 0) {
-        config->page_size = page_size;
     }
 
     typio_config_free(engine_config);
@@ -1044,15 +1039,10 @@ static TypioResult mozc_reload_config(TypioEngine *engine) {
     }
 
     const char *server = typio_config_get_string(engine_config, "server_path", nullptr);
-    int page_size = typio_config_get_int(engine_config, "page_size",
-                                         state->config.page_size);
 
     if (server && *server) {
         free(state->config.server_path);
         state->config.server_path = typio_strdup(server);
-    }
-    if (page_size > 0) {
-        state->config.page_size = page_size;
     }
 
     typio_config_free(engine_config);

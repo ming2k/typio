@@ -46,6 +46,16 @@ int typio_server_app_run(TypioServerApp *app);
 void typio_server_app_shutdown(TypioServerApp *app);
 int typio_server_app_finish(TypioServerApp *app, int exit_code);
 
+#ifdef TYPIO_SERVER_TEST
+void typio_server_test_update_tray_engine_status(TypioServerApp *app);
+void typio_server_test_on_engine_change(TypioInstance *instance,
+                                        const TypioEngineInfo *engine,
+                                        void *user_data);
+void typio_server_test_on_status_icon_change(TypioInstance *instance,
+                                             const char *icon_name,
+                                             void *user_data);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

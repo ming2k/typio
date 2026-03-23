@@ -3,18 +3,17 @@
 default_engine = "basic"
 # default_voice_engine = "whisper"
 
-[engines.rime]
-schema = "luna_pinyin"
-page_size = 9
+[display]
 popup_theme = "auto"
 candidate_layout = "horizontal"
 font_size = 11
+
+[engines.rime]
 # shared_data_dir = "/usr/share/rime-data"
 # user_data_dir = "~/.local/share/typio/rime"
 # full_check = false
 
 [engines.mozc]
-page_size = 9
 # server_path = "/usr/lib/mozc/mozc_server"
 
 # Voice input configuration (unified engine format)
@@ -36,13 +35,6 @@ page_size = 9
 # switch_engine = "Ctrl+Shift"
 # voice_ptt = "Super+v"
 
-# Legacy [voice] section (deprecated, use [engines.*] + default_voice_engine above)
-[voice]
-# backend = "sherpa-onnx"
-# language = "auto"   # omit or "auto" for auto-detect; or "zh", "en", "ja", etc.
-# model = "default"
-
-# Legacy whisper-only config (still supported, overridden by [engines.whisper] if present)
-[whisper]
+[engines.whisper]
 # language = "zh"
 model = "base"

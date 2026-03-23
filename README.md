@@ -120,7 +120,7 @@ Installed artifacts:
 - When enabled, the `rime` engine renders candidates through `zwp_input_popup_surface_v2`. The popup follows Wayland `wl_surface.enter/leave` and `wl_output.scale` so integer HiDPI scaling such as 2x stays sharp. If popup rendering is unavailable in the current session, Typio keeps candidate state visible inline in preedit.
 - When enabled, the Rime popup defaults to a horizontal layout and can follow common desktop light/dark theme hints, with `typio.toml` overrides under `[engines.rime]` when needed.
 - Tray hosts that ignore themed icon paths can still render the current engine icon through the exported `IconPixmap` fallback.
-- When the active engine is `rime`, the tray menu exposes a dedicated submenu with the current schema and schema-switch actions.
+- When the active engine is `rime`, the tray menu exposes a dedicated submenu with the current schema and schema-switch actions. The selected schema is remembered in XDG state rather than `typio.toml`.
 - Typio also exports a D-Bus status object at `org.typio.InputMethod1` so shells
   such as quickshell can read the active engine, available engines, and
   engine/config state as structured properties instead of inferring everything

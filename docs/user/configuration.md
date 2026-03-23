@@ -32,17 +32,11 @@ Typical full example:
 default_engine = "rime"
 
 [engines.rime]
-schema = "luna_pinyin"
-page_size = 9
-popup_theme = "auto"
-candidate_layout = "horizontal"
-font_size = 11
 # shared_data_dir = "/usr/share/rime-data"
 # user_data_dir = "~/.local/share/typio/rime"
 # full_check = false
 
 [engines.mozc]
-page_size = 9
 # server_path = "/usr/lib/mozc/mozc_server"
 
 [whisper]
@@ -61,18 +55,12 @@ Top level:
 
 Rime section: `[engines.rime]`
 
-- `schema`
-- `page_size`
-- `popup_theme = "auto" | "light" | "dark"`
-- `candidate_layout = "horizontal" | "vertical"`
-- `font_size`
 - `shared_data_dir`
 - `user_data_dir`
 - `full_check`
 
 Mozc section: `[engines.mozc]`
 
-- `page_size`
 - `server_path`
 
 Whisper section: `[whisper]`
@@ -88,6 +76,9 @@ and KDE color-scheme hints.
 For Rime, `shared_data_dir` and `user_data_dir` support:
 
 - `~` at the start of the path
+
+The active Rime schema is remembered in XDG state and changed through Typio's
+runtime controls. It is no longer configured in `typio.toml`.
 - `$VAR`
 - `${VAR}`
 

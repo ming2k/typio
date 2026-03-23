@@ -116,6 +116,9 @@ void typio_instance_set_status_icon_changed_callback(TypioInstance *instance,
  */
 void typio_instance_notify_status_icon(TypioInstance *instance,
                                         const char *icon_name);
+void typio_instance_clear_status_icon(TypioInstance *instance);
+
+const char *typio_instance_get_last_status_icon(TypioInstance *instance);
 
 /**
  * @brief Get the configuration directory path
@@ -167,6 +170,9 @@ TypioResult typio_instance_reload_config(TypioInstance *instance);
  * @return TYPIO_OK on success, error code on failure
  */
 TypioResult typio_instance_save_config(TypioInstance *instance);
+
+char *typio_instance_dup_rime_schema(TypioInstance *instance);
+TypioResult typio_instance_set_rime_schema(TypioInstance *instance, const char *schema);
 
 /**
  * @brief Export current root configuration as text

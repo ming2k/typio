@@ -107,10 +107,6 @@ static void frontend_refresh_runtime_config(TypioWlFrontend *frontend) {
         const char *configured_voice = typio_config_get_string(config,
                                                                 "default_voice_engine",
                                                                 NULL);
-        if (!configured_voice) {
-            configured_voice = typio_config_get_string(config,
-                                                        "voice.backend", NULL);
-        }
         if (configured_voice && *configured_voice) {
             TypioEngine *voice = typio_engine_manager_get_active_voice(mgr);
             const char *cur = voice ? typio_engine_get_name(voice) : NULL;
@@ -387,11 +383,6 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
         const char *voice_engine = typio_config_get_string(inst_config,
                                                             "default_voice_engine",
                                                             NULL);
-        if (!voice_engine) {
-            /* Legacy fallback: read voice.backend */
-            voice_engine = typio_config_get_string(inst_config,
-                                                    "voice.backend", NULL);
-        }
         if (!voice_engine) {
             /* Default: try whisper, then sherpa-onnx */
 #ifdef HAVE_WHISPER

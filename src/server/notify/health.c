@@ -173,8 +173,6 @@ size_t typio_startup_health_collect(TypioInstance *instance,
     }
 
     if (config) {
-        /* Legacy voice.backend is already migrated to default_voice_engine
-         * by the schema registry. */
         const char *configured_voice =
             typio_config_get_string(config, "default_voice_engine", nullptr);
 

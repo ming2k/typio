@@ -522,7 +522,7 @@ static TypioResult parse_array_value(TypioConfig *config,
 }
 
 /**
- * Extract the section prefix from a dotted key (e.g. "voice" from "voice.backend").
+ * Extract the section prefix from a dotted key (e.g. "engines" from "engines.rime").
  * Returns empty string for top-level keys.  Writes into buf.
  */
 static const char *entry_section(const ConfigEntry *entry,

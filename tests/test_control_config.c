@@ -94,12 +94,6 @@ static void assert_string_array_dropdown_selection(GPtrArray *values,
     }
 }
 
-static void assert_config_selector_loads_array_value(GPtrArray *values,
-                                                     GtkDropDown *dropdown,
-                                                     const char *expected) {
-    assert_string_array_dropdown_selection(values, dropdown, expected);
-}
-
 static void assert_string_list_dropdown_selection(GtkStringList *model,
                                                   GtkDropDown *dropdown,
                                                   const char *expected) {
@@ -208,7 +202,7 @@ TEST(widget_debug_names_are_stable) {
     setup_control(&control, root);
 
     ASSERT_STR_EQ(gtk_widget_get_name(GTK_WIDGET(control.popup_theme_dropdown)),
-                  "field-engines-rime-popup-theme");
+                  "field-display-popup-theme");
     ASSERT_STR_EQ(gtk_widget_get_name(GTK_WIDGET(control.notifications_enable_switch)),
                   "field-notifications-enable");
     ASSERT_STR_EQ(gtk_widget_get_name(GTK_WIDGET(control.shortcut_switch_engine_btn)),
@@ -237,7 +231,7 @@ TEST(state_bindings_are_configured) {
     ASSERT(control.voice_backend_state.dropdown == control.voice_backend_dropdown);
 
     ASSERT_STR_EQ(control.rime_schema_state.config_key, "engines.rime.schema");
-    ASSERT(control.rime_schema_state.source == CONTROL_STATE_VALUE_FROM_CONFIG);
+    ASSERT(control.rime_schema_state.source == CONTROL_STATE_VALUE_FROM_RUNTIME);
     ASSERT(control.rime_schema_state.dropdown == control.rime_schema_dropdown);
     ASSERT(control.rime_schema_state.refresh_options != NULL);
 
@@ -411,8 +405,6 @@ TEST(voice_backend_sync_writes_default_engine_only) {
     setup_control(&control, root);
     control.committed_config_text = g_strdup(
         "default_voice_engine = \"whisper\"\n"
-        "voice.backend = \"whisper\"\n"
-        "voice.model = \"tiny\"\n"
         "[engines.whisper]\n"
         "model = \"tiny\"\n");
     write_buffer(control.config_buffer, control.committed_config_text);
@@ -424,8 +416,6 @@ TEST(voice_backend_sync_writes_default_engine_only) {
     rendered = buffer_text(control.config_buffer);
     ASSERT(rendered != NULL);
     ASSERT(strstr(rendered, "default_voice_engine = \"sherpa-onnx\"") != NULL);
-    ASSERT(strstr(rendered, "voice.backend") == NULL);
-    ASSERT(strstr(rendered, "voice.model") == NULL);
     g_free(rendered);
 
     cleanup_control(&control);
@@ -463,15 +453,13 @@ TEST(notification_settings_roundtrip_through_form) {
     cleanup_control(&control);
 }
 
-TEST(rime_schema_uses_dropdown_selection) {
+TEST(rime_schema_selection_does_not_write_config) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
     char *rendered;
 
     setup_control(&control, root);
-    control.committed_config_text = g_strdup(
-        "[engines.rime]\n"
-        "schema = \"luna_pinyin\"\n");
+    control.committed_config_text = g_strdup("[display]\nfont_size = 11\n");
     write_buffer(control.config_buffer, control.committed_config_text);
     g_ptr_array_add(control.rime_schema_id_model, g_strdup(""));
     gtk_string_list_append(control.rime_schema_model, "Unselected");
@@ -479,61 +467,13 @@ TEST(rime_schema_uses_dropdown_selection) {
     gtk_string_list_append(control.rime_schema_model, "luna_pinyin");
     control_sync_form_from_buffer(&control);
 
-    gtk_drop_down_set_selected(control.rime_schema_dropdown, 1);
+    control_state_binding_select_value(&control.rime_schema_state, "luna_pinyin");
     on_display_dropdown_changed(G_OBJECT(control.rime_schema_dropdown), NULL, &control);
 
     rendered = buffer_text(control.config_buffer);
     ASSERT(rendered != NULL);
-    ASSERT(strstr(rendered, "schema = \"luna_pinyin\"") != NULL);
+    ASSERT(strstr(rendered, "schema = \"luna_pinyin\"") == NULL);
     g_free(rendered);
-
-    cleanup_control(&control);
-}
-
-TEST(rime_schema_loads_selected_value_from_config) {
-    TypioControl control;
-    char root[] = "/tmp/typio-control-test-XXXXXX";
-    const char *selected_schema;
-
-    setup_control(&control, root);
-    control.committed_config_text = g_strdup(
-        "[engines.rime]\n"
-        "schema = \"luna_pinyin\"\n");
-    write_buffer(control.config_buffer, control.committed_config_text);
-    g_ptr_array_add(control.rime_schema_id_model, g_strdup(""));
-    gtk_string_list_append(control.rime_schema_model, "Unselected");
-    g_ptr_array_add(control.rime_schema_id_model, g_strdup("luna_pinyin"));
-    gtk_string_list_append(control.rime_schema_model, "luna_pinyin");
-
-    control_sync_form_from_buffer(&control);
-
-    selected_schema = selected_string_array_value(control.rime_schema_id_model,
-                                                  control.rime_schema_dropdown);
-    ASSERT(selected_schema != NULL);
-    ASSERT_STR_EQ(selected_schema, "luna_pinyin");
-    assert_config_selector_loads_array_value(control.rime_schema_id_model,
-                                             control.rime_schema_dropdown,
-                                             "luna_pinyin");
-
-    cleanup_control(&control);
-}
-
-TEST(rime_schema_sync_from_buffer_refreshes_options_before_selection) {
-    TypioControl control;
-    char root[] = "/tmp/typio-control-test-XXXXXX";
-
-    setup_control(&control, root);
-    control.committed_config_text = g_strdup(
-        "[engines.rime]\n"
-        "schema = \"luna_pinyin\"\n");
-    write_buffer(control.config_buffer, control.committed_config_text);
-
-    control_sync_form_from_buffer(&control);
-
-    ASSERT(string_list_count(control.rime_schema_model) >= 2);
-    assert_config_selector_loads_array_value(control.rime_schema_id_model,
-                                             control.rime_schema_dropdown,
-                                             "luna_pinyin");
 
     cleanup_control(&control);
 }
@@ -548,15 +488,11 @@ TEST(initial_config_seed_replaces_empty_buffer) {
     control.committed_config_text = NULL;
 
     control_test_set_config_text(&control,
-                                 g_variant_new_string("[engines]\n"
-                                                      "rime.schema = \"m2k_pinyin\"\n"));
+                                 g_variant_new_string("default_voice_engine = \"whisper\"\n"));
 
     rendered = buffer_text(control.config_buffer);
     ASSERT(rendered != NULL);
-    ASSERT(strstr(rendered, "rime.schema = \"m2k_pinyin\"") != NULL);
-    assert_config_selector_loads_array_value(control.rime_schema_id_model,
-                                             control.rime_schema_dropdown,
-                                             "m2k_pinyin");
+    ASSERT(strstr(rendered, "default_voice_engine = \"whisper\"") != NULL);
     g_free(rendered);
 
     cleanup_control(&control);
@@ -581,33 +517,6 @@ TEST(rime_schema_refresh_options_preserves_unselected_and_configured_value) {
     ASSERT_STR_EQ((const char *)g_ptr_array_index(control.rime_schema_id_model, 1), "m2k_pinyin");
 
     typio_config_free(config);
-    cleanup_control(&control);
-}
-
-TEST(rime_schema_unselected_removes_config_key) {
-    TypioControl control;
-    char root[] = "/tmp/typio-control-test-XXXXXX";
-    char *rendered;
-
-    setup_control(&control, root);
-    control.committed_config_text = g_strdup(
-        "[engines.rime]\n"
-        "schema = \"luna_pinyin\"\n");
-    write_buffer(control.config_buffer, control.committed_config_text);
-    g_ptr_array_add(control.rime_schema_id_model, g_strdup(""));
-    gtk_string_list_append(control.rime_schema_model, "Unselected");
-    g_ptr_array_add(control.rime_schema_id_model, g_strdup("luna_pinyin"));
-    gtk_string_list_append(control.rime_schema_model, "luna_pinyin");
-    control_sync_form_from_buffer(&control);
-
-    gtk_drop_down_set_selected(control.rime_schema_dropdown, 0);
-    on_display_dropdown_changed(G_OBJECT(control.rime_schema_dropdown), NULL, &control);
-
-    rendered = buffer_text(control.config_buffer);
-    ASSERT(rendered != NULL);
-    ASSERT(strstr(rendered, "schema = \"luna_pinyin\"") == NULL);
-    g_free(rendered);
-
     cleanup_control(&control);
 }
 
@@ -647,7 +556,7 @@ TEST(unknown_dropdown_value_is_not_replaced_by_first_option) {
 
     setup_control(&control, root);
     control.committed_config_text = g_strdup(
-        "[engines.rime]\n"
+        "[display]\n"
         "popup_theme = \"sepia\"\n"
         "font_size = 11\n");
     write_buffer(control.config_buffer, control.committed_config_text);
@@ -838,12 +747,9 @@ int main(void) {
     run_test_voice_backend_options_come_from_available_engines_not_ordered_engines();
     run_test_voice_backend_sync_writes_default_engine_only();
     run_test_notification_settings_roundtrip_through_form();
-    run_test_rime_schema_uses_dropdown_selection();
-    run_test_rime_schema_loads_selected_value_from_config();
-    run_test_rime_schema_sync_from_buffer_refreshes_options_before_selection();
+    run_test_rime_schema_selection_does_not_write_config();
     run_test_initial_config_seed_replaces_empty_buffer();
     run_test_rime_schema_refresh_options_preserves_unselected_and_configured_value();
-    run_test_rime_schema_unselected_removes_config_key();
     run_test_invalid_voice_backend_selection_does_not_reset_config();
     run_test_unknown_dropdown_value_is_not_replaced_by_first_option();
     run_test_programmatic_state_binding_updates_do_not_stage_changes();
