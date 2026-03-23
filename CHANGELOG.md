@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-03-23
+
+### Added
+
+- **Tray icon regression coverage**: added dedicated server-app tests to lock
+  down tray icon behavior across engine switches, including Rime `ascii_mode`
+  transitions and fallback to static icons for engines like `basic`.
+
+### Changed
+
+- **Rime schema persistence**: moved the selected Rime schema out of
+  `typio.toml` and into XDG state so runtime schema changes are persisted
+  without treating them as stable user config.
+- **Engine-owned paging behavior**: removed `page_size` from Typio config for
+  both Rime and Mozc so candidate paging always follows the underlying engine's
+  own configuration and runtime responses.
+- **Canonical config cleanup**: dropped legacy voice/config compatibility paths
+  so Typio now only accepts the current canonical configuration layout.
+
+### Fixed
+
+- **Tray icon synchronization**: fixed engine-switch timing and tray refresh
+  logic so Rime status icons stay in sync with the actual input mode and static
+  engines no longer inherit stale Rime icons.
+- **Popup config lifetime**: fixed a borrowed-config free in the Wayland popup
+  path that could crash Typio after candidate rendering.
+
 ## [2.1.5] - 2026-03-21
 
 ### Added
