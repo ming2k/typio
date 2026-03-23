@@ -24,6 +24,18 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
                                    uint32_t version);
 static void registry_handle_global_remove(void *data, struct wl_registry *registry,
                                           uint32_t name);
+static void output_handle_geometry(void *data, struct wl_output *wl_output,
+                                   int32_t x, int32_t y,
+                                   int32_t physical_width,
+                                   int32_t physical_height,
+                                   int32_t subpixel, const char *make,
+                                   const char *model, int32_t transform);
+static void output_handle_mode(void *data, struct wl_output *wl_output,
+                               uint32_t flags, int32_t width,
+                               int32_t height, int32_t refresh);
+static void output_handle_done(void *data, struct wl_output *wl_output);
+static void output_handle_scale(void *data, struct wl_output *wl_output,
+                                int32_t factor);
 
 static const struct wl_registry_listener registry_listener = {
     .global = registry_handle_global,
@@ -38,6 +50,13 @@ static void seat_handle_name(void *data, struct wl_seat *seat, const char *name)
 static const struct wl_seat_listener seat_listener = {
     .capabilities = seat_handle_capabilities,
     .name = seat_handle_name,
+};
+
+static const struct wl_output_listener output_listener = {
+    .geometry = output_handle_geometry,
+    .mode = output_handle_mode,
+    .done = output_handle_done,
+    .scale = output_handle_scale,
 };
 
 /**
@@ -721,6 +740,14 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
     if (frontend->registry) {
         wl_registry_destroy(frontend->registry);
     }
+    while (frontend->outputs) {
+        TypioWlOutput *output = frontend->outputs;
+        frontend->outputs = output->next;
+        if (output->output) {
+            wl_output_destroy(output->output);
+        }
+        free(output);
+    }
     if (frontend->display) {
         wl_display_disconnect(frontend->display);
     }
@@ -765,13 +792,55 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
             wl_seat_add_listener(frontend->seat, &seat_listener, frontend);
             typio_log(TYPIO_LOG_INFO, "Bound wl_seat");
         }
+    } else if (strcmp(interface, wl_output_interface.name) == 0) {
+        TypioWlOutput *output = calloc(1, sizeof(*output));
+        if (!output) {
+            typio_log(TYPIO_LOG_WARNING, "Failed to allocate wl_output tracking");
+            return;
+        }
+
+        output->name = name;
+        output->frontend = frontend;
+        output->scale = 1;
+        output->output = wl_registry_bind(registry, name, &wl_output_interface,
+                                          version >= 2 ? 2u : version);
+        if (!output->output) {
+            free(output);
+            typio_log(TYPIO_LOG_WARNING, "Failed to bind wl_output");
+            return;
+        }
+
+        wl_output_add_listener(output->output, &output_listener, output);
+        output->next = frontend->outputs;
+        frontend->outputs = output;
+        typio_log(TYPIO_LOG_INFO, "Bound wl_output %u", name);
     }
 }
 
-static void registry_handle_global_remove([[maybe_unused]] void *data,
+static void registry_handle_global_remove(void *data,
                                           [[maybe_unused]] struct wl_registry *registry,
-                                          [[maybe_unused]] uint32_t name) {
-    /* Handle global removal if needed */
+                                          uint32_t name) {
+    TypioWlFrontend *frontend = data;
+    TypioWlOutput **link;
+
+    if (!frontend) {
+        return;
+    }
+
+    link = &frontend->outputs;
+    while (*link) {
+        TypioWlOutput *output = *link;
+        if (output->name == name) {
+            *link = output->next;
+            if (output->output) {
+                typio_wl_popup_handle_output_change(frontend, output->output);
+                wl_output_destroy(output->output);
+            }
+            free(output);
+            return;
+        }
+        link = &output->next;
+    }
 }
 
 /* Seat handlers */
@@ -785,6 +854,48 @@ static void seat_handle_name([[maybe_unused]] void *data,
                              [[maybe_unused]] struct wl_seat *seat,
                              const char *name) {
     typio_log(TYPIO_LOG_DEBUG, "Seat name: %s", name);
+}
+
+static void output_handle_geometry([[maybe_unused]] void *data,
+                                   [[maybe_unused]] struct wl_output *wl_output,
+                                   [[maybe_unused]] int32_t x,
+                                   [[maybe_unused]] int32_t y,
+                                   [[maybe_unused]] int32_t physical_width,
+                                   [[maybe_unused]] int32_t physical_height,
+                                   [[maybe_unused]] int32_t subpixel,
+                                   [[maybe_unused]] const char *make,
+                                   [[maybe_unused]] const char *model,
+                                   [[maybe_unused]] int32_t transform) {
+}
+
+static void output_handle_mode([[maybe_unused]] void *data,
+                               [[maybe_unused]] struct wl_output *wl_output,
+                               [[maybe_unused]] uint32_t flags,
+                               [[maybe_unused]] int32_t width,
+                               [[maybe_unused]] int32_t height,
+                               [[maybe_unused]] int32_t refresh) {
+}
+
+static void output_handle_done(void *data, [[maybe_unused]] struct wl_output *wl_output) {
+    TypioWlOutput *output = data;
+
+    if (!output) {
+        return;
+    }
+
+    typio_log(TYPIO_LOG_DEBUG, "wl_output %u scale=%d", output->name, output->scale);
+}
+
+static void output_handle_scale(void *data, [[maybe_unused]] struct wl_output *wl_output,
+                                int32_t factor) {
+    TypioWlOutput *output = data;
+
+    if (!output) {
+        return;
+    }
+
+    output->scale = factor > 0 ? factor : 1;
+    typio_wl_popup_handle_output_change(output->frontend, output->output);
 }
 
 void typio_wl_frontend_set_tray([[maybe_unused]] TypioWlFrontend *frontend,

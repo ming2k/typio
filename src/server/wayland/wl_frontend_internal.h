@@ -43,6 +43,7 @@ extern "C" {
 typedef struct TypioWlSession TypioWlSession;
 typedef struct TypioWlKeyboard TypioWlKeyboard;
 typedef struct TypioWlPopup TypioWlPopup;
+typedef struct TypioWlOutput TypioWlOutput;
 
 #define TYPIO_WL_MAX_TRACKED_KEYS 512
 
@@ -153,6 +154,7 @@ struct TypioWlFrontend {
     struct wl_seat *seat;
     struct wl_compositor *compositor;
     struct wl_shm *shm;
+    TypioWlOutput *outputs;
 
     /* Input method protocol objects */
     struct zwp_input_method_manager_v2 *im_manager;
@@ -208,6 +210,14 @@ struct TypioWlFrontend {
     char error_msg[256];
 };
 
+struct TypioWlOutput {
+    TypioWlFrontend *frontend;
+    uint32_t name;
+    struct wl_output *output;
+    int scale;
+    TypioWlOutput *next;
+};
+
 /* Input method functions (wl_input_method.c) */
 void typio_wl_input_method_setup(TypioWlFrontend *frontend);
 
@@ -241,6 +251,8 @@ void typio_wl_popup_destroy(TypioWlPopup *popup);
 bool typio_wl_popup_update(TypioWlFrontend *frontend, TypioInputContext *ctx);
 void typio_wl_popup_hide(TypioWlFrontend *frontend);
 bool typio_wl_popup_is_available(TypioWlFrontend *frontend);
+void typio_wl_popup_handle_output_change(TypioWlFrontend *frontend,
+                                         struct wl_output *output);
 
 /* Commit helpers */
 void typio_wl_commit_string(TypioWlFrontend *frontend, const char *text);

@@ -72,6 +72,11 @@ typedef struct TypioWlPopupBuffer {
     bool busy;
 } TypioWlPopupBuffer;
 
+typedef struct TypioWlPopupOutputRef {
+    struct wl_output *output;
+    struct TypioWlPopupOutputRef *next;
+} TypioWlPopupOutputRef;
+
 struct TypioWlPopup {
     TypioWlFrontend *frontend;
     struct wl_surface *surface;
@@ -82,6 +87,7 @@ struct TypioWlPopup {
     int text_input_y;
     int text_input_width;
     int text_input_height;
+    TypioWlPopupOutputRef *entered_outputs;
 };
 
 typedef struct TypioPopupLine {
@@ -117,9 +123,18 @@ static void popup_handle_text_input_rectangle(void *data,
                                               struct zwp_input_popup_surface_v2 *popup_surface,
                                               int32_t x, int32_t y,
                                               int32_t width, int32_t height);
+static void popup_handle_surface_enter(void *data, struct wl_surface *surface,
+                                       struct wl_output *output);
+static void popup_handle_surface_leave(void *data, struct wl_surface *surface,
+                                       struct wl_output *output);
 
 static const struct zwp_input_popup_surface_v2_listener popup_listener = {
     .text_input_rectangle = popup_handle_text_input_rectangle,
+};
+
+static const struct wl_surface_listener popup_surface_listener = {
+    .enter = popup_handle_surface_enter,
+    .leave = popup_handle_surface_leave,
 };
 
 static void popup_buffer_release(void *data, [[maybe_unused]] struct wl_buffer *buffer) {
@@ -242,6 +257,120 @@ static TypioWlPopupBuffer *popup_acquire_buffer(TypioWlPopup *popup, int width, 
 
     typio_log(TYPIO_LOG_WARNING, "No free popup buffer available");
     return nullptr;
+}
+
+static const TypioWlOutput *popup_find_frontend_output(const TypioWlPopup *popup,
+                                                        struct wl_output *output) {
+    for (TypioWlOutput *current = popup && popup->frontend ? popup->frontend->outputs : nullptr;
+         current;
+         current = current->next) {
+        if (current->output == output) {
+            return current;
+        }
+    }
+
+    return nullptr;
+}
+
+static bool popup_tracks_output(const TypioWlPopup *popup, struct wl_output *output) {
+    for (TypioWlPopupOutputRef *entry = popup ? popup->entered_outputs : nullptr;
+         entry;
+         entry = entry->next) {
+        if (entry->output == output) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static int popup_render_scale(const TypioWlPopup *popup) {
+    int scale = 1;
+
+    for (TypioWlPopupOutputRef *entry = popup ? popup->entered_outputs : nullptr;
+         entry;
+         entry = entry->next) {
+        const TypioWlOutput *output = popup_find_frontend_output(popup, entry->output);
+        if (output && output->scale > scale) {
+            scale = output->scale;
+        }
+    }
+
+    return scale;
+}
+
+static void popup_refresh_visible_surface(TypioWlPopup *popup) {
+    TypioInputContext *ctx;
+
+    if (!popup || !popup->visible || !popup->frontend || !popup->frontend->session) {
+        return;
+    }
+
+    ctx = popup->frontend->session->ctx;
+    if (!ctx) {
+        return;
+    }
+
+    typio_wl_popup_update(popup->frontend, ctx);
+}
+
+static void popup_track_output(TypioWlPopup *popup, struct wl_output *output) {
+    TypioWlPopupOutputRef *entry;
+
+    if (!popup || !output || popup_tracks_output(popup, output)) {
+        return;
+    }
+
+    entry = calloc(1, sizeof(*entry));
+    if (!entry) {
+        return;
+    }
+
+    entry->output = output;
+    entry->next = popup->entered_outputs;
+    popup->entered_outputs = entry;
+    popup_refresh_visible_surface(popup);
+}
+
+static void popup_untrack_output(TypioWlPopup *popup, struct wl_output *output) {
+    TypioWlPopupOutputRef **link;
+
+    if (!popup || !output) {
+        return;
+    }
+
+    link = &popup->entered_outputs;
+    while (*link) {
+        TypioWlPopupOutputRef *entry = *link;
+        if (entry->output == output) {
+            *link = entry->next;
+            free(entry);
+            popup_refresh_visible_surface(popup);
+            return;
+        }
+        link = &entry->next;
+    }
+}
+
+static void popup_clear_outputs(TypioWlPopup *popup) {
+    while (popup && popup->entered_outputs) {
+        TypioWlPopupOutputRef *entry = popup->entered_outputs;
+        popup->entered_outputs = entry->next;
+        free(entry);
+    }
+}
+
+static bool popup_scaled_dimension(int logical, int scale, int *physical) {
+    if (!physical || logical < 0 || scale < 1) {
+        return false;
+    }
+
+    if (logical > INT32_MAX / scale) {
+        return false;
+    }
+
+    *physical = logical * scale;
+    return true;
 }
 
 static char *popup_format_candidate(const TypioCandidate *candidate, size_t index) {
@@ -560,6 +689,9 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
     int row_height = 0;
     int width;
     int height;
+    int scale;
+    int buffer_width;
+    int buffer_height;
     int y;
 
     if (!popup || !popup->surface || !candidates || candidates->count == 0) {
@@ -654,8 +786,15 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
         width = TYPIO_POPUP_MIN_WIDTH;
     }
     height = content_height + TYPIO_POPUP_PADDING * 2;
+    scale = popup_render_scale(popup);
+    if (!popup_scaled_dimension(width, scale, &buffer_width) ||
+        !popup_scaled_dimension(height, scale, &buffer_height)) {
+        popup_free_lines(lines, line_count);
+        free(preedit_text);
+        return false;
+    }
 
-    buffer = popup_acquire_buffer(popup, width, height);
+    buffer = popup_acquire_buffer(popup, buffer_width, buffer_height);
     if (!buffer) {
         popup_free_lines(lines, line_count);
         free(preedit_text);
@@ -665,8 +804,10 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
     memset(buffer->data, 0, buffer->size);
     surface = cairo_image_surface_create_for_data((unsigned char *)buffer->data,
                                                   CAIRO_FORMAT_ARGB32,
-                                                  width, height, buffer->stride);
+                                                  buffer_width, buffer_height,
+                                                  buffer->stride);
     cr = cairo_create(surface);
+    cairo_scale(cr, scale, scale);
 
     cairo_set_source_rgba(cr, palette->bg_r, palette->bg_g, palette->bg_b, palette->bg_a);
     cairo_paint(cr);
@@ -721,6 +862,7 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
 
+    wl_surface_set_buffer_scale(popup->surface, scale);
     wl_surface_attach(popup->surface, buffer->buffer, 0, 0);
     wl_surface_damage(popup->surface, 0, 0, width, height);
     wl_surface_commit(popup->surface);
@@ -744,6 +886,18 @@ static void popup_handle_text_input_rectangle(void *data,
     popup->text_input_height = height;
 }
 
+static void popup_handle_surface_enter(void *data,
+                                       [[maybe_unused]] struct wl_surface *surface,
+                                       struct wl_output *output) {
+    popup_track_output(data, output);
+}
+
+static void popup_handle_surface_leave(void *data,
+                                       [[maybe_unused]] struct wl_surface *surface,
+                                       struct wl_output *output) {
+    popup_untrack_output(data, output);
+}
+
 TypioWlPopup *typio_wl_popup_create(TypioWlFrontend *frontend) {
     TypioWlPopup *popup;
 
@@ -762,6 +916,7 @@ TypioWlPopup *typio_wl_popup_create(TypioWlFrontend *frontend) {
         free(popup);
         return nullptr;
     }
+    wl_surface_add_listener(popup->surface, &popup_surface_listener, popup);
 
     popup->popup_surface = zwp_input_method_v2_get_input_popup_surface(
         frontend->input_method, popup->surface);
@@ -786,6 +941,7 @@ void typio_wl_popup_destroy(TypioWlPopup *popup) {
     for (size_t i = 0; i < TYPIO_POPUP_BUFFER_COUNT; ++i) {
         popup_buffer_reset(&popup->buffers[i]);
     }
+    popup_clear_outputs(popup);
 
     if (popup->popup_surface) {
         zwp_input_popup_surface_v2_destroy(popup->popup_surface);
@@ -840,4 +996,25 @@ void typio_wl_popup_hide(TypioWlFrontend *frontend) {
 bool typio_wl_popup_is_available(TypioWlFrontend *frontend) {
     return frontend && frontend->popup && frontend->popup->surface &&
            frontend->popup->popup_surface;
+}
+
+void typio_wl_popup_handle_output_change(TypioWlFrontend *frontend,
+                                         struct wl_output *output) {
+    TypioWlPopup *popup;
+
+    if (!frontend || !output) {
+        return;
+    }
+
+    popup = frontend->popup;
+    if (!popup || !popup_tracks_output(popup, output)) {
+        return;
+    }
+
+    if (!popup_find_frontend_output(popup, output)) {
+        popup_untrack_output(popup, output);
+        return;
+    }
+
+    popup_refresh_visible_surface(popup);
 }

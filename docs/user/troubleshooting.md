@@ -62,6 +62,11 @@ surface when the required popup objects are available. If you still only see
 inline candidates, Typio likely failed to initialize `wl_compositor`,
 `wl_shm`, or the popup surface itself.
 
+If the popup looks blurry on a 2x HiDPI output, make sure you are running a
+recent Typio build. The popup now follows `wl_surface.enter/leave` and
+`wl_output.scale`, so integer output scales should render sharply after a
+restart of the daemon.
+
 If the popup theme does not match your desktop, set one explicitly in
 `~/.config/typio/typio.toml`:
 

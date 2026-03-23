@@ -44,6 +44,8 @@ Typio runs on the following protocol layers:
   placement near the active text cursor.
 - `wl_compositor`, `wl_surface`, `wl_shm`
   These core Wayland interfaces back the popup window and its pixel buffers.
+  Popup scaling follows `wl_surface.enter/leave` plus per-output
+  `wl_output.scale` so the shm buffer matches integer HiDPI outputs.
 
 ## Main Components
 

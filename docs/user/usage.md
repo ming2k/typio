@@ -138,6 +138,11 @@ popup surface. If popup rendering is unavailable in the current session,
 Typio keeps candidate state visible inline in preedit. Candidate selection
 still uses the engine's normal selection keys.
 
+The popup follows Wayland surface enter/leave events and `wl_output.scale`.
+That keeps integer-scaled outputs such as 2x crisp instead of stretching a 1x
+buffer. Fractional scaling is still compositor-dependent because Typio does
+not yet use an additional fractional-scale extension protocol.
+
 The popup defaults to a horizontal candidate layout. You can override it in
 `typio.toml` under `[engines.rime]` with `candidate_layout = "vertical"`.
 Popup colors can be forced with `popup_theme = "light"` or
