@@ -77,6 +77,29 @@ typedef struct TypioWlPopupOutputRef {
     struct TypioWlPopupOutputRef *next;
 } TypioWlPopupOutputRef;
 
+typedef struct TypioPopupLine {
+    char *text;
+    bool selected;
+    int width;
+    int height;
+    int x;
+    int y;
+} TypioPopupLine;
+
+typedef struct TypioPopupCache {
+    TypioPopupLine *lines;
+    size_t line_count;
+    int selected;
+    char *preedit_text;
+    int preedit_width;
+    int preedit_height;
+    int width;
+    int height;
+    TypioPopupRenderConfig config;
+    const TypioPopupPalette *palette;
+    bool valid;
+} TypioPopupCache;
+
 struct TypioWlPopup {
     TypioWlFrontend *frontend;
     struct wl_surface *surface;
@@ -88,16 +111,8 @@ struct TypioWlPopup {
     int text_input_width;
     int text_input_height;
     TypioWlPopupOutputRef *entered_outputs;
+    TypioPopupCache cache;
 };
-
-typedef struct TypioPopupLine {
-    char *text;
-    bool selected;
-    int width;
-    int height;
-    int x;
-    int y;
-} TypioPopupLine;
 
 static const TypioPopupPalette popup_palette_light = {
     .bg_r = 0.98, .bg_g = 0.98, .bg_b = 0.98, .bg_a = 0.96,
@@ -636,6 +651,55 @@ static void popup_draw_candidate_row(cairo_t *cr, int x, int y, int width, int h
     }
 }
 
+static void popup_cache_invalidate(TypioPopupCache *cache) {
+    if (!cache) {
+        return;
+    }
+    popup_free_lines(cache->lines, cache->line_count);
+    free(cache->preedit_text);
+    memset(cache, 0, sizeof(*cache));
+    cache->selected = -1;
+}
+
+static bool popup_cache_matches(const TypioPopupCache *cache,
+                                const TypioCandidateList *candidates,
+                                const char *preedit_text,
+                                int scale) {
+    if (!cache->valid || cache->line_count != candidates->count) {
+        return false;
+    }
+
+    /* Check scale hasn't changed (HiDPI hot-plug). */
+    int buffer_w, buffer_h;
+    if (!popup_scaled_dimension(cache->width, scale, &buffer_w) ||
+        !popup_scaled_dimension(cache->height, scale, &buffer_h)) {
+        return false;
+    }
+
+    /* Preedit must match. */
+    const char *old_pre = cache->preedit_text ? cache->preedit_text : "";
+    const char *new_pre = preedit_text ? preedit_text : "";
+    if (strcmp(old_pre, new_pre) != 0) {
+        return false;
+    }
+
+    /* Compare each candidate text against the cached formatted string. */
+    for (size_t i = 0; i < candidates->count; ++i) {
+        char *formatted = popup_format_candidate(&candidates->candidates[i], i);
+        if (!formatted || !cache->lines[i].text) {
+            free(formatted);
+            return false;
+        }
+        bool same = strcmp(formatted, cache->lines[i].text) == 0;
+        free(formatted);
+        if (!same) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static void popup_hide_surface(TypioWlPopup *popup) {
     if (!popup || !popup->surface || !popup->visible) {
         return;
@@ -644,6 +708,7 @@ static void popup_hide_surface(TypioWlPopup *popup) {
     wl_surface_attach(popup->surface, nullptr, 0, 0);
     wl_surface_commit(popup->surface);
     popup->visible = false;
+    popup_cache_invalidate(&popup->cache);
 }
 
 static bool popup_ensure_created(TypioWlFrontend *frontend) {
@@ -670,11 +735,136 @@ static bool popup_ensure_created(TypioWlFrontend *frontend) {
     return true;
 }
 
+/* Draw candidates onto a buffer and commit to Wayland.
+ * Assumes lines[], width, height, preedit_text/width/height, config, and
+ * palette are already computed. */
+static bool popup_draw_and_commit(TypioWlPopup *popup,
+                                  TypioPopupLine *lines, size_t line_count,
+                                  const char *preedit_text, int preedit_height,
+                                  int width, int height,
+                                  const TypioPopupRenderConfig *config,
+                                  const TypioPopupPalette *palette) {
+    int scale = popup_render_scale(popup);
+    int buffer_width, buffer_height;
+
+    if (!popup_scaled_dimension(width, scale, &buffer_width) ||
+        !popup_scaled_dimension(height, scale, &buffer_height)) {
+        return false;
+    }
+
+    TypioWlPopupBuffer *buffer = popup_acquire_buffer(popup, buffer_width, buffer_height);
+    if (!buffer) {
+        return false;
+    }
+
+    memset(buffer->data, 0, buffer->size);
+    cairo_surface_t *surface = cairo_image_surface_create_for_data(
+        (unsigned char *)buffer->data, CAIRO_FORMAT_ARGB32,
+        buffer_width, buffer_height, buffer->stride);
+    cairo_t *cr = cairo_create(surface);
+    cairo_scale(cr, scale, scale);
+
+    cairo_set_source_rgba(cr, palette->bg_r, palette->bg_g, palette->bg_b, palette->bg_a);
+    cairo_paint(cr);
+
+    cairo_set_source_rgba(cr, palette->border_r, palette->border_g,
+                          palette->border_b, palette->border_a);
+    cairo_rectangle(cr, 0.5, 0.5, width - 1.0, height - 1.0);
+    cairo_set_line_width(cr, 1.0);
+    cairo_stroke(cr);
+
+    int y = TYPIO_POPUP_PADDING;
+    if (preedit_text) {
+        popup_draw_text(cr, config->page_font_desc, preedit_text,
+                        TYPIO_POPUP_PADDING, y,
+                        palette->preedit_r, palette->preedit_g, palette->preedit_b);
+        y += preedit_height + TYPIO_POPUP_SECTION_GAP;
+    }
+
+    if (config->layout_mode == TYPIO_POPUP_LAYOUT_VERTICAL) {
+        for (size_t i = 0; i < line_count; ++i) {
+            popup_draw_candidate_row(cr, TYPIO_POPUP_PADDING - 2, y - 2,
+                                     width - (TYPIO_POPUP_PADDING * 2) + 4,
+                                     lines[i].height, lines[i].text, lines[i].selected,
+                                     config->font_desc, palette);
+            y += lines[i].height;
+            if (i + 1 < line_count) {
+                y += TYPIO_POPUP_ROW_GAP;
+            }
+        }
+    } else {
+        int x = TYPIO_POPUP_PADDING;
+        int current_row_height = 0;
+
+        for (size_t i = 0; i < line_count; ++i) {
+            lines[i].x = x;
+            lines[i].y = y;
+            popup_draw_candidate_row(cr, x, y, lines[i].width, lines[i].height,
+                                     lines[i].text, lines[i].selected,
+                                     config->font_desc, palette);
+            x += lines[i].width + TYPIO_POPUP_COLUMN_GAP;
+            if (lines[i].height > current_row_height) {
+                current_row_height = lines[i].height;
+            }
+        }
+    }
+
+    cairo_surface_flush(surface);
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+
+    wl_surface_set_buffer_scale(popup->surface, scale);
+    wl_surface_attach(popup->surface, buffer->buffer, 0, 0);
+    wl_surface_damage(popup->surface, 0, 0, width, height);
+    wl_surface_commit(popup->surface);
+    buffer->busy = true;
+    popup->visible = true;
+    return true;
+}
+
+/* Save a copy of line measurements into the popup cache for future reuse. */
+static void popup_cache_store(TypioWlPopup *popup,
+                              const TypioPopupLine *lines, size_t line_count,
+                              int selected,
+                              const char *preedit_text,
+                              int preedit_width, int preedit_height,
+                              int width, int height,
+                              const TypioPopupRenderConfig *config,
+                              const TypioPopupPalette *palette) {
+    TypioPopupCache *cache = &popup->cache;
+
+    popup_cache_invalidate(cache);
+
+    cache->lines = calloc(line_count, sizeof(*cache->lines));
+    if (!cache->lines) {
+        return;
+    }
+
+    for (size_t i = 0; i < line_count; ++i) {
+        cache->lines[i].text = lines[i].text ? strdup(lines[i].text) : nullptr;
+        cache->lines[i].selected = lines[i].selected;
+        cache->lines[i].width = lines[i].width;
+        cache->lines[i].height = lines[i].height;
+        cache->lines[i].x = lines[i].x;
+        cache->lines[i].y = lines[i].y;
+    }
+
+    cache->line_count = line_count;
+    cache->selected = selected;
+    cache->preedit_text = preedit_text ? strdup(preedit_text) : nullptr;
+    cache->preedit_width = preedit_width;
+    cache->preedit_height = preedit_height;
+    cache->width = width;
+    cache->height = height;
+    cache->config = *config;
+    cache->palette = palette;
+    cache->valid = true;
+}
+
 static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
                          const TypioCandidateList *candidates) {
     cairo_surface_t *surface;
     cairo_t *cr;
-    TypioWlPopupBuffer *buffer;
     TypioPopupRenderConfig render_config;
     const TypioPopupPalette *palette;
     TypioPopupLine *lines = nullptr;
@@ -690,9 +880,6 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
     int width;
     int height;
     int scale;
-    int buffer_width;
-    int buffer_height;
-    int y;
 
     if (!popup || !popup->surface || !candidates || candidates->count == 0) {
         return false;
@@ -700,6 +887,33 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
 
     if (preedit && preedit->segment_count > 0) {
         preedit_text = typio_wl_build_plain_preedit(preedit, nullptr);
+    }
+
+    scale = popup_render_scale(popup);
+
+    /* Fast path: if only the selected candidate changed, reuse cached
+     * measurements and skip the expensive Pango text-measurement phase. */
+    if (popup->cache.valid &&
+        popup_cache_matches(&popup->cache, candidates, preedit_text, scale) &&
+        popup->cache.selected != candidates->selected) {
+        TypioPopupCache *cache = &popup->cache;
+
+        /* Update selection flags in the cached lines. */
+        for (size_t i = 0; i < cache->line_count; ++i) {
+            cache->lines[i].selected = (candidates->selected >= 0 &&
+                                        (size_t)candidates->selected == i);
+        }
+        cache->selected = candidates->selected;
+
+        bool ok = popup_draw_and_commit(popup, cache->lines, cache->line_count,
+                                        cache->preedit_text, cache->preedit_height,
+                                        cache->width, cache->height,
+                                        &cache->config, cache->palette);
+        free(preedit_text);
+        if (ok) {
+            typio_log(TYPIO_LOG_DEBUG, "Popup selection-only fast redraw");
+        }
+        return ok;
     }
 
     popup_load_render_config(popup, &render_config);
@@ -786,92 +1000,20 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
         width = TYPIO_POPUP_MIN_WIDTH;
     }
     height = content_height + TYPIO_POPUP_PADDING * 2;
-    scale = popup_render_scale(popup);
-    if (!popup_scaled_dimension(width, scale, &buffer_width) ||
-        !popup_scaled_dimension(height, scale, &buffer_height)) {
-        popup_free_lines(lines, line_count);
-        free(preedit_text);
-        return false;
+
+    bool ok = popup_draw_and_commit(popup, lines, line_count,
+                                    preedit_text, preedit_height,
+                                    width, height, &render_config, palette);
+
+    if (ok) {
+        popup_cache_store(popup, lines, line_count, candidates->selected,
+                          preedit_text, preedit_width, preedit_height,
+                          width, height, &render_config, palette);
     }
-
-    buffer = popup_acquire_buffer(popup, buffer_width, buffer_height);
-    if (!buffer) {
-        popup_free_lines(lines, line_count);
-        free(preedit_text);
-        return false;
-    }
-
-    memset(buffer->data, 0, buffer->size);
-    surface = cairo_image_surface_create_for_data((unsigned char *)buffer->data,
-                                                  CAIRO_FORMAT_ARGB32,
-                                                  buffer_width, buffer_height,
-                                                  buffer->stride);
-    cr = cairo_create(surface);
-    cairo_scale(cr, scale, scale);
-
-    cairo_set_source_rgba(cr, palette->bg_r, palette->bg_g, palette->bg_b, palette->bg_a);
-    cairo_paint(cr);
-
-    cairo_set_source_rgba(cr, palette->border_r, palette->border_g,
-                          palette->border_b, palette->border_a);
-    cairo_rectangle(cr, 0.5, 0.5, width - 1.0, height - 1.0);
-    cairo_set_line_width(cr, 1.0);
-    cairo_stroke(cr);
-
-    y = TYPIO_POPUP_PADDING;
-    if (preedit_text) {
-        popup_draw_text(cr, render_config.page_font_desc, preedit_text,
-                        TYPIO_POPUP_PADDING, y,
-                        palette->preedit_r, palette->preedit_g, palette->preedit_b);
-        y += preedit_height + TYPIO_POPUP_SECTION_GAP;
-    }
-
-    if (render_config.layout_mode == TYPIO_POPUP_LAYOUT_VERTICAL) {
-        for (size_t i = 0; i < line_count; ++i) {
-            popup_draw_candidate_row(cr, TYPIO_POPUP_PADDING - 2, y - 2,
-                                     width - (TYPIO_POPUP_PADDING * 2) + 4,
-                                     lines[i].height, lines[i].text, lines[i].selected,
-                                     render_config.font_desc, palette);
-            y += lines[i].height;
-            if (i + 1 < line_count) {
-                y += TYPIO_POPUP_ROW_GAP;
-            }
-        }
-    } else {
-        int x = TYPIO_POPUP_PADDING;
-        int current_row_height = 0;
-
-        for (size_t i = 0; i < line_count; ++i) {
-            lines[i].x = x;
-            lines[i].y = y;
-            popup_draw_candidate_row(cr, x, y, lines[i].width, lines[i].height,
-                                     lines[i].text, lines[i].selected,
-                                     render_config.font_desc, palette);
-            x += lines[i].width + TYPIO_POPUP_COLUMN_GAP;
-            if (lines[i].height > current_row_height) {
-                current_row_height = lines[i].height;
-            }
-        }
-
-        if (current_row_height > 0) {
-            y += current_row_height;
-        }
-    }
-
-    cairo_surface_flush(surface);
-    cairo_destroy(cr);
-    cairo_surface_destroy(surface);
-
-    wl_surface_set_buffer_scale(popup->surface, scale);
-    wl_surface_attach(popup->surface, buffer->buffer, 0, 0);
-    wl_surface_damage(popup->surface, 0, 0, width, height);
-    wl_surface_commit(popup->surface);
-    buffer->busy = true;
-    popup->visible = true;
 
     popup_free_lines(lines, line_count);
     free(preedit_text);
-    return true;
+    return ok;
 }
 
 static void popup_handle_text_input_rectangle(void *data,
@@ -938,6 +1080,7 @@ void typio_wl_popup_destroy(TypioWlPopup *popup) {
     }
 
     popup_hide_surface(popup);
+    popup_cache_invalidate(&popup->cache);
     for (size_t i = 0; i < TYPIO_POPUP_BUFFER_COUNT; ++i) {
         popup_buffer_reset(&popup->buffers[i]);
     }

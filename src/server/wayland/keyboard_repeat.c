@@ -135,12 +135,16 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
     if (read(keyboard->repeat_timer_fd, &expirations, sizeof(expirations)) < 0)
         return;
 
-    if (!keyboard->xkb_state || !keyboard->frontend->session)
+    if (!keyboard->xkb_state || !keyboard->frontend->session) {
+        typio_wl_keyboard_repeat_stop(keyboard);
         return;
+    }
 
     session = keyboard->frontend->session;
-    if (!session->ctx || !typio_input_context_is_focused(session->ctx))
+    if (!session->ctx || !typio_input_context_is_focused(session->ctx)) {
+        typio_wl_keyboard_repeat_stop(keyboard);
         return;
+    }
 
     xkb_keycode = keyboard->repeat_key + 8;
     repeat_state = keyboard_repeat_key_state(keyboard->frontend, keyboard->repeat_key);

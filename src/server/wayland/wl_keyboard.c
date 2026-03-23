@@ -395,14 +395,21 @@ static void kb_handle_key(void *data,
         return;
     }
 
-    if (!frontend->session)
+    if (!frontend->session ||
+        !typio_wl_lifecycle_phase_allows_key_events(frontend->lifecycle_phase) ||
+        !frontend->session->ctx ||
+        !typio_input_context_is_focused(frontend->session->ctx)) {
+        /* Even though we cannot route this event, honour key releases
+         * so that the repeat timer does not keep firing forever after
+         * the physical key has been lifted. */
+        if (state == WL_KEYBOARD_KEY_STATE_RELEASED &&
+            keyboard->repeating && keyboard->repeat_key == key) {
+            typio_wl_keyboard_repeat_stop(keyboard);
+        }
         return;
-    if (!typio_wl_lifecycle_phase_allows_key_events(frontend->lifecycle_phase))
-        return;
+    }
 
     TypioWlSession *session = frontend->session;
-    if (!session->ctx || !typio_input_context_is_focused(session->ctx))
-        return;
 
     keyboard_trace_event(keyboard,
                          state == WL_KEYBOARD_KEY_STATE_PRESSED ? "dispatch-press" : "dispatch-release",
