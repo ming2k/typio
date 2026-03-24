@@ -15,6 +15,9 @@
 #include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
 
+#define TYPIO_WL_VK_NEEDS_KEYMAP_DROP_LIMIT 32
+#define TYPIO_WL_VK_KEYMAP_TIMEOUT_MS 1500
+
 const char *typio_wl_vk_state_name(TypioWlVirtualKeyboardState state) {
     switch (state) {
     case TYPIO_WL_VK_STATE_ABSENT:
@@ -35,13 +38,20 @@ void typio_wl_vk_set_state(TypioWlFrontend *frontend,
                            const char *reason) {
     TypioWlVirtualKeyboardState previous;
     TypioLogLevel level;
+    uint64_t now_ms;
 
     if (!frontend)
         return;
 
+    now_ms = typio_wl_monotonic_ms();
     previous = frontend->virtual_keyboard_state;
     frontend->virtual_keyboard_state = state;
+    frontend->virtual_keyboard_state_since_ms = now_ms;
     frontend->virtual_keyboard_has_keymap = state == TYPIO_WL_VK_STATE_READY;
+    if (state == TYPIO_WL_VK_STATE_READY || state == TYPIO_WL_VK_STATE_BROKEN ||
+        state == TYPIO_WL_VK_STATE_ABSENT) {
+        frontend->virtual_keyboard_keymap_deadline_ms = 0;
+    }
 
     if (previous == state)
         return;
@@ -66,6 +76,44 @@ void typio_wl_vk_set_state(TypioWlFrontend *frontend,
               typio_wl_vk_state_name(state),
               reason ? reason : "no reason",
               frontend->virtual_keyboard_drop_count);
+}
+
+void typio_wl_vk_expect_keymap(TypioWlFrontend *frontend,
+                               const char *reason) {
+    uint64_t now_ms;
+
+    if (!frontend || !frontend->virtual_keyboard) {
+        return;
+    }
+
+    now_ms = typio_wl_monotonic_ms();
+    frontend->virtual_keyboard_keymap_deadline_ms = now_ms + TYPIO_WL_VK_KEYMAP_TIMEOUT_MS;
+    typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_NEEDS_KEYMAP,
+                          reason ? reason : "awaiting keymap");
+    typio_wl_trace(frontend,
+                   "vk_state",
+                   "awaiting=keymap timeout_ms=%u reason=%s",
+                   TYPIO_WL_VK_KEYMAP_TIMEOUT_MS,
+                   reason ? reason : "awaiting keymap");
+}
+
+static void typio_wl_vk_trigger_fail_safe(TypioWlFrontend *frontend,
+                                          const char *operation,
+                                          uint64_t drops) {
+    if (!frontend || !frontend->running) {
+        return;
+    }
+
+    typio_log(TYPIO_LOG_ERROR,
+              "Virtual keyboard fail-safe stop: operation=%s state=%s drops=%" PRIu64,
+              operation ? operation : "event",
+              typio_wl_vk_state_name(frontend->virtual_keyboard_state),
+              drops);
+    typio_log_dump_recent_to_configured_path("virtual keyboard fail-safe stop");
+    if (frontend->keyboard) {
+        typio_wl_keyboard_release_grab(frontend->keyboard);
+    }
+    typio_wl_frontend_stop(frontend);
 }
 
 bool typio_wl_vk_is_ready(TypioWlFrontend *frontend,
@@ -95,7 +143,37 @@ bool typio_wl_vk_is_ready(TypioWlFrontend *frontend,
                   drops);
     }
 
+    if (frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_BROKEN ||
+        (frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_NEEDS_KEYMAP &&
+         drops >= TYPIO_WL_VK_NEEDS_KEYMAP_DROP_LIMIT)) {
+        typio_wl_vk_trigger_fail_safe(frontend, operation, drops);
+    }
+
     return false;
+}
+
+void typio_wl_vk_health_check(TypioWlFrontend *frontend) {
+    uint64_t now_ms;
+
+    if (!frontend || !frontend->running ||
+        frontend->virtual_keyboard_state != TYPIO_WL_VK_STATE_NEEDS_KEYMAP ||
+        frontend->virtual_keyboard_keymap_deadline_ms == 0) {
+        return;
+    }
+
+    now_ms = typio_wl_monotonic_ms();
+    if (now_ms < frontend->virtual_keyboard_keymap_deadline_ms) {
+        return;
+    }
+
+    typio_log(TYPIO_LOG_ERROR,
+              "Virtual keyboard keymap timeout: waited=%" PRIu64 "ms since_state=%" PRIu64 "ms last_keymap=%" PRIu64 " last_forward=%" PRIu64,
+              now_ms - frontend->virtual_keyboard_state_since_ms,
+              frontend->virtual_keyboard_state_since_ms,
+              frontend->virtual_keyboard_last_keymap_ms,
+              frontend->virtual_keyboard_last_forward_ms);
+    typio_wl_vk_trigger_fail_safe(frontend, "keymap timeout",
+                                  frontend->virtual_keyboard_drop_count);
 }
 
 void typio_wl_vk_forward_key(struct TypioWlKeyboard *keyboard,
@@ -114,6 +192,7 @@ void typio_wl_vk_forward_key(struct TypioWlKeyboard *keyboard,
     if (!frontend || !typio_wl_vk_is_ready(frontend, "key"))
         return;
 
+    frontend->virtual_keyboard_last_forward_ms = typio_wl_monotonic_ms();
     frontend->active_generation_vk_dirty = true;
     if (key < TYPIO_WL_MAX_TRACKED_KEYS &&
         frontend->key_states[key] == TYPIO_KEY_RELEASED_PENDING) {
@@ -143,6 +222,7 @@ void typio_wl_vk_forward_modifiers(struct TypioWlKeyboard *keyboard,
     if (!frontend || !typio_wl_vk_is_ready(frontend, "modifier update"))
         return;
 
+    frontend->virtual_keyboard_last_forward_ms = typio_wl_monotonic_ms();
     frontend->active_generation_vk_dirty = true;
     typio_wl_trace(frontend,
                    "vk_modifiers",
@@ -161,6 +241,7 @@ void typio_wl_vk_forward_modifier_state(TypioWlFrontend *frontend,
     if (!frontend || !typio_wl_vk_is_ready(frontend, "modifier carry"))
         return;
 
+    frontend->virtual_keyboard_last_forward_ms = typio_wl_monotonic_ms();
     frontend->active_generation_vk_dirty = true;
     typio_wl_trace(frontend,
                    "vk_modifiers",
@@ -213,6 +294,7 @@ void typio_wl_vk_reset_modifiers(TypioWlFrontend *frontend) {
     if (!frontend || !typio_wl_vk_is_ready(frontend, "modifier reset"))
         return;
 
+    frontend->virtual_keyboard_last_forward_ms = typio_wl_monotonic_ms();
     typio_wl_trace(frontend,
                    "vk_reset_modifiers",
                    "depressed=0x0 latched=0x0 locked=0x0 group=0");
@@ -249,6 +331,7 @@ void typio_wl_vk_forward_keymap(TypioWlFrontend *frontend,
     }
 
     zwp_virtual_keyboard_v1_keymap(frontend->virtual_keyboard, format, vk_fd, size);
+    frontend->virtual_keyboard_last_keymap_ms = typio_wl_monotonic_ms();
     typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_READY,
                           "received compositor keymap");
     typio_wl_trace(frontend,

@@ -181,6 +181,7 @@ TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend) {
         frontend->active_key_generation = 1;
     frontend->active_generation_owned_keys = false;
     frontend->active_generation_vk_dirty = false;
+    atomic_store(&frontend->watchdog_armed, true);
     keyboard_reset_tracking(frontend);
     keyboard->frontend = frontend;
     keyboard->suppress_stale_keys = true;
@@ -224,6 +225,7 @@ void typio_wl_keyboard_destroy(TypioWlKeyboard *keyboard) {
     if (!keyboard)
         return;
 
+    atomic_store(&keyboard->frontend->watchdog_armed, false);
     typio_wl_vk_release_forwarded_keys(keyboard->frontend,
                                        typio_wl_key_tracking_state_name);
     typio_wl_keyboard_release_grab(keyboard);

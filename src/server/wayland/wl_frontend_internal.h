@@ -21,6 +21,8 @@
 #include <wayland-client.h>
 #include "input-method-unstable-v2-client-protocol.h"
 #include "virtual-keyboard-unstable-v1-client-protocol.h"
+#include <pthread.h>
+#include <stdatomic.h>
 #include <xkbcommon/xkbcommon.h>
 #include <stdint.h>
 
@@ -169,6 +171,15 @@ struct TypioWlFrontend {
     TypioWlVirtualKeyboardState virtual_keyboard_state;
     bool virtual_keyboard_has_keymap;
     uint64_t virtual_keyboard_drop_count;
+    uint64_t virtual_keyboard_state_since_ms;
+    uint64_t virtual_keyboard_last_keymap_ms;
+    uint64_t virtual_keyboard_last_forward_ms;
+    uint64_t virtual_keyboard_keymap_deadline_ms;
+    _Atomic uint64_t watchdog_heartbeat_ms;
+    _Atomic bool watchdog_stop;
+    _Atomic bool watchdog_armed;
+    pthread_t watchdog_thread;
+    bool watchdog_thread_started;
     TypioKeyTrackState key_states[TYPIO_WL_MAX_TRACKED_KEYS];
     uint32_t key_generations[TYPIO_WL_MAX_TRACKED_KEYS];
     uint32_t active_key_generation;

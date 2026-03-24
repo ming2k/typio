@@ -6,11 +6,14 @@
 #include "wl_frontend.h"
 #include "frontend_aux.h"
 #include "identity.h"
+#include "monotonic_time.h"
 #include "wl_frontend_internal.h"
 #include "typio/typio.h"
 #include "utils/log.h"
 
 #include <wayland-client.h>
+#include <inttypes.h>
+#include <signal.h>
 #include <poll.h>
 #include <errno.h>
 #include <sys/inotify.h>
@@ -58,6 +61,47 @@ static const struct wl_output_listener output_listener = {
     .done = output_handle_done,
     .scale = output_handle_scale,
 };
+
+#define TYPIO_WL_WATCHDOG_TIMEOUT_MS 5000
+#define TYPIO_WL_WATCHDOG_POLL_US 200000
+
+static void *frontend_watchdog_thread_main(void *data) {
+    TypioWlFrontend *frontend = data;
+
+    if (!frontend) {
+        return nullptr;
+    }
+
+    while (!atomic_load(&frontend->watchdog_stop)) {
+        struct timespec interval = {
+            .tv_sec = 0,
+            .tv_nsec = TYPIO_WL_WATCHDOG_POLL_US * 1000,
+        };
+        nanosleep(&interval, nullptr);
+
+        if (!atomic_load(&frontend->watchdog_armed)) {
+            continue;
+        }
+
+        uint64_t heartbeat_ms = atomic_load(&frontend->watchdog_heartbeat_ms);
+        uint64_t now_ms = typio_wl_monotonic_ms();
+        if (heartbeat_ms == 0 || now_ms < heartbeat_ms) {
+            continue;
+        }
+
+        if ((now_ms - heartbeat_ms) < TYPIO_WL_WATCHDOG_TIMEOUT_MS) {
+            continue;
+        }
+
+        dprintf(STDERR_FILENO,
+                "[typio] [ERROR] Wayland frontend watchdog timeout: lag=%" PRIu64 "ms, forcing process exit to release keyboard grab\n",
+                now_ms - heartbeat_ms);
+        kill(getpid(), SIGKILL);
+        break;
+    }
+
+    return nullptr;
+}
 
 /**
  * Reload runtime configuration for all subsystems.
@@ -222,6 +266,15 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
     }
 
     frontend->instance = instance;
+    atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
+    atomic_store(&frontend->watchdog_stop, false);
+    atomic_store(&frontend->watchdog_armed, false);
+    if (pthread_create(&frontend->watchdog_thread, nullptr,
+                       frontend_watchdog_thread_main, frontend) == 0) {
+        frontend->watchdog_thread_started = true;
+    } else {
+        typio_log(TYPIO_LOG_WARNING, "Failed to start Wayland watchdog thread");
+    }
 
     /* Load shortcut bindings from config */
     typio_shortcut_config_load(&frontend->shortcuts,
@@ -417,6 +470,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
     }
 
     frontend->running = true;
+    atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
     typio_log(TYPIO_LOG_INFO, "Starting Wayland event loop");
 
     int display_fd = wl_display_get_fd(frontend->display);
@@ -439,9 +493,11 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 #endif
 
     while (frontend->running) {
+        atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
         /* Flush pending requests */
         while (wl_display_prepare_read(frontend->display) != 0) {
             wl_display_dispatch_pending(frontend->display);
+            atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
         }
 
         if (wl_display_flush(frontend->display) < 0 && errno != EAGAIN) {
@@ -511,6 +567,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 
         if (ret == 0) {
             wl_display_cancel_read(frontend->display);
+            typio_wl_vk_health_check(frontend);
             continue;
         }
 
@@ -524,6 +581,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             }
             wl_display_dispatch_pending(frontend->display);
             frontend->dispatch_epoch++;
+            atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
         } else {
             wl_display_cancel_read(frontend->display);
         }
@@ -641,9 +699,13 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             frontend_handle_config_watch(frontend);
         }
 
+        typio_wl_vk_health_check(frontend);
+
         if (!frontend->running) {
             break;
         }
+
+        atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
     }
 
     typio_log(TYPIO_LOG_INFO, "Wayland event loop stopped");
@@ -666,6 +728,12 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
     }
 
     frontend->running = false;
+    atomic_store(&frontend->watchdog_armed, false);
+    atomic_store(&frontend->watchdog_stop, true);
+    if (frontend->watchdog_thread_started) {
+        pthread_join(frontend->watchdog_thread, nullptr);
+        frontend->watchdog_thread_started = false;
+    }
 
     /* Clean up session */
     if (frontend->session) {

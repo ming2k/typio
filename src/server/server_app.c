@@ -52,6 +52,20 @@ static void typio_server_log_callback(TypioLogLevel level,
     fprintf(stderr, "[typio] [%s] %s\n", level_str, message);
 }
 
+static void typio_server_request_stop(void *user_data) {
+    TypioServerApp *app = user_data;
+
+    if (!app) {
+        return;
+    }
+
+#ifdef HAVE_WAYLAND
+    if (app->wl_frontend) {
+        typio_wl_frontend_stop(app->wl_frontend);
+    }
+#endif
+}
+
 static void typio_server_print_startup_banner(TypioServerApp *app) {
     TypioEngineManager *manager;
     TypioEngine *active;
@@ -361,6 +375,9 @@ static void typio_server_init_status_bus(TypioServerApp *app) {
 #ifdef HAVE_STATUS_BUS
     app->status_bus = typio_status_bus_new(app->instance);
     if (app->status_bus) {
+        typio_status_bus_set_stop_callback(app->status_bus,
+                                           typio_server_request_stop,
+                                           app);
         printf("D-Bus status interface initialized\n");
     } else {
         printf("D-Bus status interface not available\n");

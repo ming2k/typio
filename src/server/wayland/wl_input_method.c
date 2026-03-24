@@ -137,6 +137,8 @@ static bool rebuild_keyboard_grab(TypioWlFrontend *frontend,
         return false;
     }
 
+    typio_wl_vk_expect_keymap(frontend, "keyboard grab rebuilt");
+
     /* Only suppress stale keys when rebuilding an existing grab.
      * When no previous grab existed (fresh activation after auto-focus),
      * the re-sent key is the first time the IME sees it — not stale. */

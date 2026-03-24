@@ -25,6 +25,8 @@
 struct TypioStatusBus {
     TypioInstance *instance;
     DBusConnection *conn;
+    TypioStatusBusStopCallback stop_callback;
+    void *stop_user_data;
 };
 
 static const char *engine_type_name(TypioEngineType type) {
@@ -529,6 +531,17 @@ static DBusMessage *status_handle_reload_config(TypioStatusBus *bus,
     return dbus_message_new_method_return(msg);
 }
 
+static DBusMessage *status_handle_stop(TypioStatusBus *bus,
+                                       DBusMessage *msg) {
+    if (!bus || !bus->stop_callback) {
+        return dbus_message_new_error(msg, DBUS_ERROR_FAILED,
+                                      "Stop callback not available");
+    }
+
+    bus->stop_callback(bus->stop_user_data);
+    return dbus_message_new_method_return(msg);
+}
+
 static DBusMessage *status_handle_set_config_text(TypioStatusBus *bus,
                                                   DBusMessage *msg) {
     const char *config_text = nullptr;
@@ -628,6 +641,7 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
             "    <method name=\"" TYPIO_STATUS_METHOD_SET_RIME_SCHEMA "\"><arg name=\"schema\" type=\"s\" direction=\"in\"/></method>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_SET_CONFIG_TEXT "\"><arg name=\"content\" type=\"s\" direction=\"in\"/></method>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_RELOAD_CONFIG "\"/>\n"
+            "    <method name=\"" TYPIO_STATUS_METHOD_STOP "\"/>\n"
             "  </interface>\n"
             "  <interface name=\"org.freedesktop.DBus.Properties\">\n"
             "    <method name=\"Get\"><arg type=\"s\" direction=\"in\"/><arg type=\"s\" direction=\"in\"/><arg type=\"v\" direction=\"out\"/></method>\n"
@@ -649,6 +663,8 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
             reply = status_handle_set_config_text(bus, msg);
         } else if (strcmp(member, TYPIO_STATUS_METHOD_RELOAD_CONFIG) == 0) {
             reply = status_handle_reload_config(bus, msg);
+        } else if (strcmp(member, TYPIO_STATUS_METHOD_STOP) == 0) {
+            reply = status_handle_stop(bus, msg);
         }
     }
 
@@ -756,6 +772,17 @@ int typio_status_bus_dispatch(TypioStatusBus *bus) {
     }
 
     return 0;
+}
+
+void typio_status_bus_set_stop_callback(TypioStatusBus *bus,
+                                        TypioStatusBusStopCallback callback,
+                                        void *user_data) {
+    if (!bus) {
+        return;
+    }
+
+    bus->stop_callback = callback;
+    bus->stop_user_data = user_data;
 }
 
 void typio_status_bus_emit_properties_changed(TypioStatusBus *bus) {

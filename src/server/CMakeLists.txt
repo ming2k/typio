@@ -71,6 +71,7 @@ if(HAVE_WAYLAND)
         ${CAIRO_PANGO_LIBRARIES}
         ${WAYLAND_CLIENT_LIBRARIES}
         ${XKBCOMMON_LIBRARIES}
+        pthread
     )
 endif()
 
