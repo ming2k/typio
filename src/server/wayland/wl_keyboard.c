@@ -218,6 +218,7 @@ TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend) {
 
     typio_wl_trace(frontend, "grab", "action=create status=ok");
     typio_log(TYPIO_LOG_INFO, "Keyboard grab created");
+    typio_wl_frontend_emit_runtime_state_changed(frontend);
     return keyboard;
 }
 
@@ -243,6 +244,7 @@ void typio_wl_keyboard_destroy(TypioWlKeyboard *keyboard) {
 
     typio_wl_trace(keyboard->frontend, "grab", "action=destroy status=ok");
     typio_log(TYPIO_LOG_DEBUG, "Keyboard destroyed");
+    typio_wl_frontend_emit_runtime_state_changed(keyboard->frontend);
     free(keyboard);
 }
 
@@ -252,6 +254,7 @@ void typio_wl_keyboard_release_grab(TypioWlKeyboard *keyboard) {
         keyboard->grab = nullptr;
         typio_wl_trace(keyboard->frontend, "grab", "action=release status=ok");
         typio_log(TYPIO_LOG_DEBUG, "Keyboard grab released");
+        typio_wl_frontend_emit_runtime_state_changed(keyboard->frontend);
     }
 }
 

@@ -33,6 +33,24 @@ static inline dbus_bool_t typio_dbus_append_dict_entry_string(DBusMessageIter *d
     return dbus_message_iter_close_container(dict, &entry);
 }
 
+static inline dbus_bool_t typio_dbus_append_string_map_entry(DBusMessageIter *dict,
+                                                             const char *key,
+                                                             const char *value) {
+    DBusMessageIter entry;
+    const char *text = value ? value : "";
+
+    if (!dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, nullptr, &entry)) {
+        return FALSE;
+    }
+    if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key)) {
+        return FALSE;
+    }
+    if (!dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &text)) {
+        return FALSE;
+    }
+    return dbus_message_iter_close_container(dict, &entry);
+}
+
 static inline dbus_bool_t typio_dbus_append_dict_entry_bool(DBusMessageIter *dict,
                                                             const char *key,
                                                             dbus_bool_t value) {

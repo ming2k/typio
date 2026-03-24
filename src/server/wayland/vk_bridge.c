@@ -93,6 +93,7 @@ void typio_wl_vk_set_state(TypioWlFrontend *frontend,
               typio_wl_vk_state_name(state),
               reason ? reason : "no reason",
               frontend->virtual_keyboard_drop_count);
+    typio_wl_frontend_emit_runtime_state_changed(frontend);
 }
 
 void typio_wl_vk_expect_keymap(TypioWlFrontend *frontend,
@@ -112,6 +113,7 @@ void typio_wl_vk_expect_keymap(TypioWlFrontend *frontend,
                    "awaiting=keymap timeout_ms=%u reason=%s",
                    TYPIO_WL_VK_KEYMAP_TIMEOUT_MS,
                    reason ? reason : "awaiting keymap");
+    typio_wl_frontend_emit_runtime_state_changed(frontend);
 }
 
 static void typio_wl_vk_trigger_fail_safe(TypioWlFrontend *frontend,
@@ -350,4 +352,5 @@ void typio_wl_vk_forward_keymap(TypioWlFrontend *frontend,
                    "keymap",
                    "stage=forwarded_to_vk format=%u size=%u",
                    format, size);
+    typio_wl_frontend_emit_runtime_state_changed(frontend);
 }

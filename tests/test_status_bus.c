@@ -49,6 +49,12 @@ typedef struct TestBusProcess {
     char address[1024];
 } TestBusProcess;
 
+typedef struct TestRuntimeStateFixture {
+    const char *backend;
+    const char *phase;
+    const char *vk_state;
+} TestRuntimeStateFixture;
+
 static void sleep_briefly(void) {
     const struct timespec delay = {
         .tv_sec = 0,
@@ -271,6 +277,7 @@ static bool dict_contains_string_dict_entry(DBusMessageIter *dict,
             while (dbus_message_iter_get_arg_type(&map) == DBUS_TYPE_DICT_ENTRY) {
                 DBusMessageIter map_entry;
                 DBusMessageIter map_kv;
+                DBusMessageIter nested;
                 const char *map_key = nullptr;
                 const char *map_value = nullptr;
 
@@ -278,9 +285,16 @@ static bool dict_contains_string_dict_entry(DBusMessageIter *dict,
                 map_kv = map_entry;
                 dbus_message_iter_get_basic(&map_kv, &map_key);
                 dbus_message_iter_next(&map_kv);
-                dbus_message_iter_get_basic(&map_kv, &map_value);
+                if (dbus_message_iter_get_arg_type(&map_kv) == DBUS_TYPE_VARIANT) {
+                    dbus_message_iter_recurse(&map_kv, &nested);
+                    if (dbus_message_iter_get_arg_type(&nested) == DBUS_TYPE_STRING) {
+                        dbus_message_iter_get_basic(&nested, &map_value);
+                    }
+                } else if (dbus_message_iter_get_arg_type(&map_kv) == DBUS_TYPE_STRING) {
+                    dbus_message_iter_get_basic(&map_kv, &map_value);
+                }
                 if (strcmp(map_key, entry_key) == 0) {
-                    return strcmp(map_value, expected) == 0;
+                    return map_value && strcmp(map_value, expected) == 0;
                 }
                 dbus_message_iter_next(&map);
             }
@@ -434,6 +448,26 @@ static TypioEngine *mock_voice_create(void) {
     return typio_engine_new(&mock_voice_info, &mock_voice_ops);
 }
 
+static void mock_runtime_state_callback(void *user_data,
+                                        TypioStatusRuntimeState *state) {
+    TestRuntimeStateFixture *fixture = user_data;
+
+    ASSERT(state != nullptr);
+    ASSERT(fixture != nullptr);
+
+    state->frontend_backend = fixture->backend;
+    state->lifecycle_phase = fixture->phase;
+    state->virtual_keyboard_state = fixture->vk_state;
+    state->keyboard_grab_active = true;
+    state->virtual_keyboard_has_keymap = true;
+    state->watchdog_armed = true;
+    state->virtual_keyboard_drop_count = 7;
+    state->virtual_keyboard_state_age_ms = 42;
+    state->virtual_keyboard_keymap_age_ms = 5;
+    state->virtual_keyboard_forward_age_ms = 3;
+    state->virtual_keyboard_keymap_deadline_remaining_ms = 900;
+}
+
 static bool reply_contains_engine_state_name(DBusMessage *reply,
                                              const char *expected_engine) {
     DBusMessageIter iter;
@@ -477,6 +511,11 @@ TEST(exports_basic_engine_state_and_emits_change_signal) {
     DBusMessage *reply;
     DBusError err;
     DBusMessage *signal_msg = nullptr;
+    TestRuntimeStateFixture runtime_state = {
+        .backend = "wayland",
+        .phase = "active",
+        .vk_state = "ready",
+    };
 
     bus_proc = start_test_bus();
     instance = typio_instance_new_with_config(&config);
@@ -496,6 +535,9 @@ TEST(exports_basic_engine_state_and_emits_change_signal) {
 
     bus = typio_status_bus_new(instance);
     ASSERT(bus != nullptr);
+    typio_status_bus_set_runtime_state_callback(bus,
+                                                mock_runtime_state_callback,
+                                                &runtime_state);
 
     client = open_client_connection(bus_proc.address);
     reply = call_get_all(client, bus);
@@ -512,6 +554,12 @@ TEST(exports_basic_engine_state_and_emits_change_signal) {
         ASSERT(reply_contains_string_dict_entry(reply, TYPIO_STATUS_PROP_ENGINE_DISPLAY_NAMES,
                                                 "basic", "Basic"));
     }
+    ASSERT(reply_contains_string_dict_entry(reply, TYPIO_STATUS_PROP_RUNTIME_STATE,
+                                            "frontend_backend", "wayland"));
+    ASSERT(reply_contains_string_dict_entry(reply, TYPIO_STATUS_PROP_RUNTIME_STATE,
+                                            "lifecycle_phase", "active"));
+    ASSERT(reply_contains_string_dict_entry(reply, TYPIO_STATUS_PROP_RUNTIME_STATE,
+                                            "virtual_keyboard_state", "ready"));
     dbus_message_unref(reply);
 
     reply = call_status_method(client, bus, TYPIO_STATUS_METHOD_ACTIVATE_ENGINE, "basic");

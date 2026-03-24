@@ -66,6 +66,8 @@ static const struct wl_output_listener output_listener = {
 #define TYPIO_WL_WATCHDOG_POLL_US 200000
 
 static void *frontend_watchdog_thread_main(void *data);
+static void frontend_fill_runtime_state(void *user_data,
+                                        TypioStatusRuntimeState *state);
 
 static void frontend_log_shortcuts(TypioWlFrontend *frontend,
                                    const char *prefix) {
@@ -124,6 +126,82 @@ static void frontend_watchdog_stop(TypioWlFrontend *frontend) {
     atomic_store(&frontend->watchdog_stop, true);
     pthread_join(frontend->watchdog_thread, nullptr);
     frontend->watchdog_thread_started = false;
+}
+
+static uint32_t frontend_runtime_age_ms(uint64_t now_ms,
+                                        uint64_t since_ms) {
+    uint64_t delta;
+
+    if (since_ms == 0 || now_ms <= since_ms) {
+        return 0;
+    }
+
+    delta = now_ms - since_ms;
+    if (delta > UINT32_MAX) {
+        return UINT32_MAX;
+    }
+
+    return (uint32_t)delta;
+}
+
+static int32_t frontend_runtime_deadline_remaining_ms(uint64_t now_ms,
+                                                      uint64_t deadline_ms) {
+    int64_t delta;
+
+    if (deadline_ms == 0) {
+        return 0;
+    }
+
+    delta = (int64_t)deadline_ms - (int64_t)now_ms;
+    if (delta > INT32_MAX) {
+        return INT32_MAX;
+    }
+    if (delta < INT32_MIN) {
+        return INT32_MIN;
+    }
+
+    return (int32_t)delta;
+}
+
+static void frontend_fill_runtime_state(void *user_data,
+                                        TypioStatusRuntimeState *state) {
+    TypioWlFrontend *frontend = user_data;
+    uint64_t now_ms;
+
+    if (!frontend || !state) {
+        return;
+    }
+
+    now_ms = typio_wl_monotonic_ms();
+    state->frontend_backend = "wayland";
+    state->lifecycle_phase = typio_wl_lifecycle_phase_name(frontend->lifecycle_phase);
+    state->virtual_keyboard_state = typio_wl_vk_state_name(frontend->virtual_keyboard_state);
+    state->keyboard_grab_active = frontend->keyboard && frontend->keyboard->grab;
+    state->virtual_keyboard_has_keymap = frontend->virtual_keyboard_has_keymap;
+    state->watchdog_armed = atomic_load(&frontend->watchdog_armed);
+    state->virtual_keyboard_drop_count =
+        frontend->virtual_keyboard_drop_count > UINT32_MAX
+            ? UINT32_MAX
+            : (uint32_t)frontend->virtual_keyboard_drop_count;
+    state->virtual_keyboard_state_age_ms =
+        frontend_runtime_age_ms(now_ms, frontend->virtual_keyboard_state_since_ms);
+    state->virtual_keyboard_keymap_age_ms =
+        frontend_runtime_age_ms(now_ms, frontend->virtual_keyboard_last_keymap_ms);
+    state->virtual_keyboard_forward_age_ms =
+        frontend_runtime_age_ms(now_ms, frontend->virtual_keyboard_last_forward_ms);
+    state->virtual_keyboard_keymap_deadline_remaining_ms =
+        frontend_runtime_deadline_remaining_ms(now_ms,
+                                               frontend->virtual_keyboard_keymap_deadline_ms);
+}
+
+void typio_wl_frontend_emit_runtime_state_changed(TypioWlFrontend *frontend) {
+#ifdef HAVE_STATUS_BUS
+    if (frontend && frontend->status_bus) {
+        typio_status_bus_emit_properties_changed(frontend->status_bus);
+    }
+#else
+    (void)frontend;
+#endif
 }
 
 static TypioWlFrontend *frontend_init_failed(TypioWlFrontend *frontend,
@@ -984,6 +1062,9 @@ void typio_wl_frontend_set_status_bus([[maybe_unused]] TypioWlFrontend *frontend
 #ifdef HAVE_STATUS_BUS
     if (frontend) {
         frontend->status_bus = (TypioStatusBus *)status_bus;
+        typio_status_bus_set_runtime_state_callback(frontend->status_bus,
+                                                    frontend_fill_runtime_state,
+                                                    frontend);
     }
 #endif
 }

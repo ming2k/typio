@@ -25,6 +25,8 @@
 struct TypioStatusBus {
     TypioInstance *instance;
     DBusConnection *conn;
+    TypioStatusBusRuntimeStateCallback runtime_state_callback;
+    void *runtime_state_user_data;
     TypioStatusBusStopCallback stop_callback;
     void *stop_user_data;
 };
@@ -245,12 +247,57 @@ static dbus_bool_t append_engine_display_names_dict(DBusMessageIter *iter,
         if (!name || !*name || !display_name || !*display_name) {
             continue;
         }
-        if (!typio_dbus_append_dict_entry_string(&dict, name, display_name)) {
+        if (!typio_dbus_append_string_map_entry(&dict, name, display_name)) {
             return FALSE;
         }
     }
 
     return dbus_message_iter_close_container(iter, &dict);
+}
+
+static dbus_bool_t append_runtime_state_dict(DBusMessageIter *iter,
+                                             TypioStatusBus *bus) {
+    DBusMessageIter dict;
+    TypioStatusRuntimeState state = {0};
+    dbus_bool_t ok = TRUE;
+
+    if (!dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, "{sv}", &dict)) {
+        return FALSE;
+    }
+
+    if (bus && bus->runtime_state_callback) {
+        bus->runtime_state_callback(bus->runtime_state_user_data, &state);
+    }
+
+    ok = typio_dbus_append_dict_entry_string(&dict, "frontend_backend",
+                                             state.frontend_backend ? state.frontend_backend : "") &&
+         typio_dbus_append_dict_entry_string(&dict, "lifecycle_phase",
+                                             state.lifecycle_phase ? state.lifecycle_phase : "") &&
+         typio_dbus_append_dict_entry_string(&dict, "virtual_keyboard_state",
+                                             state.virtual_keyboard_state ? state.virtual_keyboard_state : "") &&
+         typio_dbus_append_dict_entry_bool(&dict, "keyboard_grab_active",
+                                           state.keyboard_grab_active ? TRUE : FALSE) &&
+         typio_dbus_append_dict_entry_bool(&dict, "virtual_keyboard_has_keymap",
+                                           state.virtual_keyboard_has_keymap ? TRUE : FALSE) &&
+         typio_dbus_append_dict_entry_bool(&dict, "watchdog_armed",
+                                           state.watchdog_armed ? TRUE : FALSE) &&
+         typio_dbus_append_dict_entry_uint32(&dict, "virtual_keyboard_drop_count",
+                                             state.virtual_keyboard_drop_count) &&
+         typio_dbus_append_dict_entry_uint32(&dict, "virtual_keyboard_state_age_ms",
+                                             state.virtual_keyboard_state_age_ms) &&
+         typio_dbus_append_dict_entry_uint32(&dict, "virtual_keyboard_keymap_age_ms",
+                                             state.virtual_keyboard_keymap_age_ms) &&
+         typio_dbus_append_dict_entry_uint32(&dict, "virtual_keyboard_forward_age_ms",
+                                             state.virtual_keyboard_forward_age_ms) &&
+         typio_dbus_append_dict_entry_int32(&dict,
+                                            "virtual_keyboard_keymap_deadline_remaining_ms",
+                                            state.virtual_keyboard_keymap_deadline_remaining_ms);
+
+    if (!dbus_message_iter_close_container(iter, &dict)) {
+        return FALSE;
+    }
+
+    return ok;
 }
 
 static dbus_bool_t append_property_variant(DBusMessageIter *iter,
@@ -346,6 +393,16 @@ static dbus_bool_t append_property_variant(DBusMessageIter *iter,
         return dbus_message_iter_close_container(iter, &variant);
     }
 
+    if (strcmp(property, TYPIO_STATUS_PROP_RUNTIME_STATE) == 0) {
+        if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "a{sv}", &variant)) {
+            return FALSE;
+        }
+        if (!append_runtime_state_dict(&variant, bus)) {
+            return FALSE;
+        }
+        return dbus_message_iter_close_container(iter, &variant);
+    }
+
     if (strcmp(property, TYPIO_STATUS_PROP_RIME_SCHEMA) == 0) {
         const char *schema = "";
         rime_schema = (bus && bus->instance) ? typio_instance_dup_rime_schema(bus->instance)
@@ -429,9 +486,11 @@ static DBusMessage *status_handle_properties_getall(TypioStatusBus *bus,
         TYPIO_STATUS_PROP_ACTIVE_ENGINE,
         TYPIO_STATUS_PROP_AVAILABLE_ENGINES,
         TYPIO_STATUS_PROP_ORDERED_ENGINES,
+        TYPIO_STATUS_PROP_ENGINE_DISPLAY_NAMES,
         TYPIO_STATUS_PROP_ENGINE_ORDER,
         TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE,
         TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE,
+        TYPIO_STATUS_PROP_RUNTIME_STATE,
         TYPIO_STATUS_PROP_RIME_SCHEMA,
         TYPIO_STATUS_PROP_CONFIG_TEXT,
     };
@@ -632,9 +691,11 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
             "    <property name=\"" TYPIO_STATUS_PROP_ACTIVE_ENGINE "\" type=\"s\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_AVAILABLE_ENGINES "\" type=\"as\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_ORDERED_ENGINES "\" type=\"as\" access=\"read\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_ENGINE_DISPLAY_NAMES "\" type=\"a{ss}\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_ENGINE_ORDER "\" type=\"as\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE "\" type=\"s\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE "\" type=\"a{sv}\" access=\"read\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_RUNTIME_STATE "\" type=\"a{sv}\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_RIME_SCHEMA "\" type=\"s\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_CONFIG_TEXT "\" type=\"s\" access=\"read\"/>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_ACTIVATE_ENGINE "\"><arg name=\"engine\" type=\"s\" direction=\"in\"/></method>\n"
@@ -785,6 +846,18 @@ void typio_status_bus_set_stop_callback(TypioStatusBus *bus,
     bus->stop_user_data = user_data;
 }
 
+void typio_status_bus_set_runtime_state_callback(
+    TypioStatusBus *bus,
+    TypioStatusBusRuntimeStateCallback callback,
+    void *user_data) {
+    if (!bus) {
+        return;
+    }
+
+    bus->runtime_state_callback = callback;
+    bus->runtime_state_user_data = user_data;
+}
+
 void typio_status_bus_emit_properties_changed(TypioStatusBus *bus) {
     DBusMessage *sig;
     DBusMessageIter iter;
@@ -795,9 +868,11 @@ void typio_status_bus_emit_properties_changed(TypioStatusBus *bus) {
         TYPIO_STATUS_PROP_ACTIVE_ENGINE,
         TYPIO_STATUS_PROP_AVAILABLE_ENGINES,
         TYPIO_STATUS_PROP_ORDERED_ENGINES,
+        TYPIO_STATUS_PROP_ENGINE_DISPLAY_NAMES,
         TYPIO_STATUS_PROP_ENGINE_ORDER,
         TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE,
         TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE,
+        TYPIO_STATUS_PROP_RUNTIME_STATE,
         TYPIO_STATUS_PROP_CONFIG_TEXT,
     };
 

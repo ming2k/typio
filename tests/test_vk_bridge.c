@@ -44,6 +44,9 @@ void typio_wl_keyboard_release_grab([[maybe_unused]] TypioWlKeyboard *keyboard) 
     release_count++;
 }
 
+void typio_wl_frontend_emit_runtime_state_changed([[maybe_unused]] TypioWlFrontend *frontend) {
+}
+
 void typio_wl_trace([[maybe_unused]] TypioWlFrontend *frontend,
                     [[maybe_unused]] const char *topic,
                     [[maybe_unused]] const char *format, ...) {

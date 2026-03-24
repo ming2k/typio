@@ -238,6 +238,8 @@ struct TypioWlOutput {
     TypioWlOutput *next;
 };
 
+void typio_wl_frontend_emit_runtime_state_changed(TypioWlFrontend *frontend);
+
 /* Input method functions (wl_input_method.c) */
 void typio_wl_input_method_setup(TypioWlFrontend *frontend);
 
