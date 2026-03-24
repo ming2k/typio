@@ -8,6 +8,18 @@ It exists to keep event ordering, ownership, and cleanup rules explicit.
 If a keyboard or focus bug appears "sometimes", treat it as a timing-model
 problem first, not as a one-off key handling bug.
 
+The most failure-sensitive chain today is:
+
+1. `zwp_input_method_v2` activation or reactivation
+2. keyboard-grab creation or rebuild
+3. compositor keymap delivery on the grab
+4. keymap forwarding into `zwp_virtual_keyboard_v1`
+5. virtual-keyboard transition to `ready`
+6. only then: unhandled key forwarding to the focused application
+
+If that chain is incomplete or reordered, the frontend must not behave as if
+virtual-keyboard forwarding is healthy.
+
 ## Lifecycle Phases
 
 The frontend runs in one of four phases:
@@ -46,6 +58,12 @@ Each event category has one source of truth:
 
 Do not derive lifecycle truth from forwarded virtual-keyboard output.
 
+Additional rule:
+
+- a live keyboard grab is not proof that the virtual keyboard is ready
+- a previously healthy virtual keyboard is not proof that the current grab has
+  a current keymap
+
 ## Ownership
 
 - `wl_input_method.c` owns lifecycle transitions
@@ -55,9 +73,40 @@ Do not derive lifecycle truth from forwarded virtual-keyboard output.
 - `startup_guard.*` owns startup-time suppression policy
 - `boundary_bridge.*` owns boundary-handoff policy such as orphan-release
   cleanup and temporary VK modifier carry across deactivation
+- `vk_bridge.*` owns virtual-keyboard health, keymap deadlines, readiness
+  gating, and fail-safe downgrade
 - `xkb_state` owns the logical modifier view
 - `modifier_policy.*` owns effective event-modifier resolution
 - engine implementations own only engine/composition behavior
+
+The status D-Bus surface exports this state, but does not own it. Runtime
+state reported through `RuntimeState` is a read-only snapshot of frontend
+truth, not an independent source of truth.
+
+## Virtual Keyboard State Machine
+
+The Wayland frontend treats virtual-keyboard health as an explicit state
+machine:
+
+- `absent`: no usable virtual keyboard object is currently available
+- `needs_keymap`: a virtual keyboard exists, but the current keyboard-grab
+  generation has not finished the keymap handoff yet
+- `ready`: the current generation has delivered a compositor keymap to the
+  virtual keyboard and forwarding may proceed
+- `broken`: the virtual keyboard path is considered unhealthy and must not be
+  trusted for continued forwarding
+
+Rules:
+
+- grab rebuild must force `needs_keymap`
+- old `ready` state must not survive into a new grab generation
+- `ready` requires a compositor keymap observed in the current generation
+- timeout while in `needs_keymap` is a fail-safe condition
+- `broken` is a fail-safe condition
+
+This is the critical upgrade from "implicit implementation flow" to
+"constrained state machine". The code is no longer allowed to assume that
+keymap arrival will happen eventually and harmlessly.
 
 ## Hard Reset Boundary
 
@@ -78,6 +127,11 @@ On a hard reset:
 
 This is intentionally strict. Old context key sequences are treated as
 untrusted once focus changes.
+
+For virtual-keyboard safety, hard-reset boundaries also imply:
+
+- any stale assumption that vk is `ready` must be discarded
+- the next forwarding generation must earn `ready` again through keymap sync
 
 ## Boundary Bridge Rules
 
@@ -109,12 +163,16 @@ Rules:
 - no key press/release events are processed outside the `active` phase
 - modifier-mask updates may be processed in `activating` to resynchronize held
   modifiers before the lifecycle reaches `active`
+- no virtual-keyboard forwarding happens unless vk is explicitly `ready`
 - repeated `activate` events during an already focused session must not cut off
   a press/release pair that is already in flight
 - no key tracking state survives a hard reset boundary
 - bulk key-state rewrites happen only in lifecycle cleanup code
 - application shortcut press/release must remain symmetric
 - startup suppression must remember why a key was suppressed
+- a rebuilt keyboard grab must not inherit prior-grab keymap health
+- fail-safe paths must prefer releasing the keyboard grab over continuing to
+  run in a partially broken forwarding state
 
 ## Test Expectations
 
@@ -125,9 +183,41 @@ At minimum, timing-model regressions should be covered by:
 - startup guard classification tests
 - boundary bridge policy tests
 - repeat guard tests
+- virtual-keyboard state-machine tests covering `needs_keymap`, `ready`,
+  `broken`, and keymap-timeout transitions
 
 If a bug depends on a concrete sequence, add that sequence to tests in reduced
 form rather than leaving it as a manual repro only.
+
+## Runtime Observability
+
+Current builds export a `RuntimeState` dictionary over the status D-Bus
+surface. This is the preferred live view for timing bugs that only reproduce
+under a real compositor session.
+
+The highest-value fields for timing diagnosis are:
+
+- `lifecycle_phase`
+- `keyboard_grab_active`
+- `virtual_keyboard_state`
+- `virtual_keyboard_has_keymap`
+- `virtual_keyboard_drop_count`
+- `virtual_keyboard_state_age_ms`
+- `virtual_keyboard_keymap_deadline_remaining_ms`
+
+When a bug report says "Typio ran for a while and then input died", compare the
+runtime snapshot against logs. A healthy active session should usually look
+like:
+
+- `lifecycle_phase=active`
+- `keyboard_grab_active=true`
+- `virtual_keyboard_state=ready`
+- `virtual_keyboard_has_keymap=true`
+- `virtual_keyboard_drop_count=0` or stable
+
+If instead you see `keyboard_grab_active=true` with
+`virtual_keyboard_state=needs_keymap`, treat that as a primary clue that the
+grab-to-keymap-to-vk chain did not close properly.
 
 ## Trace Capture
 

@@ -106,6 +106,87 @@ character when XKB can derive one, for example `unicode=U+0061 char='a'`.
 They also carry `seq=...`, `phase=...`, and `topic=...` so related events can
 be correlated in order.
 
+## Wayland Runtime Diagnostics
+
+Current builds expose two complementary diagnostics surfaces:
+
+- continuous logs through stderr, which typically land in `journald` when
+  Typio is managed by `systemd --user`
+- a structured D-Bus `RuntimeState` property on `org.typio.InputMethod1`
+
+Use both. Logs show the event history; `RuntimeState` shows the current
+frontend health snapshot.
+
+Read recent service logs:
+
+```bash
+journalctl --user -u typio -b
+```
+
+Or if Typio is not running as a named user service:
+
+```bash
+journalctl --user -b | rg typio
+```
+
+Read the last fault snapshot from the recent-log dump:
+
+```bash
+find ~/.local/state -name 'typio-recent*.log' 2>/dev/null
+rg -n "Virtual keyboard|fail-safe|keymap timeout|Keyboard grab|Wayland text UI slow|Popup slow render|Rime sync slow" ~/.local/state/typio/typio-recent*.log
+```
+
+Read the live Wayland runtime state:
+
+```bash
+gdbus call --session \
+  --dest org.typio.InputMethod1 \
+  --object-path /org/typio/InputMethod1 \
+  --method org.freedesktop.DBus.Properties.Get \
+  org.typio.InputMethod1 RuntimeState
+```
+
+Watch runtime-state transitions live:
+
+```bash
+gdbus monitor --session \
+  --dest org.typio.InputMethod1 \
+  --object-path /org/typio/InputMethod1
+```
+
+The most useful `RuntimeState` fields are:
+
+- `lifecycle_phase`: should normally settle at `active` while typing
+- `keyboard_grab_active`: whether Typio still owns the Wayland keyboard grab
+- `virtual_keyboard_state`: `ready`, `needs_keymap`, `broken`, or `absent`
+- `virtual_keyboard_has_keymap`: whether a compositor keymap has reached the
+  virtual keyboard path
+- `virtual_keyboard_drop_count`: how many forwarded events were dropped because
+  vk was not ready
+- `virtual_keyboard_state_age_ms`: how long the current vk state has been held
+- `virtual_keyboard_keymap_age_ms`: how long since the last successful keymap
+- `virtual_keyboard_forward_age_ms`: how long since the last successful vk
+  forward
+- `virtual_keyboard_keymap_deadline_remaining_ms`: remaining time before
+  Typio treats a missing keymap as a fail-safe condition
+- `watchdog_armed`: whether the frontend watchdog is currently protecting an
+  active keyboard-grab path
+
+Interpret the most common bad combinations like this:
+
+- `keyboard_grab_active=true` and `virtual_keyboard_state=needs_keymap` for too
+  long: grab rebuild happened, but the compositor-to-vk keymap chain did not
+  finish cleanly
+- `virtual_keyboard_state=broken`: vk has been declared unusable and Typio
+  should fail open instead of continuing to swallow keys
+- increasing `virtual_keyboard_drop_count`: Typio is receiving input it cannot
+  safely forward to the focused client
+
+If you report a timing or freeze problem, include both:
+
+- the relevant `journalctl` or `--verbose` log window
+- a `RuntimeState` snapshot taken while the fault is happening
+
 ## When Input and Tray Both Stop Responding
 
 If Typio still starts but later all Typio-routed input stops working and the
@@ -121,6 +202,33 @@ Reproduce the failure, then keep:
 - whether `Ctrl+Shift+Escape` still exits Typio
 - compositor name and version
 - the last `poll error`, `dispatch failure`, `grab`, `key`, and `im` lines
+
+## Emergency Recovery
+
+The keyboard shortcut emergency exit is an in-band shortcut. It depends on the
+same keyboard event path that may already be degraded during a severe Wayland
+failure. Treat it as a convenience, not as the only recovery path.
+
+Preferred out-of-band recovery paths:
+
+```bash
+gdbus call --session \
+  --dest org.typio.InputMethod1 \
+  --object-path /org/typio/InputMethod1 \
+  --method org.typio.InputMethod1.Stop
+```
+
+```bash
+systemctl --user restart typio
+```
+
+```bash
+pkill -TERM typio
+```
+
+If Typio is holding the keyboard grab but cannot safely forward keys, current
+builds are designed to fail open: they release the grab and stop instead of
+continuing to swallow input.
 
 ## Validate the Binary and Library
 

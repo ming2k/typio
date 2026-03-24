@@ -22,6 +22,7 @@ that meaning.
 - [Configuration](user/configuration.md)
 - [Usage](user/usage.md)
 - [Troubleshooting](user/troubleshooting.md)
+- [Wayland Runtime Diagnostics](user/troubleshooting.md#wayland-runtime-diagnostics)
 
 ## Developer Guides
 

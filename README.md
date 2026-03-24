@@ -102,6 +102,7 @@ Installed artifacts:
 - [Architecture](docs/dev/architecture.md)
 - [Developer Maintenance Manual](docs/dev/maintenance.md)
 - [Developer Timing Model](docs/dev/timing-model.md)
+- [Wayland Runtime Diagnostics](docs/user/troubleshooting.md#wayland-runtime-diagnostics)
 - [Control Surfaces](docs/dev/control-surfaces.md)
 - [Creating Engines](docs/dev/creating-engines.md)
 
@@ -124,7 +125,9 @@ Installed artifacts:
 - Typio also exports a D-Bus status object at `org.typio.InputMethod1` so shells
   such as quickshell can read the active engine, available engines, and
   engine/config state as structured properties instead of inferring everything
-  from tray icon changes.
+  from tray icon changes. Current builds also expose a `RuntimeState` property
+  for live Wayland frontend diagnostics such as lifecycle phase, keyboard-grab
+  activity, virtual-keyboard state, and keymap timing ages.
 - Typio supports a single user-facing config file: `~/.config/typio/typio.toml`.
 - Build-tree plugin testing is supported with `typio --engine-dir <build-dir>/engines`.
 - The pre-`typio-core` prototype API and examples were removed; the maintained public headers now live under `src/lib/typio/`.
