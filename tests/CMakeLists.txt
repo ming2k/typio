@@ -169,6 +169,28 @@ target_include_directories(test_frontend_aux PRIVATE
 )
 add_test(NAME test_frontend_aux COMMAND $<TARGET_FILE:test_frontend_aux>)
 
+add_executable(test_vk_bridge
+    test_vk_bridge.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/vk_bridge.c
+)
+target_include_directories(test_vk_bridge PRIVATE
+    ${CMAKE_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}/src/server/wayland-protocols
+    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/server
+    ${CMAKE_SOURCE_DIR}/src/server/tray
+    ${CMAKE_SOURCE_DIR}/src/server/voice
+    ${CMAKE_SOURCE_DIR}/src/server/wayland
+    ${WAYLAND_CLIENT_INCLUDE_DIRS}
+    ${XKBCOMMON_INCLUDE_DIRS}
+)
+target_link_libraries(test_vk_bridge PRIVATE
+    typio-core
+    ${WAYLAND_CLIENT_LIBRARIES}
+    ${XKBCOMMON_LIBRARIES}
+)
+add_test(NAME test_vk_bridge COMMAND $<TARGET_FILE:test_vk_bridge>)
+
 add_executable(test_identity
     test_identity.c
     ${CMAKE_SOURCE_DIR}/src/server/wayland/identity.c
