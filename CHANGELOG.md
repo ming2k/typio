@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-03-24
+
+### Added
+
+- **Candidate slow-path diagnostics**: added low-noise verbose timing logs for
+  Rime context sync, Wayland text-UI updates, and popup rendering so
+  long-running candidate-list stalls can be attributed to the correct layer.
+
+### Changed
+
+- **Candidate popup redraw fast path**: candidate-list updates now carry a
+  stable content signature so selection-only movement can reuse popup layout
+  and rendering caches without reformatting and re-comparing every candidate
+  row on each highlight change.
+
 ## [2.2.0] - 2026-03-23
 
 ### Added
