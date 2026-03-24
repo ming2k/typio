@@ -61,6 +61,7 @@ struct TypioCandidateList {
     int selected;                   /* Currently selected index */
     bool has_prev;                  /* Has previous page */
     bool has_next;                  /* Has next page */
+    uint64_t content_signature;     /* Stable signature excluding selection */
 };
 
 /**

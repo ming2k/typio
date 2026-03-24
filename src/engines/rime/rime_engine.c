@@ -8,10 +8,12 @@
 #include <rime_api.h>
 
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -28,6 +30,7 @@
  */
 #define TYPIO_RIME_SESSION_KEY "rime.session"
 #define TYPIO_RIME_DEFAULT_SCHEMA ""
+#define TYPIO_RIME_SLOW_SYNC_MS 8
 enum {
     TYPIO_RIME_SHIFT_MASK = (1 << 0),
     TYPIO_RIME_LOCK_MASK = (1 << 1),
@@ -57,6 +60,16 @@ typedef struct TypioRimeSession {
     TypioRimeState *state;
     RimeSessionId session_id;
 } TypioRimeSession;
+
+static uint64_t typio_rime_monotonic_ms(void) {
+    struct timespec ts;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        return 0;
+    }
+
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000L);
+}
 
 static bool typio_rime_is_shift_keysym(uint32_t keysym) {
     return keysym == TYPIO_KEY_Shift_L || keysym == TYPIO_KEY_Shift_R;
@@ -369,11 +382,18 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
     TypioRimeState *state;
     bool has_preedit = false;
     bool has_candidates = false;
+    uint64_t start_ms;
+    uint64_t end_ms;
+    size_t candidate_count = 0;
+    int selected = -1;
+    int page = 0;
+    int total = 0;
 
     if (!session || !ctx || !session->state || !session->state->api) {
         return false;
     }
 
+    start_ms = typio_rime_monotonic_ms();
     state = session->state;
     if (!state->api->get_context ||
         !state->api->get_context(session->session_id, &rime_context)) {
@@ -401,6 +421,12 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
         const int count = rime_context.menu.num_candidates;
         TypioCandidate *items = calloc((size_t)count, sizeof(*items));
         char **labels = calloc((size_t)count, sizeof(*labels));
+        candidate_count = (size_t)count;
+        selected = rime_context.menu.highlighted_candidate_index;
+        page = rime_context.menu.page_no;
+        total = rime_context.menu.page_no * rime_context.menu.page_size +
+                count + (rime_context.menu.is_last_page ? 0 :
+                         rime_context.menu.page_size);
 
         if (items && labels) {
             TypioCandidateList list = {
@@ -408,9 +434,7 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
                 .count = (size_t)count,
                 .page = rime_context.menu.page_no,
                 .page_size = rime_context.menu.page_size,
-                .total = rime_context.menu.page_no * rime_context.menu.page_size +
-                         count + (rime_context.menu.is_last_page ? 0 :
-                                  rime_context.menu.page_size),
+                .total = total,
                 .selected = rime_context.menu.highlighted_candidate_index,
                 .has_prev = rime_context.menu.page_no > 0,
                 .has_next = !rime_context.menu.is_last_page,
@@ -458,6 +482,19 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
 
     if (state->api->free_context) {
         state->api->free_context(&rime_context);
+    }
+
+    end_ms = typio_rime_monotonic_ms();
+    if (end_ms >= start_ms && (end_ms - start_ms) >= TYPIO_RIME_SLOW_SYNC_MS) {
+        typio_log_debug(
+            "Rime sync slow: total=%" PRIu64 "ms session=%u candidates=%zu selected=%d page=%d total_candidates=%d preedit=%s",
+            end_ms - start_ms,
+            (unsigned int)session->session_id,
+            candidate_count,
+            selected,
+            page,
+            total,
+            has_preedit ? "yes" : "no");
     }
 
     return has_preedit || has_candidates;

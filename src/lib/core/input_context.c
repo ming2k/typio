@@ -13,6 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define TYPIO_CANDIDATE_SIGNATURE_OFFSET UINT64_C(1469598103934665603)
+#define TYPIO_CANDIDATE_SIGNATURE_PRIME UINT64_C(1099511628211)
+
 /* Property entry for engine-specific state */
 typedef struct PropertyEntry {
     char *key;
@@ -65,6 +68,60 @@ struct TypioInputContext {
 /* External declaration */
 extern void typio_instance_set_focused_context(TypioInstance *instance,
                                                 TypioInputContext *ctx);
+
+static uint64_t input_context_signature_bytes(uint64_t hash,
+                                              const void *data,
+                                              size_t size) {
+    const unsigned char *bytes = data;
+
+    if (!bytes) {
+        return hash;
+    }
+
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= (uint64_t)bytes[i];
+        hash *= TYPIO_CANDIDATE_SIGNATURE_PRIME;
+    }
+
+    return hash;
+}
+
+static uint64_t input_context_signature_string(uint64_t hash, const char *text) {
+    hash = input_context_signature_bytes(hash, text ? text : "",
+                                         text ? strlen(text) : 0);
+    hash ^= UINT64_C(0xff);
+    hash *= TYPIO_CANDIDATE_SIGNATURE_PRIME;
+    return hash;
+}
+
+static uint64_t input_context_candidate_signature(const TypioCandidateList *candidates) {
+    uint64_t hash = TYPIO_CANDIDATE_SIGNATURE_OFFSET;
+
+    if (!candidates) {
+        return 0;
+    }
+
+    hash = input_context_signature_bytes(hash, &candidates->count,
+                                         sizeof(candidates->count));
+    hash = input_context_signature_bytes(hash, &candidates->page,
+                                         sizeof(candidates->page));
+    hash = input_context_signature_bytes(hash, &candidates->page_size,
+                                         sizeof(candidates->page_size));
+    hash = input_context_signature_bytes(hash, &candidates->total,
+                                         sizeof(candidates->total));
+    hash = input_context_signature_bytes(hash, &candidates->has_prev,
+                                         sizeof(candidates->has_prev));
+    hash = input_context_signature_bytes(hash, &candidates->has_next,
+                                         sizeof(candidates->has_next));
+
+    for (size_t i = 0; i < candidates->count; ++i) {
+        hash = input_context_signature_string(hash, candidates->candidates[i].text);
+        hash = input_context_signature_string(hash, candidates->candidates[i].comment);
+        hash = input_context_signature_string(hash, candidates->candidates[i].label);
+    }
+
+    return hash;
+}
 
 TypioInputContext *typio_input_context_new(TypioInstance *instance) {
     TypioInputContext *ctx = calloc(1, sizeof(TypioInputContext));
@@ -394,6 +451,7 @@ void typio_input_context_set_candidates(TypioInputContext *ctx,
     ctx->candidates->selected = candidates->selected;
     ctx->candidates->has_prev = candidates->has_prev;
     ctx->candidates->has_next = candidates->has_next;
+    ctx->candidates->content_signature = input_context_candidate_signature(candidates);
 
     /* Notify callback */
     if (ctx->candidate_callback) {
@@ -426,6 +484,7 @@ void typio_input_context_clear_candidates(TypioInputContext *ctx) {
     ctx->candidates->selected = -1;
     ctx->candidates->has_prev = false;
     ctx->candidates->has_next = false;
+    ctx->candidates->content_signature = 0;
 
     /* Notify callback */
     if (ctx->candidate_callback) {

@@ -159,6 +159,47 @@ TEST(context_properties) {
     typio_instance_free(instance);
 }
 
+TEST(candidate_content_signature_ignores_selection_only_changes) {
+    TypioInstance *instance = typio_instance_new();
+    ASSERT_NOT_NULL(instance);
+    ASSERT_EQ(typio_instance_init(instance), TYPIO_OK);
+
+    TypioInputContext *ctx = typio_instance_create_context(instance);
+    ASSERT_NOT_NULL(ctx);
+
+    TypioCandidate items_a[] = {
+        {.text = "ni", .comment = "you", .label = "1"},
+        {.text = "hao", .comment = "good", .label = "2"},
+    };
+    TypioCandidateList list_a = {
+        .candidates = items_a,
+        .count = 2,
+        .page = 0,
+        .page_size = 5,
+        .total = 2,
+        .selected = 0,
+    };
+
+    typio_input_context_set_candidates(ctx, &list_a);
+    const TypioCandidateList *stored = typio_input_context_get_candidates(ctx);
+    ASSERT_NOT_NULL(stored);
+    uint64_t signature_a = stored->content_signature;
+    ASSERT_NE(signature_a, 0);
+
+    list_a.selected = 1;
+    typio_input_context_set_candidates(ctx, &list_a);
+    stored = typio_input_context_get_candidates(ctx);
+    ASSERT_EQ(signature_a, stored->content_signature);
+
+    items_a[1].comment = "hello";
+    typio_input_context_set_candidates(ctx, &list_a);
+    stored = typio_input_context_get_candidates(ctx);
+    ASSERT_NE(signature_a, stored->content_signature);
+
+    typio_instance_destroy_context(instance, ctx);
+    typio_instance_free(instance);
+}
+
 /* Test: Built-in basic engine commits printable keys */
 TEST(basic_engine_commit) {
     TypioInstance *instance = typio_instance_new();
@@ -286,6 +327,7 @@ int main(void) {
     run_test_context_create();
     run_test_context_focus();
     run_test_context_properties();
+    run_test_candidate_content_signature_ignores_selection_only_changes();
     run_test_basic_engine_commit();
     run_test_basic_engine_skips_ctrl_shortcuts();
     run_test_key_event();

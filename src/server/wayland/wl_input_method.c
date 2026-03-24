@@ -5,6 +5,7 @@
 
 #include "wl_frontend_internal.h"
 #include "identity.h"
+#include "monotonic_time.h"
 #include "preedit_format.h"
 #include "wl_trace.h"
 #include "typio/typio.h"
@@ -13,6 +14,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+
+#define TYPIO_WL_UI_SLOW_UPDATE_MS 8
 
 /* Forward declarations for callbacks */
 static void on_commit_callback(TypioInputContext *ctx, const char *text,
@@ -522,15 +525,23 @@ static void on_candidate_callback(TypioInputContext *ctx,
 
 static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *ctx) {
     const TypioPreedit *preedit;
+    const TypioCandidateList *candidate_list;
     char *plain_text;
     int cursor_pos = -1;
     bool preedit_changed;
+    uint64_t start_ms;
+    uint64_t popup_done_ms;
+    uint64_t end_ms;
+    uint64_t popup_ms;
+    uint64_t total_ms;
 
     if (!session || !ctx) {
         return;
     }
 
+    start_ms = typio_wl_monotonic_ms();
     preedit = typio_input_context_get_preedit(ctx);
+    candidate_list = typio_input_context_get_candidates(ctx);
     plain_text = typio_wl_build_plain_preedit(preedit, &cursor_pos);
 
     /* Detect whether the preedit actually changed compared to what we
@@ -545,6 +556,7 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
 
     /* Always update the popup (lightweight, separate surface). */
     typio_wl_popup_update(session->frontend, ctx);
+    popup_done_ms = typio_wl_monotonic_ms();
 
     if (preedit_changed) {
         if (!plain_text) {
@@ -557,6 +569,20 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
         free(session->last_preedit_text);
         session->last_preedit_text = plain_text ? typio_strdup(new_text) : nullptr;
         session->last_preedit_cursor = cursor_pos;
+    }
+
+    end_ms = typio_wl_monotonic_ms();
+    popup_ms = (popup_done_ms >= start_ms) ? (popup_done_ms - start_ms) : 0;
+    total_ms = (end_ms >= start_ms) ? (end_ms - start_ms) : 0;
+    if (total_ms >= TYPIO_WL_UI_SLOW_UPDATE_MS) {
+        typio_log_debug(
+            "Wayland text UI slow: total=%" PRIu64 "ms popup=%" PRIu64 "ms preedit_changed=%s candidates=%zu selected=%d signature=%" PRIu64,
+            total_ms,
+            popup_ms,
+            preedit_changed ? "yes" : "no",
+            candidate_list ? candidate_list->count : 0,
+            candidate_list ? candidate_list->selected : -1,
+            candidate_list ? candidate_list->content_signature : 0);
     }
 
     free(plain_text);

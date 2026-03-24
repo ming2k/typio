@@ -5,6 +5,7 @@
 
 
 #include "wl_frontend_internal.h"
+#include "monotonic_time.h"
 #include "preedit_format.h"
 #include "typio/config.h"
 #include "typio/instance.h"
@@ -32,6 +33,7 @@
 #define TYPIO_POPUP_SECTION_GAP 4
 #define TYPIO_POPUP_MIN_WIDTH 120
 #define TYPIO_POPUP_MAX_WIDTH 4096
+#define TYPIO_POPUP_SLOW_RENDER_MS 8
 
 typedef enum TypioPopupThemeMode {
     TYPIO_POPUP_THEME_AUTO = 0,
@@ -90,6 +92,7 @@ typedef struct TypioPopupCache {
     TypioPopupLine *lines;
     size_t line_count;
     int selected;
+    uint64_t content_signature;
     char *preedit_text;
     int preedit_width;
     int preedit_height;
@@ -657,8 +660,20 @@ static void popup_cache_invalidate(TypioPopupCache *cache) {
 static bool popup_cache_matches(const TypioPopupCache *cache,
                                 const TypioCandidateList *candidates,
                                 const char *preedit_text,
-                                int scale) {
+                                int scale,
+                                const TypioPopupRenderConfig *config,
+                                const TypioPopupPalette *palette) {
     if (!cache->valid || cache->line_count != candidates->count) {
+        return false;
+    }
+
+    if (cache->content_signature != candidates->content_signature ||
+        cache->palette != palette ||
+        cache->config.theme_mode != config->theme_mode ||
+        cache->config.layout_mode != config->layout_mode ||
+        cache->config.font_size != config->font_size ||
+        strcmp(cache->config.font_desc, config->font_desc) != 0 ||
+        strcmp(cache->config.page_font_desc, config->page_font_desc) != 0) {
         return false;
     }
 
@@ -674,20 +689,6 @@ static bool popup_cache_matches(const TypioPopupCache *cache,
     const char *new_pre = preedit_text ? preedit_text : "";
     if (strcmp(old_pre, new_pre) != 0) {
         return false;
-    }
-
-    /* Compare each candidate text against the cached formatted string. */
-    for (size_t i = 0; i < candidates->count; ++i) {
-        char *formatted = popup_format_candidate(&candidates->candidates[i], i);
-        if (!formatted || !cache->lines[i].text) {
-            free(formatted);
-            return false;
-        }
-        bool same = strcmp(formatted, cache->lines[i].text) == 0;
-        free(formatted);
-        if (!same) {
-            return false;
-        }
     }
 
     return true;
@@ -819,6 +820,7 @@ static bool popup_draw_and_commit(TypioWlPopup *popup,
 static void popup_cache_store(TypioWlPopup *popup,
                               const TypioPopupLine *lines, size_t line_count,
                               int selected,
+                              uint64_t content_signature,
                               const char *preedit_text,
                               int preedit_width, int preedit_height,
                               int width, int height,
@@ -844,6 +846,7 @@ static void popup_cache_store(TypioWlPopup *popup,
 
     cache->line_count = line_count;
     cache->selected = selected;
+    cache->content_signature = content_signature;
     cache->preedit_text = preedit_text ? strdup(preedit_text) : nullptr;
     cache->preedit_width = preedit_width;
     cache->preedit_height = preedit_height;
@@ -873,23 +876,32 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
     int width;
     int height;
     int scale;
+    uint64_t render_start_ms;
+    uint64_t render_end_ms;
+    bool selection_only_fast_path = false;
 
     if (!popup || !popup->surface || !candidates || candidates->count == 0) {
         return false;
     }
+
+    render_start_ms = typio_wl_monotonic_ms();
 
     if (preedit && preedit->segment_count > 0) {
         preedit_text = typio_wl_build_plain_preedit(preedit, nullptr);
     }
 
     scale = popup_render_scale(popup);
+    popup_load_render_config(popup, &render_config);
+    palette = popup_resolve_palette(render_config.theme_mode);
 
     /* Fast path: if only the selected candidate changed, reuse cached
      * measurements and skip the expensive Pango text-measurement phase. */
     if (popup->cache.valid &&
-        popup_cache_matches(&popup->cache, candidates, preedit_text, scale) &&
+        popup_cache_matches(&popup->cache, candidates, preedit_text, scale,
+                            &render_config, palette) &&
         popup->cache.selected != candidates->selected) {
         TypioPopupCache *cache = &popup->cache;
+        selection_only_fast_path = true;
 
         /* Update selection flags in the cached lines. */
         for (size_t i = 0; i < cache->line_count; ++i) {
@@ -902,15 +914,26 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
                                         cache->preedit_text, cache->preedit_height,
                                         cache->width, cache->height,
                                         &cache->config, cache->palette);
+        render_end_ms = typio_wl_monotonic_ms();
         free(preedit_text);
         if (ok) {
             typio_log(TYPIO_LOG_DEBUG, "Popup selection-only fast redraw");
         }
+        if (ok && render_end_ms >= render_start_ms &&
+            (render_end_ms - render_start_ms) >= TYPIO_POPUP_SLOW_RENDER_MS) {
+            typio_log_debug(
+                "Popup slow render: total=%" PRIu64 "ms fast_path=%s candidates=%zu selected=%d width=%d height=%d scale=%d signature=%" PRIu64,
+                render_end_ms - render_start_ms,
+                selection_only_fast_path ? "yes" : "no",
+                candidates->count,
+                candidates->selected,
+                cache->width,
+                cache->height,
+                scale,
+                candidates->content_signature);
+        }
         return ok;
     }
-
-    popup_load_render_config(popup, &render_config);
-    palette = popup_resolve_palette(render_config.theme_mode);
 
     line_count = candidates->count;
     lines = calloc(line_count, sizeof(*lines));
@@ -997,11 +1020,27 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
     bool ok = popup_draw_and_commit(popup, lines, line_count,
                                     preedit_text, preedit_height,
                                     width, height, &render_config, palette);
+    render_end_ms = typio_wl_monotonic_ms();
 
     if (ok) {
         popup_cache_store(popup, lines, line_count, candidates->selected,
+                          candidates->content_signature,
                           preedit_text, preedit_width, preedit_height,
                           width, height, &render_config, palette);
+    }
+
+    if (ok && render_end_ms >= render_start_ms &&
+        (render_end_ms - render_start_ms) >= TYPIO_POPUP_SLOW_RENDER_MS) {
+        typio_log_debug(
+            "Popup slow render: total=%" PRIu64 "ms fast_path=%s candidates=%zu selected=%d width=%d height=%d scale=%d signature=%" PRIu64,
+            render_end_ms - render_start_ms,
+            selection_only_fast_path ? "yes" : "no",
+            candidates->count,
+            candidates->selected,
+            width,
+            height,
+            scale,
+            candidates->content_signature);
     }
 
     popup_free_lines(lines, line_count);
