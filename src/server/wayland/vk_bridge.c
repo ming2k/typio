@@ -18,6 +18,23 @@
 #define TYPIO_WL_VK_NEEDS_KEYMAP_DROP_LIMIT 32
 #define TYPIO_WL_VK_KEYMAP_TIMEOUT_MS 1500
 
+static void typio_wl_vk_mark_forward_progress(TypioWlFrontend *frontend) {
+    if (!frontend) {
+        return;
+    }
+
+    frontend->virtual_keyboard_last_forward_ms = typio_wl_monotonic_ms();
+    frontend->active_generation_vk_dirty = true;
+}
+
+static bool typio_wl_vk_should_fail_safe(TypioWlFrontend *frontend,
+                                         uint64_t drops) {
+    return frontend &&
+           (frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_BROKEN ||
+            (frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_NEEDS_KEYMAP &&
+             drops >= TYPIO_WL_VK_NEEDS_KEYMAP_DROP_LIMIT));
+}
+
 const char *typio_wl_vk_state_name(TypioWlVirtualKeyboardState state) {
     switch (state) {
     case TYPIO_WL_VK_STATE_ABSENT:
@@ -143,9 +160,7 @@ bool typio_wl_vk_is_ready(TypioWlFrontend *frontend,
                   drops);
     }
 
-    if (frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_BROKEN ||
-        (frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_NEEDS_KEYMAP &&
-         drops >= TYPIO_WL_VK_NEEDS_KEYMAP_DROP_LIMIT)) {
+    if (typio_wl_vk_should_fail_safe(frontend, drops)) {
         typio_wl_vk_trigger_fail_safe(frontend, operation, drops);
     }
 
@@ -192,8 +207,7 @@ void typio_wl_vk_forward_key(struct TypioWlKeyboard *keyboard,
     if (!frontend || !typio_wl_vk_is_ready(frontend, "key"))
         return;
 
-    frontend->virtual_keyboard_last_forward_ms = typio_wl_monotonic_ms();
-    frontend->active_generation_vk_dirty = true;
+    typio_wl_vk_mark_forward_progress(frontend);
     if (key < TYPIO_WL_MAX_TRACKED_KEYS &&
         frontend->key_states[key] == TYPIO_KEY_RELEASED_PENDING) {
         reason = "synthetic_release";
@@ -222,8 +236,7 @@ void typio_wl_vk_forward_modifiers(struct TypioWlKeyboard *keyboard,
     if (!frontend || !typio_wl_vk_is_ready(frontend, "modifier update"))
         return;
 
-    frontend->virtual_keyboard_last_forward_ms = typio_wl_monotonic_ms();
-    frontend->active_generation_vk_dirty = true;
+    typio_wl_vk_mark_forward_progress(frontend);
     typio_wl_trace(frontend,
                    "vk_modifiers",
                    "depressed=0x%x latched=0x%x locked=0x%x group=%u",
@@ -241,8 +254,7 @@ void typio_wl_vk_forward_modifier_state(TypioWlFrontend *frontend,
     if (!frontend || !typio_wl_vk_is_ready(frontend, "modifier carry"))
         return;
 
-    frontend->virtual_keyboard_last_forward_ms = typio_wl_monotonic_ms();
-    frontend->active_generation_vk_dirty = true;
+    typio_wl_vk_mark_forward_progress(frontend);
     typio_wl_trace(frontend,
                    "vk_modifiers",
                    "depressed=0x%x latched=0x%x locked=0x%x group=%u",
@@ -294,7 +306,7 @@ void typio_wl_vk_reset_modifiers(TypioWlFrontend *frontend) {
     if (!frontend || !typio_wl_vk_is_ready(frontend, "modifier reset"))
         return;
 
-    frontend->virtual_keyboard_last_forward_ms = typio_wl_monotonic_ms();
+    typio_wl_vk_mark_forward_progress(frontend);
     typio_wl_trace(frontend,
                    "vk_reset_modifiers",
                    "depressed=0x0 latched=0x0 locked=0x0 group=0");

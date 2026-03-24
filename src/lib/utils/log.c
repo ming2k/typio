@@ -77,6 +77,7 @@ static char *build_recent_archive_path(const char *path) {
     char stamp[64];
     int pid;
     char *archive_path;
+    size_t archive_size;
     int written;
 
     if (!path || !*path) {
@@ -98,21 +99,19 @@ static char *build_recent_archive_path(const char *path) {
     }
 
     pid = (int)getpid();
-    archive_path = calloc(dir_len + stem_len + strlen("-") + strlen(stamp) +
-                              strlen("-") + 16 + strlen(".log") + 1,
-                          sizeof(char));
+    archive_size = dir_len + stem_len + strlen("-") + strlen(stamp) +
+                   strlen("-") + 16 + strlen(".log") + 1;
+    archive_path = calloc(archive_size, sizeof(char));
     if (!archive_path) {
         return nullptr;
     }
 
-    written = snprintf(archive_path,
-                       dir_len + stem_len + strlen("-") + strlen(stamp) +
-                           strlen("-") + 16 + strlen(".log") + 1,
+    written = snprintf(archive_path, archive_size,
                        "%.*s%.*s-%s-%d.log",
                        (int)dir_len, path,
                        (int)stem_len, name,
                        stamp, pid);
-    if (written <= 0) {
+    if (written <= 0 || (size_t)written >= archive_size) {
         free(archive_path);
         return nullptr;
     }

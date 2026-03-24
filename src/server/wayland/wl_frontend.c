@@ -65,6 +65,81 @@ static const struct wl_output_listener output_listener = {
 #define TYPIO_WL_WATCHDOG_TIMEOUT_MS 5000
 #define TYPIO_WL_WATCHDOG_POLL_US 200000
 
+static void *frontend_watchdog_thread_main(void *data);
+
+static void frontend_log_shortcuts(TypioWlFrontend *frontend,
+                                   const char *prefix) {
+    char *switch_engine;
+    char *emergency_exit;
+    char *voice_ptt;
+
+    if (!frontend || !prefix) {
+        return;
+    }
+
+    switch_engine = typio_shortcut_format(&frontend->shortcuts.switch_engine);
+    emergency_exit = typio_shortcut_format(&frontend->shortcuts.emergency_exit);
+    voice_ptt = typio_shortcut_format(&frontend->shortcuts.voice_ptt);
+    typio_log(TYPIO_LOG_INFO,
+              "%s switch_engine=%s emergency_exit=%s voice_ptt=%s",
+              prefix,
+              switch_engine ? switch_engine : "(none)",
+              emergency_exit ? emergency_exit : "(none)",
+              voice_ptt ? voice_ptt : "(none)");
+    free(switch_engine);
+    free(emergency_exit);
+    free(voice_ptt);
+}
+
+static void frontend_watchdog_heartbeat(TypioWlFrontend *frontend) {
+    if (!frontend) {
+        return;
+    }
+
+    atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
+}
+
+static void frontend_watchdog_start(TypioWlFrontend *frontend) {
+    if (!frontend || frontend->watchdog_thread_started) {
+        return;
+    }
+
+    frontend_watchdog_heartbeat(frontend);
+    atomic_store(&frontend->watchdog_stop, false);
+    atomic_store(&frontend->watchdog_armed, false);
+    if (pthread_create(&frontend->watchdog_thread, nullptr,
+                       frontend_watchdog_thread_main, frontend) == 0) {
+        frontend->watchdog_thread_started = true;
+    } else {
+        typio_log(TYPIO_LOG_WARNING, "Failed to start Wayland watchdog thread");
+    }
+}
+
+static void frontend_watchdog_stop(TypioWlFrontend *frontend) {
+    if (!frontend || !frontend->watchdog_thread_started) {
+        return;
+    }
+
+    atomic_store(&frontend->watchdog_armed, false);
+    atomic_store(&frontend->watchdog_stop, true);
+    pthread_join(frontend->watchdog_thread, nullptr);
+    frontend->watchdog_thread_started = false;
+}
+
+static TypioWlFrontend *frontend_init_failed(TypioWlFrontend *frontend,
+                                             const char *message) {
+    if (!frontend) {
+        return nullptr;
+    }
+
+    if (message) {
+        snprintf(frontend->error_msg, sizeof(frontend->error_msg), "%s", message);
+    }
+
+    typio_wl_frontend_destroy(frontend);
+    return nullptr;
+}
+
 static void *frontend_watchdog_thread_main(void *data) {
     TypioWlFrontend *frontend = data;
 
@@ -131,17 +206,7 @@ static void frontend_refresh_runtime_config(TypioWlFrontend *frontend) {
 
     /* 2. Shortcuts */
     typio_shortcut_config_load(&frontend->shortcuts, config);
-    {
-        char *sw = typio_shortcut_format(&frontend->shortcuts.switch_engine);
-        char *ee = typio_shortcut_format(&frontend->shortcuts.emergency_exit);
-        char *ptt = typio_shortcut_format(&frontend->shortcuts.voice_ptt);
-        typio_log(TYPIO_LOG_INFO,
-                  "Config reload: shortcuts switch_engine=%s emergency_exit=%s voice_ptt=%s",
-                  sw ? sw : "(none)", ee ? ee : "(none)", ptt ? ptt : "(none)");
-        free(sw);
-        free(ee);
-        free(ptt);
-    }
+    frontend_log_shortcuts(frontend, "Config reload: shortcuts");
 
 #ifdef HAVE_VOICE
     {
@@ -266,30 +331,11 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
     }
 
     frontend->instance = instance;
-    atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
-    atomic_store(&frontend->watchdog_stop, false);
-    atomic_store(&frontend->watchdog_armed, false);
-    if (pthread_create(&frontend->watchdog_thread, nullptr,
-                       frontend_watchdog_thread_main, frontend) == 0) {
-        frontend->watchdog_thread_started = true;
-    } else {
-        typio_log(TYPIO_LOG_WARNING, "Failed to start Wayland watchdog thread");
-    }
 
     /* Load shortcut bindings from config */
     typio_shortcut_config_load(&frontend->shortcuts,
                                typio_instance_get_config(instance));
-    {
-        char *se = typio_shortcut_format(&frontend->shortcuts.switch_engine);
-        char *ee = typio_shortcut_format(&frontend->shortcuts.emergency_exit);
-        char *ptt = typio_shortcut_format(&frontend->shortcuts.voice_ptt);
-        typio_log(TYPIO_LOG_INFO,
-                  "Shortcuts: switch_engine=%s, emergency_exit=%s, voice_ptt=%s",
-                  se ? se : "(none)", ee ? ee : "(none)", ptt ? ptt : "(none)");
-        free(se);
-        free(ee);
-        free(ptt);
-    }
+    frontend_log_shortcuts(frontend, "Shortcuts:");
 
     /* Connect to Wayland display */
     const char *display_name = config ? config->display_name : nullptr;
@@ -299,8 +345,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
         snprintf(frontend->error_msg, sizeof(frontend->error_msg),
                  "Failed to connect to Wayland display: %s",
                  display_name ? display_name : "(default)");
-        free(frontend);
-        return nullptr;
+        return frontend_init_failed(frontend, frontend->error_msg);
     }
 
     typio_log(TYPIO_LOG_INFO, "Connected to Wayland display");
@@ -309,11 +354,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
     frontend->registry = wl_display_get_registry(frontend->display);
     if (!frontend->registry) {
         typio_log(TYPIO_LOG_ERROR, "Failed to get Wayland registry");
-        snprintf(frontend->error_msg, sizeof(frontend->error_msg),
-                 "Failed to get Wayland registry");
-        wl_display_disconnect(frontend->display);
-        free(frontend);
-        return nullptr;
+        return frontend_init_failed(frontend, "Failed to get Wayland registry");
     }
 
     wl_registry_add_listener(frontend->registry, &registry_listener, frontend);
@@ -321,38 +362,20 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
     /* Roundtrip to get globals */
     if (wl_display_roundtrip(frontend->display) < 0) {
         typio_log(TYPIO_LOG_ERROR, "Wayland roundtrip failed");
-        snprintf(frontend->error_msg, sizeof(frontend->error_msg),
-                 "Wayland roundtrip failed");
-        wl_registry_destroy(frontend->registry);
-        wl_display_disconnect(frontend->display);
-        free(frontend);
-        return nullptr;
+        return frontend_init_failed(frontend, "Wayland roundtrip failed");
     }
 
     /* Verify we have required interfaces */
     if (!frontend->im_manager) {
         typio_log(TYPIO_LOG_ERROR,
                   "Compositor does not support zwp_input_method_manager_v2");
-        snprintf(frontend->error_msg, sizeof(frontend->error_msg),
-                 "Session does not provide the required Wayland input-method/text-input protocol stack");
-        if (frontend->seat) {
-            wl_seat_destroy(frontend->seat);
-        }
-        wl_registry_destroy(frontend->registry);
-        wl_display_disconnect(frontend->display);
-        free(frontend);
-        return nullptr;
+        return frontend_init_failed(frontend,
+                                    "Session does not provide the required Wayland input-method/text-input protocol stack");
     }
 
     if (!frontend->seat) {
         typio_log(TYPIO_LOG_ERROR, "No seat available");
-        snprintf(frontend->error_msg, sizeof(frontend->error_msg),
-                 "No seat available");
-        zwp_input_method_manager_v2_destroy(frontend->im_manager);
-        wl_registry_destroy(frontend->registry);
-        wl_display_disconnect(frontend->display);
-        free(frontend);
-        return nullptr;
+        return frontend_init_failed(frontend, "No seat available");
     }
 
     if (!frontend->compositor || !frontend->shm) {
@@ -365,14 +388,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
         frontend->im_manager, frontend->seat);
     if (!frontend->input_method) {
         typio_log(TYPIO_LOG_ERROR, "Failed to create input method");
-        snprintf(frontend->error_msg, sizeof(frontend->error_msg),
-                 "Failed to create input method");
-        wl_seat_destroy(frontend->seat);
-        zwp_input_method_manager_v2_destroy(frontend->im_manager);
-        wl_registry_destroy(frontend->registry);
-        wl_display_disconnect(frontend->display);
-        free(frontend);
-        return nullptr;
+        return frontend_init_failed(frontend, "Failed to create input method");
     }
 
     /* Set up input method listener */
@@ -469,8 +485,9 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
         return -1;
     }
 
+    frontend_watchdog_start(frontend);
     frontend->running = true;
-    atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
+    frontend_watchdog_heartbeat(frontend);
     typio_log(TYPIO_LOG_INFO, "Starting Wayland event loop");
 
     int display_fd = wl_display_get_fd(frontend->display);
@@ -493,11 +510,11 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 #endif
 
     while (frontend->running) {
-        atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
+        frontend_watchdog_heartbeat(frontend);
         /* Flush pending requests */
         while (wl_display_prepare_read(frontend->display) != 0) {
             wl_display_dispatch_pending(frontend->display);
-            atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
+            frontend_watchdog_heartbeat(frontend);
         }
 
         if (wl_display_flush(frontend->display) < 0 && errno != EAGAIN) {
@@ -581,7 +598,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             }
             wl_display_dispatch_pending(frontend->display);
             frontend->dispatch_epoch++;
-            atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
+            frontend_watchdog_heartbeat(frontend);
         } else {
             wl_display_cancel_read(frontend->display);
         }
@@ -705,7 +722,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             break;
         }
 
-        atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
+        frontend_watchdog_heartbeat(frontend);
     }
 
     typio_log(TYPIO_LOG_INFO, "Wayland event loop stopped");
@@ -728,12 +745,7 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
     }
 
     frontend->running = false;
-    atomic_store(&frontend->watchdog_armed, false);
-    atomic_store(&frontend->watchdog_stop, true);
-    if (frontend->watchdog_thread_started) {
-        pthread_join(frontend->watchdog_thread, nullptr);
-        frontend->watchdog_thread_started = false;
-    }
+    frontend_watchdog_stop(frontend);
 
     /* Clean up session */
     if (frontend->session) {
