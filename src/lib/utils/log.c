@@ -4,12 +4,14 @@
  */
 
 #include "log.h"
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <time.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static TypioLogLevel g_log_level = TYPIO_LOG_INFO;
 static TypioLogCallback g_log_callback = nullptr;
@@ -64,6 +66,60 @@ static void store_recent_log_line(const char *line) {
     snprintf(g_recent_logs[index], sizeof(g_recent_logs[index]), "%s", line);
 }
 
+static char *build_recent_archive_path(const char *path) {
+    const char *slash;
+    const char *name;
+    size_t dir_len;
+    size_t stem_len;
+    const char *dot;
+    time_t now;
+    struct tm tm_info;
+    char stamp[64];
+    int pid;
+    char *archive_path;
+    int written;
+
+    if (!path || !*path) {
+        return nullptr;
+    }
+
+    slash = strrchr(path, '/');
+    name = slash ? slash + 1 : path;
+    dir_len = slash ? (size_t)(slash - path + 1) : 0;
+    dot = strrchr(name, '.');
+    stem_len = dot && dot > name ? (size_t)(dot - name) : strlen(name);
+
+    now = time(nullptr);
+    if (localtime_r(&now, &tm_info) == nullptr) {
+        return nullptr;
+    }
+    if (strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &tm_info) == 0) {
+        return nullptr;
+    }
+
+    pid = (int)getpid();
+    archive_path = calloc(dir_len + stem_len + strlen("-") + strlen(stamp) +
+                              strlen("-") + 16 + strlen(".log") + 1,
+                          sizeof(char));
+    if (!archive_path) {
+        return nullptr;
+    }
+
+    written = snprintf(archive_path,
+                       dir_len + stem_len + strlen("-") + strlen(stamp) +
+                           strlen("-") + 16 + strlen(".log") + 1,
+                       "%.*s%.*s-%s-%d.log",
+                       (int)dir_len, path,
+                       (int)stem_len, name,
+                       stamp, pid);
+    if (written <= 0) {
+        free(archive_path);
+        return nullptr;
+    }
+
+    return archive_path;
+}
+
 bool typio_log_dump_recent(const char *path) {
     FILE *fp;
 
@@ -85,15 +141,30 @@ bool typio_log_dump_recent(const char *path) {
 
 bool typio_log_dump_recent_to_configured_path(const char *reason) {
     bool ok;
+    bool archive_ok = false;
+    char *archive_path = nullptr;
 
     if (!g_recent_dump_path || !*g_recent_dump_path)
         return false;
 
     ok = typio_log_dump_recent(g_recent_dump_path);
-    if (ok && reason && *reason) {
-        fprintf(stderr, "[typio] [INFO] Dumped recent logs to %s (%s)\n",
-                g_recent_dump_path, reason);
+    if (ok) {
+        archive_path = build_recent_archive_path(g_recent_dump_path);
+        if (archive_path) {
+            archive_ok = typio_log_dump_recent(archive_path);
+        }
     }
+    if (ok && reason && *reason) {
+        if (archive_ok && archive_path) {
+            fprintf(stderr,
+                    "[typio] [INFO] Dumped recent logs to %s and %s (%s)\n",
+                    g_recent_dump_path, archive_path, reason);
+        } else {
+            fprintf(stderr, "[typio] [INFO] Dumped recent logs to %s (%s)\n",
+                    g_recent_dump_path, reason);
+        }
+    }
+    free(archive_path);
     return ok;
 }
 

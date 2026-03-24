@@ -213,6 +213,9 @@ void typio_tray_update_engine(TypioTray *tray, const char *engine_name, bool is_
 TypioStatusBus *typio_status_bus_new([[maybe_unused]] TypioInstance *instance) { return NULL; }
 void typio_status_bus_destroy([[maybe_unused]] TypioStatusBus *bus) {}
 void typio_status_bus_emit_properties_changed([[maybe_unused]] TypioStatusBus *bus) {}
+void typio_status_bus_set_stop_callback([[maybe_unused]] TypioStatusBus *bus,
+                                        [[maybe_unused]] TypioStatusBusStopCallback callback,
+                                        [[maybe_unused]] void *user_data) {}
 #endif
 
 #ifdef HAVE_WAYLAND
