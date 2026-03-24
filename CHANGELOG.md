@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-03-24
+
+### Added
+
+- **Wayland runtime state export**: the status D-Bus surface now exposes a
+  structured `RuntimeState` snapshot for the Wayland frontend, covering
+  lifecycle phase, keyboard-grab activity, virtual-keyboard health, watchdog
+  state, and key timing ages so runtime failures can be diagnosed without
+  reconstructing state from text logs alone.
+- **Runtime-state change notifications**: virtual-keyboard state changes,
+  keymap arrival, and keyboard-grab create/release events now emit
+  `PropertiesChanged`, making `gdbus monitor` and other status-bus clients
+  useful for live diagnosis.
+
+### Changed
+
+- **Wayland lifecycle cleanup**: reduced duplicate watchdog, shortcut logging,
+  virtual-keyboard progress, and frontend init-failure logic so the most
+  failure-sensitive Wayland paths are easier to reason about and maintain.
+
+### Fixed
+
+- **Status-bus property completeness**: `EngineDisplayNames` is now included in
+  `GetAll`, introspection output, and property-change emission.
+- **D-Bus string-map encoding**: fixed the `a{ss}` status-bus dictionary
+  encoding path so `EngineDisplayNames` and related consumers no longer rely on
+  invalid variant-wrapped payloads.
+
 ## [2.2.1] - 2026-03-24
 
 ### Added
