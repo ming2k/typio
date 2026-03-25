@@ -116,6 +116,27 @@ void typio_wl_vk_expect_keymap(TypioWlFrontend *frontend,
     typio_wl_frontend_emit_runtime_state_changed(frontend);
 }
 
+void typio_wl_vk_cancel_keymap_wait(TypioWlFrontend *frontend,
+                                    const char *reason) {
+    if (!frontend ||
+        frontend->virtual_keyboard_state != TYPIO_WL_VK_STATE_NEEDS_KEYMAP) {
+        return;
+    }
+
+    if (frontend->virtual_keyboard_last_keymap_ms != 0) {
+        typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_READY,
+                              reason ? reason : "keymap wait cancelled");
+        return;
+    }
+
+    frontend->virtual_keyboard_keymap_deadline_ms = 0;
+    typio_wl_trace(frontend,
+                   "vk_state",
+                   "awaiting=keymap timeout_ms=cancelled reason=%s",
+                   reason ? reason : "keymap wait cancelled");
+    typio_wl_frontend_emit_runtime_state_changed(frontend);
+}
+
 static void typio_wl_vk_trigger_fail_safe(TypioWlFrontend *frontend,
                                           const char *operation,
                                           uint64_t drops) {
@@ -173,6 +194,7 @@ void typio_wl_vk_health_check(TypioWlFrontend *frontend) {
     uint64_t now_ms;
 
     if (!frontend || !frontend->running ||
+        !frontend->keyboard || !frontend->keyboard->grab ||
         frontend->virtual_keyboard_state != TYPIO_WL_VK_STATE_NEEDS_KEYMAP ||
         frontend->virtual_keyboard_keymap_deadline_ms == 0) {
         return;

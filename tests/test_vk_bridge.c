@@ -147,6 +147,38 @@ TEST(keymap_timeout_triggers_fail_safe) {
     ASSERT(release_count == 1);
 }
 
+TEST(cancelling_keymap_wait_restores_ready_state_after_grab_teardown) {
+    TypioWlFrontend frontend;
+    TypioWlKeyboard keyboard;
+
+    init_frontend(&frontend, &keyboard);
+    frontend.virtual_keyboard_state = TYPIO_WL_VK_STATE_NEEDS_KEYMAP;
+    frontend.virtual_keyboard_keymap_deadline_ms = 1234;
+    frontend.virtual_keyboard_last_keymap_ms = 42;
+
+    typio_wl_vk_cancel_keymap_wait(&frontend, "test");
+
+    ASSERT(frontend.virtual_keyboard_state == TYPIO_WL_VK_STATE_READY);
+    ASSERT(frontend.virtual_keyboard_has_keymap);
+    ASSERT(frontend.virtual_keyboard_keymap_deadline_ms == 0);
+}
+
+TEST(keymap_timeout_without_active_grab_is_ignored) {
+    TypioWlFrontend frontend;
+    TypioWlKeyboard keyboard;
+
+    init_frontend(&frontend, &keyboard);
+    frontend.virtual_keyboard_state = TYPIO_WL_VK_STATE_NEEDS_KEYMAP;
+    frontend.virtual_keyboard_keymap_deadline_ms = 1;
+    frontend.keyboard = NULL;
+    reset_counts();
+
+    typio_wl_vk_health_check(&frontend);
+
+    ASSERT(stop_count == 0);
+    ASSERT(release_count == 0);
+}
+
 int main(void) {
     printf("Running virtual keyboard bridge tests:\n");
 
@@ -154,6 +186,8 @@ int main(void) {
     run_test_ready_state_clears_deadline_and_marks_keymap_present();
     run_test_broken_state_triggers_fail_safe();
     run_test_keymap_timeout_triggers_fail_safe();
+    run_test_cancelling_keymap_wait_restores_ready_state_after_grab_teardown();
+    run_test_keymap_timeout_without_active_grab_is_ignored();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

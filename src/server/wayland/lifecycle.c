@@ -90,6 +90,9 @@ void typio_wl_lifecycle_hard_reset_keyboard(TypioWlFrontend *frontend,
         frontend->keyboard = nullptr;
     }
 
+    typio_wl_vk_cancel_keymap_wait(frontend,
+                                   "keyboard grab cleared before keymap");
+
     frontend->active_generation_owned_keys = false;
     frontend->active_generation_vk_dirty = carry_vk_modifiers;
 }

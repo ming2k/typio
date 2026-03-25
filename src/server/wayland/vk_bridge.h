@@ -30,6 +30,8 @@ void typio_wl_vk_set_state(struct TypioWlFrontend *frontend,
                            const char *reason);
 void typio_wl_vk_expect_keymap(struct TypioWlFrontend *frontend,
                                const char *reason);
+void typio_wl_vk_cancel_keymap_wait(struct TypioWlFrontend *frontend,
+                                    const char *reason);
 bool typio_wl_vk_is_ready(struct TypioWlFrontend *frontend,
                           const char *operation);
 void typio_wl_vk_health_check(struct TypioWlFrontend *frontend);
