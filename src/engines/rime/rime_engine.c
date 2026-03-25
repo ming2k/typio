@@ -376,6 +376,47 @@ static bool typio_rime_flush_commit(TypioRimeSession *session,
     return committed;
 }
 
+/**
+ * Check whether the Rime context differs from the current InputContext only
+ * in the highlighted candidate index.  When true, the caller can skip the
+ * expensive full-copy path and just update the selection.
+ */
+static bool typio_rime_is_selection_only_change(const RimeContext *rime_context,
+                                                 TypioInputContext *ctx) {
+    const TypioCandidateList *current = typio_input_context_get_candidates(ctx);
+
+    if (!current || current->count == 0) {
+        return false;
+    }
+
+    if (rime_context->menu.num_candidates <= 0 || !rime_context->menu.candidates) {
+        return false;
+    }
+
+    if ((size_t)rime_context->menu.num_candidates != current->count ||
+        rime_context->menu.page_no != current->page ||
+        rime_context->menu.page_size != current->page_size ||
+        rime_context->menu.is_last_page != !current->has_next) {
+        return false;
+    }
+
+    if (rime_context->menu.highlighted_candidate_index == current->selected) {
+        return false;
+    }
+
+    /* Verify candidate texts actually match.  This is O(n) string comparisons
+     * but n is the page size (typically 5–10) and strcmp short-circuits. */
+    for (int i = 0; i < rime_context->menu.num_candidates; ++i) {
+        const char *rime_text = rime_context->menu.candidates[i].text;
+        const char *cur_text = current->candidates[i].text;
+        if (!rime_text || !cur_text || strcmp(rime_text, cur_text) != 0) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static bool typio_rime_sync_context(TypioRimeSession *session,
                                     TypioInputContext *ctx) {
     RIME_STRUCT(RimeContext, rime_context);
@@ -415,6 +456,18 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
         has_preedit = true;
     } else {
         typio_input_context_clear_preedit(ctx);
+    }
+
+    /* Fast path: only the highlighted candidate changed — skip full copy. */
+    if (typio_rime_is_selection_only_change(&rime_context, ctx)) {
+        selected = rime_context.menu.highlighted_candidate_index;
+        typio_input_context_set_candidate_selection(ctx, selected);
+        has_candidates = true;
+
+        if (state->api->free_context) {
+            state->api->free_context(&rime_context);
+        }
+        return has_preedit || has_candidates;
     }
 
     if (rime_context.menu.num_candidates > 0 && rime_context.menu.candidates) {

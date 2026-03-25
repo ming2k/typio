@@ -463,6 +463,22 @@ const TypioCandidateList *typio_input_context_get_candidates(TypioInputContext *
     return ctx ? ctx->candidates : nullptr;
 }
 
+void typio_input_context_set_candidate_selection(TypioInputContext *ctx, int selected) {
+    if (!ctx || !ctx->candidates || ctx->candidates->count == 0) {
+        return;
+    }
+
+    if (ctx->candidates->selected == selected) {
+        return;
+    }
+
+    ctx->candidates->selected = selected;
+
+    if (ctx->candidate_callback) {
+        ctx->candidate_callback(ctx, ctx->candidates, ctx->candidate_user_data);
+    }
+}
+
 void typio_input_context_clear_candidates(TypioInputContext *ctx) {
     if (!ctx || !ctx->candidates) {
         return;

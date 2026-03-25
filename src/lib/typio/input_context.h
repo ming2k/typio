@@ -107,6 +107,7 @@ void typio_input_context_clear_preedit(TypioInputContext *ctx);
 void typio_input_context_set_candidates(TypioInputContext *ctx,
                                          const TypioCandidateList *candidates);
 const TypioCandidateList *typio_input_context_get_candidates(TypioInputContext *ctx);
+void typio_input_context_set_candidate_selection(TypioInputContext *ctx, int selected);
 void typio_input_context_clear_candidates(TypioInputContext *ctx);
 
 /* Surrounding text */
