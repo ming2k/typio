@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.3] - 2026-03-25
+
+### Fixed
+
+- **Wayland virtual-keyboard timeout teardown**: fixed a stale keymap-wait
+  state after rapid keyboard-grab teardown and rebuild churn, so Typio no
+  longer triggers its own fail-safe stop while no active grab remains to
+  deliver the pending keymap.
+
 ## [2.2.2] - 2026-03-24
 
 ### Added
