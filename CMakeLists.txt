@@ -186,11 +186,6 @@ install(
     DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor"
 )
 
-install(
-    FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/applications/typio.desktop"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/applications"
-)
-
 if(BUILD_CONTROL_PANEL)
     install(
         FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/applications/typio-control.desktop"

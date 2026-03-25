@@ -152,31 +152,6 @@ hints when available.
 
 After installation, `typio --list` will show `rime` automatically if the plugin was installed into the configured engine directory.
 
-## Running as a User Service
-
-Example `systemd --user` unit:
-
-```ini
-[Unit]
-Description=Typio Wayland Input Method
-After=graphical-session.target
-ConditionEnvironment=WAYLAND_DISPLAY
-
-[Service]
-ExecStart=/usr/local/bin/typio
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-```
-
-Enable it with:
-
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now typio.service
-```
-
 ## Runtime Expectations
 
 - Typio currently targets Wayland only.

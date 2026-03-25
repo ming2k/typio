@@ -58,17 +58,10 @@ Installed paths (with `/usr/local` prefix):
 - `/usr/local/include/typio/*.h`
 - `/usr/local/lib/pkgconfig/typio.pc`
 - `/usr/local/share/typio/typio.toml.example`
-- `/usr/local/share/applications/typio.desktop`
-
-Install also places:
-
-- an application launcher at `/usr/local/share/applications/typio.desktop` so
-  desktop launchers such as `drun` can start Typio manually
-- a desktop autostart entry at `/etc/xdg/autostart/typio.desktop` so Typio
-  starts with the desktop session by default
-
-Override the autostart location with `-DTYPIO_AUTOSTART_DIR=/some/path` if you
-need a different target for packaging or testing.
+Install also places a desktop autostart entry at
+`/etc/xdg/autostart/typio.desktop` so Typio starts automatically with the
+desktop session. Override the location with `-DTYPIO_AUTOSTART_DIR=/some/path`
+if you need a different target for packaging or testing.
 
 ## Useful Build Options
 

@@ -110,24 +110,13 @@ be correlated in order.
 
 Current builds expose two complementary diagnostics surfaces:
 
-- continuous logs through stderr, which typically land in `journald` when
-  Typio is managed by `systemd --user`
+- continuous logs through stderr (visible in the terminal when running
+  manually with `--verbose`, or in the compositor's log stream when started
+  via desktop autostart)
 - a structured D-Bus `RuntimeState` property on `org.typio.InputMethod1`
 
 Use both. Logs show the event history; `RuntimeState` shows the current
 frontend health snapshot.
-
-Read recent service logs:
-
-```bash
-journalctl --user -u typio -b
-```
-
-Or if Typio is not running as a named user service:
-
-```bash
-journalctl --user -b | rg typio
-```
 
 Read the last fault snapshot from the recent-log dump:
 
@@ -184,7 +173,7 @@ Interpret the most common bad combinations like this:
 
 If you report a timing or freeze problem, include both:
 
-- the relevant `journalctl` or `--verbose` log window
+- the relevant `--verbose` log window
 - a `RuntimeState` snapshot taken while the fault is happening
 
 ## When Input and Tray Both Stop Responding
@@ -216,10 +205,6 @@ gdbus call --session \
   --dest org.typio.InputMethod1 \
   --object-path /org/typio/InputMethod1 \
   --method org.typio.InputMethod1.Stop
-```
-
-```bash
-systemctl --user restart typio
 ```
 
 ```bash
