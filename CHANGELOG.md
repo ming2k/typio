@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.4] - 2026-03-25
+
+### Changed
+
+- **Startup method**: removed the manual-launch
+  `share/applications/typio.desktop` entry and the systemd `--user` service
+  example from documentation; XDG autostart is now the single supported
+  launch method.
+- **Popup candidate rendering**: candidate selection changes (Up/Down keys)
+  now skip full candidate-list reallocation and Pango text re-measurement,
+  using a lightweight selection-only update path through the Rime engine and
+  a render cache that owns line data directly.
+- **Popup resource caching**: `PangoFontDescription` objects and desktop
+  theme detection results are cached across frames instead of being
+  re-parsed or re-read from disk on every draw.
+- **Stderr log timestamps**: log lines now include a wall-clock timestamp so
+  captures via `tee` or compositor log streams are self-contained.
+
 ## [2.2.3] - 2026-03-25
 
 ### Fixed
