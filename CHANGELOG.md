@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.5] - 2026-03-26
+
+### Added
+
+- **Build metadata display**: the CLI and startup path now expose a unified
+  build identifier in the form `Typio x.y.z (<source-label>)`, using git
+  describe output when available and falling back to `source` for non-git
+  source builds.
+- **Popup state regression coverage**: added dedicated tests for popup damage
+  calculation, popup invalidation policy, popup render-cache reuse decisions,
+  text-UI deferred-update state, and Rime selection-only candidate navigation.
+
+### Changed
+
+- **Candidate navigation hot path**: selection-only candidate movement now
+  avoids redundant preedit rebuilding, defers popup work out of the current key
+  handling stack, and reuses cached popup row bitmaps for minimal redraw.
+- **Popup cache organization**: popup cache invalidation, output-change policy,
+  and render-cache matching rules are now modeled through smaller helper units
+  so behavior is easier to reason about and harder to regress silently.
+- **Wayland text-UI state management**: deferred popup updates now require a
+  still-focused context before being flushed, and focus-out/reset/commit all
+  clear pending popup work consistently.
+
 ## [2.2.4] - 2026-03-25
 
 ### Changed
