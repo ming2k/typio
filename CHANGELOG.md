@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Popup snapshot ownership**: fixed a use-after-free/double-free bug in the
   popup snapshot cache path that could abort Typio immediately after rendering
   a candidate list under Rime.
+- **Candidate highlight synchronization**: fixed the selection-only popup
+  redraw path so cached snapshots survive full renders correctly and popup
+  cache selection state is only advanced after a successful redraw, preventing
+  Up/Down navigation from leaving the visible highlight stuck on the old item.
 - **Candidate popup flicker on Up/Down navigation**: popup redraw failures now
   keep the previous visible popup frame instead of hiding the candidate window,
   and the popup shm buffer pool has been expanded to reduce transient

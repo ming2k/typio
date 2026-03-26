@@ -850,6 +850,35 @@ static void popup_cache_invalidate(TypioPopupCache *cache) {
     cache->selected = -1;
 }
 
+static void popup_cache_reset_layout(TypioPopupCache *cache) {
+    unsigned char *snapshot_data;
+    size_t snapshot_size;
+    int snapshot_width;
+    int snapshot_height;
+    int snapshot_stride;
+
+    if (!cache) {
+        return;
+    }
+
+    snapshot_data = cache->snapshot_data;
+    snapshot_size = cache->snapshot_size;
+    snapshot_width = cache->snapshot_width;
+    snapshot_height = cache->snapshot_height;
+    snapshot_stride = cache->snapshot_stride;
+
+    popup_free_lines(cache->lines, cache->line_count);
+    free(cache->preedit_text);
+    memset(cache, 0, sizeof(*cache));
+
+    cache->snapshot_data = snapshot_data;
+    cache->snapshot_size = snapshot_size;
+    cache->snapshot_width = snapshot_width;
+    cache->snapshot_height = snapshot_height;
+    cache->snapshot_stride = snapshot_stride;
+    cache->selected = -1;
+}
+
 static bool popup_cache_matches(const TypioPopupCache *cache,
                                 const TypioCandidateList *candidates,
                                 const char *preedit_text,
@@ -1060,7 +1089,7 @@ static void popup_cache_store(TypioWlPopup *popup,
                               const TypioPopupRenderConfig *config,
                               const TypioPopupPalette *palette) {
     TypioPopupCache *cache = &popup->cache;
-    popup_cache_invalidate(cache);
+    popup_cache_reset_layout(cache);
     cache->lines = lines;
     cache->line_count = line_count;
     cache->selected = selected;
@@ -1205,17 +1234,17 @@ static bool popup_render(TypioWlPopup *popup, const TypioPreedit *preedit,
         cached_layout_redraw = true;
         int previous_selected = cache->selected;
 
-        /* Update selection flags in the cached lines. */
-        for (size_t i = 0; i < cache->line_count; ++i) {
-            cache->lines[i].selected = (candidates->selected >= 0 &&
-                                        (size_t)candidates->selected == i);
-        }
-        cache->selected = candidates->selected;
-
         bool ok = popup_redraw_changed_selection(popup, cache, scale,
                                                  previous_selected,
                                                  candidates->selected);
         render_end_ms = typio_wl_monotonic_ms();
+        if (ok) {
+            for (size_t i = 0; i < cache->line_count; ++i) {
+                cache->lines[i].selected = (candidates->selected >= 0 &&
+                                            (size_t)candidates->selected == i);
+            }
+            cache->selected = candidates->selected;
+        }
         free(preedit_text);
         if (ok && render_end_ms >= render_start_ms &&
             (render_end_ms - render_start_ms) >= TYPIO_POPUP_SLOW_RENDER_MS) {
