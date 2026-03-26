@@ -28,7 +28,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define TYPIO_POPUP_BUFFER_COUNT 2
+#define TYPIO_POPUP_BUFFER_COUNT 4
 #define TYPIO_POPUP_DEFAULT_FONT_SIZE 11
 #define TYPIO_POPUP_PADDING 6
 #define TYPIO_POPUP_ROW_GAP 2
@@ -1060,19 +1060,7 @@ static void popup_cache_store(TypioWlPopup *popup,
                               const TypioPopupRenderConfig *config,
                               const TypioPopupPalette *palette) {
     TypioPopupCache *cache = &popup->cache;
-    unsigned char *snapshot_data = cache->snapshot_data;
-    size_t snapshot_size = cache->snapshot_size;
-    int snapshot_width = cache->snapshot_width;
-    int snapshot_height = cache->snapshot_height;
-    int snapshot_stride = cache->snapshot_stride;
-
     popup_cache_invalidate(cache);
-
-    cache->snapshot_data = snapshot_data;
-    cache->snapshot_size = snapshot_size;
-    cache->snapshot_width = snapshot_width;
-    cache->snapshot_height = snapshot_height;
-    cache->snapshot_stride = snapshot_stride;
     cache->lines = lines;
     cache->line_count = line_count;
     cache->selected = selected;
@@ -1499,8 +1487,7 @@ bool typio_wl_popup_update(TypioWlFrontend *frontend, TypioInputContext *ctx) {
      * pass nullptr to avoid duplicating it inside the popup. */
     if (!popup_render(frontend->popup, nullptr, candidates)) {
         typio_log(TYPIO_LOG_WARNING,
-                  "Popup render failed; falling back to inline candidate UI");
-        popup_hide_surface(frontend->popup);
+                  "Popup render failed; keeping previous popup frame");
         return false;
     }
 

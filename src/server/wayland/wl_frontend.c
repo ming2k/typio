@@ -69,6 +69,9 @@ static const struct wl_output_listener output_listener = {
 static void *frontend_watchdog_thread_main(void *data);
 static void frontend_fill_runtime_state(void *user_data,
                                         TypioStatusRuntimeState *state);
+static const char *frontend_loop_stage_name(TypioWlLoopStage stage);
+static void frontend_watchdog_set_stage(TypioWlFrontend *frontend,
+                                        TypioWlLoopStage stage);
 
 static void frontend_log_shortcuts(TypioWlFrontend *frontend,
                                    const char *prefix) {
@@ -102,12 +105,50 @@ static void frontend_watchdog_heartbeat(TypioWlFrontend *frontend) {
     atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
 }
 
+static const char *frontend_loop_stage_name(TypioWlLoopStage stage) {
+    switch (stage) {
+        case TYPIO_WL_LOOP_STAGE_IDLE:
+            return "idle";
+        case TYPIO_WL_LOOP_STAGE_POPUP_UPDATE:
+            return "popup_update";
+        case TYPIO_WL_LOOP_STAGE_PREPARE_READ:
+            return "prepare_read";
+        case TYPIO_WL_LOOP_STAGE_FLUSH:
+            return "flush";
+        case TYPIO_WL_LOOP_STAGE_POLL:
+            return "poll";
+        case TYPIO_WL_LOOP_STAGE_READ_EVENTS:
+            return "read_events";
+        case TYPIO_WL_LOOP_STAGE_DISPATCH_PENDING:
+            return "dispatch_pending";
+        case TYPIO_WL_LOOP_STAGE_AUX_IO:
+            return "aux_io";
+        case TYPIO_WL_LOOP_STAGE_REPEAT:
+            return "repeat";
+        case TYPIO_WL_LOOP_STAGE_CONFIG_RELOAD:
+            return "config_reload";
+        default:
+            return "unknown";
+    }
+}
+
+static void frontend_watchdog_set_stage(TypioWlFrontend *frontend,
+                                        TypioWlLoopStage stage) {
+    if (!frontend) {
+        return;
+    }
+
+    atomic_store(&frontend->watchdog_loop_stage, (int)stage);
+    atomic_store(&frontend->watchdog_stage_since_ms, typio_wl_monotonic_ms());
+}
+
 static void frontend_watchdog_start(TypioWlFrontend *frontend) {
     if (!frontend || frontend->watchdog_thread_started) {
         return;
     }
 
     frontend_watchdog_heartbeat(frontend);
+    frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
     atomic_store(&frontend->watchdog_stop, false);
     atomic_store(&frontend->watchdog_armed, false);
     if (pthread_create(&frontend->watchdog_thread, nullptr,
@@ -238,7 +279,10 @@ static void *frontend_watchdog_thread_main(void *data) {
         }
 
         uint64_t heartbeat_ms = atomic_load(&frontend->watchdog_heartbeat_ms);
+        uint64_t stage_since_ms = atomic_load(&frontend->watchdog_stage_since_ms);
         uint64_t now_ms = typio_wl_monotonic_ms();
+        TypioWlLoopStage stage =
+            (TypioWlLoopStage)atomic_load(&frontend->watchdog_loop_stage);
         if (heartbeat_ms == 0 || now_ms < heartbeat_ms) {
             continue;
         }
@@ -248,8 +292,14 @@ static void *frontend_watchdog_thread_main(void *data) {
         }
 
         dprintf(STDERR_FILENO,
-                "[typio] [ERROR] Wayland frontend watchdog timeout: lag=%" PRIu64 "ms, forcing process exit to release keyboard grab\n",
-                now_ms - heartbeat_ms);
+                "[typio] [ERROR] Wayland frontend watchdog timeout: lag=%" PRIu64 "ms stage=%s stage_lag=%" PRIu64 "ms lifecycle=%s vk_state=%s popup_pending=%s, forcing process exit to release keyboard grab\n",
+                now_ms - heartbeat_ms,
+                frontend_loop_stage_name(stage),
+                (stage_since_ms > 0 && now_ms >= stage_since_ms) ? (now_ms - stage_since_ms) : 0,
+                typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
+                typio_wl_vk_state_name(frontend->virtual_keyboard_state),
+                frontend->popup_update_pending ? "yes" : "no");
+        typio_log_dump_recent_to_configured_path("watchdog timeout");
         kill(getpid(), SIGKILL);
         break;
     }
@@ -592,6 +642,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 
     while (frontend->running) {
         frontend_watchdog_heartbeat(frontend);
+        frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
 
         if (typio_wl_text_ui_should_flush_popup_update(
                 frontend->popup_update_pending,
@@ -599,16 +650,22 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
                 frontend->session && frontend->session->ctx,
                 frontend->session && frontend->session->ctx &&
                     typio_input_context_is_focused(frontend->session->ctx))) {
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_POPUP_UPDATE);
             frontend->popup_update_pending = false;
             typio_wl_popup_update(frontend, frontend->session->ctx);
+            frontend_watchdog_heartbeat(frontend);
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
         }
 
         /* Flush pending requests */
         while (wl_display_prepare_read(frontend->display) != 0) {
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_PREPARE_READ);
             wl_display_dispatch_pending(frontend->display);
             frontend_watchdog_heartbeat(frontend);
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
         }
 
+        frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_FLUSH);
         if (wl_display_flush(frontend->display) < 0 && errno != EAGAIN) {
             typio_log(TYPIO_LOG_ERROR, "Wayland display flush failed: %s",
                       strerror(errno));
@@ -616,6 +673,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             frontend->running = false;
             return -1;
         }
+        frontend_watchdog_heartbeat(frontend);
 
         /* Build poll set: wayland fd + optional tray/status/voice/repeat fds */
         struct pollfd fds[6];
@@ -661,6 +719,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             fds[nfds++] = (struct pollfd){ .fd = frontend->config_watch_fd, .events = POLLIN };
         }
 
+        frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_POLL);
         int ret = poll(fds, (nfds_t)nfds, 100);
 
         if (ret < 0) {
@@ -677,20 +736,24 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
         if (ret == 0) {
             wl_display_cancel_read(frontend->display);
             typio_wl_vk_health_check(frontend);
+            frontend_watchdog_heartbeat(frontend);
             continue;
         }
 
         /* Handle Wayland events */
         if (fds[idx_display].revents & POLLIN) {
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_READ_EVENTS);
             if (wl_display_read_events(frontend->display) < 0) {
                 typio_log(TYPIO_LOG_ERROR, "Failed to read Wayland events: %s",
                           strerror(errno));
                 frontend->running = false;
                 return -1;
             }
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_DISPATCH_PENDING);
             wl_display_dispatch_pending(frontend->display);
             frontend->dispatch_epoch++;
             frontend_watchdog_heartbeat(frontend);
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
         } else {
             wl_display_cancel_read(frontend->display);
         }
@@ -704,6 +767,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 #ifdef HAVE_SYSTRAY
         /* Handle tray D-Bus events */
         if (idx_tray >= 0 && fds[idx_tray].revents) {
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_AUX_IO);
             TypioWlAuxState tray_state = { .fd = tray_fd, .disabled = tray_disabled };
             if (typio_wl_aux_should_disable_on_revents(fds[idx_tray].revents)) {
                 typio_log(TYPIO_LOG_WARNING,
@@ -732,11 +796,14 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             }
             tray_fd = tray_state.fd;
             tray_disabled = tray_state.disabled;
+            frontend_watchdog_heartbeat(frontend);
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
         }
 #endif
 
 #ifdef HAVE_STATUS_BUS
         if (idx_status >= 0 && fds[idx_status].revents) {
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_AUX_IO);
             TypioWlAuxState status_state = { .fd = status_fd, .disabled = status_disabled };
             if (typio_wl_aux_should_disable_on_revents(fds[idx_status].revents)) {
                 typio_log(TYPIO_LOG_WARNING,
@@ -766,17 +833,23 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             }
             status_fd = status_state.fd;
             status_disabled = status_state.disabled;
+            frontend_watchdog_heartbeat(frontend);
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
         }
 #endif
 
         /* Handle key repeat timer */
         if (idx_repeat >= 0 && (fds[idx_repeat].revents & POLLIN)) {
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_REPEAT);
             typio_wl_keyboard_dispatch_repeat(frontend->keyboard);
+            frontend_watchdog_heartbeat(frontend);
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
         }
 
 #ifdef HAVE_VOICE
         /* Handle voice inference completion */
         if (idx_voice >= 0 && fds[idx_voice].revents) {
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_AUX_IO);
             TypioWlAuxState voice_state = { .fd = voice_fd, .disabled = voice_disabled };
             if (typio_wl_aux_should_disable_on_revents(fds[idx_voice].revents)) {
                 typio_log(TYPIO_LOG_WARNING,
@@ -801,11 +874,16 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             }
             voice_fd = voice_state.fd;
             voice_disabled = voice_state.disabled;
+            frontend_watchdog_heartbeat(frontend);
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
         }
 #endif
 
         if (idx_config >= 0 && (fds[idx_config].revents & POLLIN)) {
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_CONFIG_RELOAD);
             frontend_handle_config_watch(frontend);
+            frontend_watchdog_heartbeat(frontend);
+            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
         }
 
         typio_wl_vk_health_check(frontend);

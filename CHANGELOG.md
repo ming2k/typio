@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Wayland watchdog diagnostics**: watchdog timeouts now report the last
+  observed event-loop stage, stage duration, lifecycle phase, virtual-keyboard
+  state, and pending-popup status before forcing process exit, making hard
+  hangs during Rime/popup interaction substantially easier to attribute.
+
+### Fixed
+
+- **Popup snapshot ownership**: fixed a use-after-free/double-free bug in the
+  popup snapshot cache path that could abort Typio immediately after rendering
+  a candidate list under Rime.
+- **Candidate popup flicker on Up/Down navigation**: popup redraw failures now
+  keep the previous visible popup frame instead of hiding the candidate window,
+  and the popup shm buffer pool has been expanded to reduce transient
+  buffer-exhaustion during rapid selection changes.
+
 ## [2.2.5] - 2026-03-26
 
 ### Added

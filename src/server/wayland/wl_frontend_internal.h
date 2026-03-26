@@ -47,6 +47,19 @@ typedef struct TypioWlKeyboard TypioWlKeyboard;
 typedef struct TypioWlPopup TypioWlPopup;
 typedef struct TypioWlOutput TypioWlOutput;
 
+typedef enum TypioWlLoopStage {
+    TYPIO_WL_LOOP_STAGE_IDLE = 0,
+    TYPIO_WL_LOOP_STAGE_POPUP_UPDATE,
+    TYPIO_WL_LOOP_STAGE_PREPARE_READ,
+    TYPIO_WL_LOOP_STAGE_FLUSH,
+    TYPIO_WL_LOOP_STAGE_POLL,
+    TYPIO_WL_LOOP_STAGE_READ_EVENTS,
+    TYPIO_WL_LOOP_STAGE_DISPATCH_PENDING,
+    TYPIO_WL_LOOP_STAGE_AUX_IO,
+    TYPIO_WL_LOOP_STAGE_REPEAT,
+    TYPIO_WL_LOOP_STAGE_CONFIG_RELOAD,
+} TypioWlLoopStage;
+
 #define TYPIO_WL_MAX_TRACKED_KEYS 512
 
 /**
@@ -176,8 +189,10 @@ struct TypioWlFrontend {
     uint64_t virtual_keyboard_last_forward_ms;
     uint64_t virtual_keyboard_keymap_deadline_ms;
     _Atomic uint64_t watchdog_heartbeat_ms;
+    _Atomic uint64_t watchdog_stage_since_ms;
     _Atomic bool watchdog_stop;
     _Atomic bool watchdog_armed;
+    _Atomic int watchdog_loop_stage;
     pthread_t watchdog_thread;
     bool watchdog_thread_started;
     TypioKeyTrackState key_states[TYPIO_WL_MAX_TRACKED_KEYS];
