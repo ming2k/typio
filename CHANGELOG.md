@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.7] - 2026-03-26
+
+### Changed
+
+- **Engine category model**: Typio now treats keyboard and voice engines as
+  explicit parallel runtime categories instead of one flat engine set, with
+  independent active-engine slots and clearer status-bus exports for each.
+- **Control-surface semantics**: the control panel, status surface, and public
+  API/docs now consistently describe `basic` as the baseline keyboard engine
+  and voice backends as a separate non-conflicting category.
+- **Tray runtime presentation**: tray state now keeps the keyboard engine as
+  the icon source of truth while surfacing voice-backend state through tooltip
+  text and runtime properties instead of conflating the two roles.
+- **Candidate popup architecture docs**: developer and user documentation now
+  describe the popup pipeline as a layered UI path where the keyboard engine
+  owns candidate state and the Wayland popup remains a rendering surface, not
+  the source of truth.
+
 ## [2.2.6] - 2026-03-26
 
 ### Changed
