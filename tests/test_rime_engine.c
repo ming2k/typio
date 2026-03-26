@@ -45,7 +45,11 @@ static int tests_passed = 0;
 typedef struct CaptureState {
     char *commit_text;
     char *preedit_text;
+    size_t preedit_callback_count;
     size_t candidate_count;
+    size_t candidate_callback_count;
+    int candidate_selected;
+    uint64_t candidate_signature;
     char *status_icon;
 } CaptureState;
 
@@ -89,6 +93,7 @@ static void capture_preedit([[maybe_unused]] TypioInputContext *ctx,
 
     free(capture->preedit_text);
     capture->preedit_text = nullptr;
+    capture->preedit_callback_count++;
 
     if (!preedit || preedit->segment_count == 0) {
         return;
@@ -113,7 +118,10 @@ static void capture_candidates([[maybe_unused]] TypioInputContext *ctx,
                                void *user_data) {
     CaptureState *capture = user_data;
 
+    capture->candidate_callback_count++;
     capture->candidate_count = candidates ? candidates->count : 0;
+    capture->candidate_selected = candidates ? candidates->selected : -1;
+    capture->candidate_signature = candidates ? candidates->content_signature : 0;
 }
 
 static void capture_status_icon([[maybe_unused]] TypioInstance *instance,
@@ -138,6 +146,19 @@ static TypioKeyEvent *shift_event(TypioEventType type) {
                                TYPIO_KEY_Shift_L,
                                type == TYPIO_EVENT_KEY_RELEASE ? TYPIO_MOD_SHIFT
                                                                : TYPIO_MOD_NONE);
+}
+
+static TypioKeyEvent *keysym_press_event(uint32_t keycode, uint32_t keysym) {
+    return typio_key_event_new(TYPIO_EVENT_KEY_PRESS, keycode, keysym, TYPIO_MOD_NONE);
+}
+
+static void reset_update_counters(CaptureState *capture) {
+    if (!capture) {
+        return;
+    }
+
+    capture->preedit_callback_count = 0;
+    capture->candidate_callback_count = 0;
 }
 
 TEST(load_and_compose) {
@@ -456,6 +477,85 @@ TEST(engine_switch_preserves_latin_mode_within_context) {
     typio_instance_free(instance);
 }
 
+TEST(selection_navigation_only_updates_candidates) {
+    char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
+    char config_dir[1024];
+    char data_dir[1024];
+    char config_path[1024];
+    TypioInstanceConfig config = {};
+    CaptureState capture = {};
+    TypioKeyEvent *n_key;
+    TypioKeyEvent *i_key;
+    TypioKeyEvent *down_key;
+    char *preedit_before = nullptr;
+    uint64_t signature_before;
+    int selected_before;
+
+    ASSERT_NOT_NULL(mkdtemp(temp_root));
+    ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", temp_root) < (int)sizeof(config_dir));
+    ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) < (int)sizeof(data_dir));
+    ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) < (int)sizeof(config_path));
+
+    ASSERT(ensure_dir(config_dir));
+    ASSERT(ensure_dir(data_dir));
+    ASSERT(write_file(config_path,
+                      "default_engine = \"rime\"\n"
+                      "[engines.rime]\n"
+                      "schema = \"luna_pinyin\"\n"));
+
+    config.config_dir = config_dir;
+    config.data_dir = data_dir;
+    config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
+    config.default_engine = "rime";
+
+    TypioInstance *instance = typio_instance_new_with_config(&config);
+    ASSERT_NOT_NULL(instance);
+    ASSERT_EQ(typio_instance_init(instance), TYPIO_OK);
+
+    TypioInputContext *ctx = typio_instance_create_context(instance);
+    ASSERT_NOT_NULL(ctx);
+    typio_input_context_set_preedit_callback(ctx, capture_preedit, &capture);
+    typio_input_context_set_candidate_callback(ctx, capture_candidates, &capture);
+    typio_input_context_focus_in(ctx);
+
+    n_key = key_event_for_char('n');
+    i_key = key_event_for_char('i');
+    down_key = keysym_press_event(116, TYPIO_KEY_Down);
+    ASSERT_NOT_NULL(n_key);
+    ASSERT_NOT_NULL(i_key);
+    ASSERT_NOT_NULL(down_key);
+
+    ASSERT(typio_input_context_process_key(ctx, n_key));
+    ASSERT(typio_input_context_process_key(ctx, i_key));
+    ASSERT(capture.preedit_text != nullptr);
+    ASSERT(capture.candidate_count > 1);
+
+    preedit_before = strdup(capture.preedit_text);
+    ASSERT_NOT_NULL(preedit_before);
+    signature_before = capture.candidate_signature;
+    selected_before = capture.candidate_selected;
+    ASSERT(signature_before != 0);
+    ASSERT(selected_before >= 0);
+
+    reset_update_counters(&capture);
+
+    ASSERT(typio_input_context_process_key(ctx, down_key));
+    ASSERT_EQ(capture.preedit_callback_count, 0);
+    ASSERT_EQ(capture.candidate_callback_count, 1);
+    ASSERT(capture.preedit_text != nullptr);
+    ASSERT_STR_EQ(capture.preedit_text, preedit_before);
+    ASSERT_EQ(capture.candidate_signature, signature_before);
+    ASSERT(capture.candidate_selected != selected_before);
+
+    free(preedit_before);
+    typio_key_event_free(n_key);
+    typio_key_event_free(i_key);
+    typio_key_event_free(down_key);
+    free_capture(&capture);
+    typio_instance_destroy_context(instance, ctx);
+    typio_instance_free(instance);
+}
+
 int main(void) {
     printf("Running rime integration tests:\n");
     run_test_load_and_compose();
@@ -463,6 +563,7 @@ int main(void) {
     run_test_switch_back_to_rime_first_shift_toggles_latin_mode();
     run_test_refocus_preserves_latin_mode();
     run_test_engine_switch_preserves_latin_mode_within_context();
+    run_test_selection_navigation_only_updates_candidates();
     printf("\nPassed %d/%d tests\n", tests_passed, tests_run);
     return 0;
 }

@@ -1,5 +1,6 @@
 # Core library
 add_library(typio-core
+    core/build_info.c
     core/instance.c
     core/engine.c
     core/engine_label.c

@@ -267,44 +267,7 @@ bool typio_input_context_process_key(TypioInputContext *ctx,
 
     TypioKeyProcessResult result = engine->ops->process_key(engine, ctx, event);
 
-    if (engine->ops->get_status_icon) {
-        const char *icon = engine->ops->get_status_icon(engine, ctx);
-        if (icon) {
-            typio_instance_notify_status_icon(ctx->instance, icon);
-        }
-    }
-
     return (result != TYPIO_KEY_NOT_HANDLED);
-}
-
-bool typio_input_context_select_candidate(TypioInputContext *ctx, int index) {
-    if (!ctx) {
-        return false;
-    }
-
-    TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
-    TypioEngine *engine = typio_engine_manager_get_active(manager);
-
-    if (!engine || !engine->ops || !engine->ops->select_candidate) {
-        return false;
-    }
-
-    return engine->ops->select_candidate(engine, ctx, index);
-}
-
-bool typio_input_context_page_candidates(TypioInputContext *ctx, bool next) {
-    if (!ctx) {
-        return false;
-    }
-
-    TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
-    TypioEngine *engine = typio_engine_manager_get_active(manager);
-
-    if (!engine || !engine->ops || !engine->ops->page_candidates) {
-        return false;
-    }
-
-    return engine->ops->page_candidates(engine, ctx, next);
 }
 
 void typio_input_context_commit(TypioInputContext *ctx, const char *text) {

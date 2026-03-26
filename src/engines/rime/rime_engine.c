@@ -59,7 +59,37 @@ typedef struct TypioRimeState {
 typedef struct TypioRimeSession {
     TypioRimeState *state;
     RimeSessionId session_id;
+    bool ascii_mode_known;
+    bool ascii_mode;
 } TypioRimeSession;
+
+static void typio_rime_notify_status_icon(TypioEngine *engine,
+                                          TypioRimeSession *session,
+                                          bool ascii_mode) {
+    const char *icon;
+
+    if (!engine || !engine->instance || !session) {
+        return;
+    }
+
+    session->ascii_mode_known = true;
+    session->ascii_mode = ascii_mode;
+    icon = ascii_mode ? "typio-rime-latin" : "typio-rime";
+    typio_instance_notify_status_icon(engine->instance, icon);
+}
+
+static void typio_rime_refresh_status_icon(TypioEngine *engine,
+                                           TypioRimeSession *session) {
+    Bool ascii;
+
+    if (!engine || !session || !session->state || !session->state->api ||
+        !session->state->api->get_option) {
+        return;
+    }
+
+    ascii = session->state->api->get_option(session->session_id, "ascii_mode");
+    typio_rime_notify_status_icon(engine, session, ascii ? true : false);
+}
 
 static uint64_t typio_rime_monotonic_ms(void) {
     struct timespec ts;
@@ -350,6 +380,7 @@ static TypioRimeSession *typio_rime_get_session(TypioEngine *engine,
     }
 
     typio_input_context_set_property(ctx, TYPIO_RIME_SESSION_KEY, session, typio_rime_free_session);
+    typio_rime_refresh_status_icon(engine, session);
     return session;
 }
 
@@ -409,12 +440,56 @@ static bool typio_rime_is_selection_only_change(const RimeContext *rime_context,
     for (int i = 0; i < rime_context->menu.num_candidates; ++i) {
         const char *rime_text = rime_context->menu.candidates[i].text;
         const char *cur_text = current->candidates[i].text;
-        if (!rime_text || !cur_text || strcmp(rime_text, cur_text) != 0) {
+        const char *rime_comment = rime_context->menu.candidates[i].comment;
+        const char *cur_comment = current->candidates[i].comment;
+        const char *rime_label = nullptr;
+        const char *cur_label = current->candidates[i].label;
+        char fallback_label[16];
+
+        if (rime_context->select_labels && rime_context->select_labels[i]) {
+            rime_label = rime_context->select_labels[i];
+        } else if (rime_context->menu.select_keys &&
+                   (size_t)i < strlen(rime_context->menu.select_keys)) {
+            fallback_label[0] = rime_context->menu.select_keys[i];
+            fallback_label[1] = '\0';
+            rime_label = fallback_label;
+        } else {
+            snprintf(fallback_label, sizeof(fallback_label), "%d", i + 1);
+            rime_label = fallback_label;
+        }
+
+        if (!rime_text || !cur_text || strcmp(rime_text, cur_text) != 0 ||
+            strcmp(rime_comment ? rime_comment : "",
+                   cur_comment ? cur_comment : "") != 0 ||
+            strcmp(rime_label ? rime_label : "",
+                   cur_label ? cur_label : "") != 0) {
             return false;
         }
     }
 
     return true;
+}
+
+static bool typio_rime_preedit_matches_context(const RimeContext *rime_context,
+                                               TypioInputContext *ctx) {
+    const TypioPreedit *current = typio_input_context_get_preedit(ctx);
+    const char *rime_preedit;
+
+    if (!rime_context || !ctx) {
+        return false;
+    }
+
+    rime_preedit = rime_context->composition.preedit;
+    if (!rime_preedit || !*rime_preedit) {
+        return !current || current->segment_count == 0;
+    }
+
+    if (!current || current->segment_count != 1 || !current->segments[0].text) {
+        return false;
+    }
+
+    return current->cursor_pos == rime_context->composition.cursor_pos &&
+           strcmp(current->segments[0].text, rime_preedit) == 0;
 }
 
 static bool typio_rime_sync_context(TypioRimeSession *session,
@@ -442,6 +517,21 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
         return false;
     }
 
+    /* Fast path: when preedit text is unchanged and only the highlighted
+     * candidate moved, skip both preedit rebuilding and candidate copying. */
+    if (typio_rime_preedit_matches_context(&rime_context, ctx) &&
+        typio_rime_is_selection_only_change(&rime_context, ctx)) {
+        selected = rime_context.menu.highlighted_candidate_index;
+        typio_input_context_set_candidate_selection(ctx, selected);
+        has_preedit = true;
+        has_candidates = true;
+
+        if (state->api->free_context) {
+            state->api->free_context(&rime_context);
+        }
+        return true;
+    }
+
     if (rime_context.composition.preedit && *rime_context.composition.preedit) {
         TypioPreeditSegment segment = {
             .text = rime_context.composition.preedit,
@@ -456,18 +546,6 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
         has_preedit = true;
     } else {
         typio_input_context_clear_preedit(ctx);
-    }
-
-    /* Fast path: only the highlighted candidate changed — skip full copy. */
-    if (typio_rime_is_selection_only_change(&rime_context, ctx)) {
-        selected = rime_context.menu.highlighted_candidate_index;
-        typio_input_context_set_candidate_selection(ctx, selected);
-        has_candidates = true;
-
-        if (state->api->free_context) {
-            state->api->free_context(&rime_context);
-        }
-        return has_preedit || has_candidates;
     }
 
     if (rime_context.menu.num_candidates > 0 && rime_context.menu.candidates) {
@@ -638,6 +716,9 @@ static void typio_rime_destroy(TypioEngine *engine) {
 static void typio_rime_focus_in(TypioEngine *engine, TypioInputContext *ctx) {
     TypioRimeSession *session = typio_rime_get_session(engine, ctx, true);
     if (session) {
+        if (!session->ascii_mode_known) {
+            typio_rime_refresh_status_icon(engine, session);
+        }
         typio_rime_sync_context(session, ctx);
     }
 }
@@ -654,6 +735,11 @@ static void typio_rime_reset(TypioEngine *engine, TypioInputContext *ctx) {
         session->state->api->clear_composition(session->session_id);
     }
     typio_rime_clear_state(ctx);
+    if (session->ascii_mode_known) {
+        typio_rime_notify_status_icon(engine, session, session->ascii_mode);
+    } else {
+        typio_rime_refresh_status_icon(engine, session);
+    }
 }
 
 static void typio_rime_focus_out(TypioEngine *engine, TypioInputContext *ctx) {
@@ -671,7 +757,6 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
     bool is_release;
     bool is_shift;
     uint32_t rime_mask;
-    int ascii_before;
     int ascii_after;
 
     if (!engine || !ctx || !event) {
@@ -680,7 +765,6 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
 
     is_release = (event->type == TYPIO_EVENT_KEY_RELEASE);
     is_shift = typio_rime_is_shift_keysym(event->keysym);
-    ascii_before = -1;
     ascii_after = -1;
 
     /* Handle Escape on press only */
@@ -707,10 +791,6 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
         rime_mask |= TYPIO_RIME_RELEASE_MASK;
     }
 
-    if (is_shift && session->state->api->get_option) {
-        ascii_before = session->state->api->get_option(session->session_id, "ascii_mode");
-    }
-
     handled = session->state->api->process_key(
         session->session_id,
         (int)event->keysym,
@@ -718,16 +798,10 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
 
     if (is_shift && session->state->api->get_option) {
         ascii_after = session->state->api->get_option(session->session_id, "ascii_mode");
-        typio_log(TYPIO_LOG_DEBUG,
-                  "Rime Shift diagnostic: state=%s handled=%s keysym=0x%x mods=0x%x mask=0x%x ascii_before=%d ascii_after=%d session=%u",
-                  is_release ? "release" : "press",
-                  handled ? "yes" : "no",
-                  event->keysym,
-                  event->modifiers,
-                  rime_mask,
-                  ascii_before,
-                  ascii_after,
-                  (unsigned int)session->session_id);
+    }
+
+    if (is_shift && ascii_after >= 0) {
+        typio_rime_notify_status_icon(engine, session, ascii_after != 0);
     }
 
     if (!handled) {
@@ -744,50 +818,6 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
         return TYPIO_KEY_COMPOSING;
     }
     return TYPIO_KEY_HANDLED;
-}
-
-static bool typio_rime_select_candidate(TypioEngine *engine,
-                                        TypioInputContext *ctx,
-                                        int index) {
-    TypioRimeSession *session = typio_rime_get_session(engine, ctx, false);
-
-    if (!session || index < 0) {
-        return false;
-    }
-
-    if (session->state->api->select_candidate_on_current_page) {
-        if (!session->state->api->select_candidate_on_current_page(
-                session->session_id, (size_t)index)) {
-            return false;
-        }
-    } else if (session->state->api->select_candidate) {
-        if (!session->state->api->select_candidate(session->session_id, (size_t)index)) {
-            return false;
-        }
-    } else {
-        return false;
-    }
-
-    typio_rime_flush_commit(session, ctx);
-    typio_rime_sync_context(session, ctx);
-    return true;
-}
-
-static bool typio_rime_page_candidates(TypioEngine *engine,
-                                       TypioInputContext *ctx,
-                                       bool next) {
-    TypioRimeSession *session = typio_rime_get_session(engine, ctx, false);
-
-    if (!session || !session->state->api->change_page) {
-        return false;
-    }
-
-    if (!session->state->api->change_page(session->session_id, next ? False : True)) {
-        return false;
-    }
-
-    typio_rime_sync_context(session, ctx);
-    return true;
 }
 
 static void typio_rime_apply_runtime_config(TypioEngine *engine) {
@@ -855,19 +885,12 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
 static const char *typio_rime_get_status_icon(TypioEngine *engine,
                                                TypioInputContext *ctx) {
     TypioRimeSession *session = typio_rime_get_session(engine, ctx, false);
-    Bool ascii;
 
-    if (!session || !session->state->api->get_option) {
+    if (!session || !session->ascii_mode_known) {
         return "typio-rime";
     }
 
-    ascii = session->state->api->get_option(session->session_id, "ascii_mode");
-    typio_log(TYPIO_LOG_DEBUG,
-              "Rime status icon diagnostic: ascii_mode=%d icon=%s session=%u",
-              ascii ? 1 : 0,
-              ascii ? "typio-rime-latin" : "typio-rime",
-              (unsigned int)session->session_id);
-    return ascii ? "typio-rime-latin" : "typio-rime";
+    return session->ascii_mode ? "typio-rime-latin" : "typio-rime";
 }
 
 static const TypioEngineInfo typio_rime_engine_info = {
@@ -891,8 +914,6 @@ static const TypioEngineOps typio_rime_engine_ops = {
     .focus_out = typio_rime_focus_out,
     .reset = typio_rime_reset,
     .process_key = typio_rime_process_key,
-    .select_candidate = typio_rime_select_candidate,
-    .page_candidates = typio_rime_page_candidates,
     .reload_config = typio_rime_reload_config,
     .get_status_icon = typio_rime_get_status_icon,
 };

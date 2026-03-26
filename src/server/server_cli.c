@@ -1,6 +1,6 @@
 #include "server_cli.h"
 
-#include "typio_build_config.h"
+#include "typio/typio.h"
 
 #include <getopt.h>
 #include <stdio.h>
@@ -15,7 +15,7 @@ void typio_server_options_init(TypioServerOptions *options) {
 }
 
 void typio_server_print_version(void) {
-    printf("Typio Input Method Framework %s\n", TYPIO_VERSION);
+    printf("%s\n", typio_build_display_string());
     printf("An extensible input method framework supporting multiple engines\n");
 }
 

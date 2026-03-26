@@ -14,5 +14,6 @@
 #include "input_context.h"
 #include "event.h"
 #include "config.h"
+#include "build_info.h"
 
 #endif /* TYPIO_H */

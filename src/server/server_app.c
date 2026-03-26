@@ -87,7 +87,8 @@ static void typio_server_print_startup_banner(TypioServerApp *app) {
     TypioEngineManager *manager;
     TypioEngine *active;
 
-    printf("Typio Input Method Framework %s started\n", TYPIO_VERSION);
+    typio_log(TYPIO_LOG_INFO, "Starting %s", typio_build_display_string());
+    printf("%s started\n", typio_build_display_string());
     printf("Configuration: %s\n", typio_instance_get_config_dir(app->instance));
     printf("Data: %s\n", typio_instance_get_data_dir(app->instance));
 

@@ -219,6 +219,7 @@ struct TypioWlFrontend {
     volatile bool running;
     TypioWlLifecyclePhase lifecycle_phase;
     bool pending_reactivation;
+    bool popup_update_pending;
     int config_watch_fd;
     int config_dir_watch;
     int config_engines_watch;
@@ -273,6 +274,7 @@ void typio_wl_popup_destroy(TypioWlPopup *popup);
 bool typio_wl_popup_update(TypioWlFrontend *frontend, TypioInputContext *ctx);
 void typio_wl_popup_hide(TypioWlFrontend *frontend);
 bool typio_wl_popup_is_available(TypioWlFrontend *frontend);
+void typio_wl_popup_invalidate_config(TypioWlFrontend *frontend);
 void typio_wl_popup_handle_output_change(TypioWlFrontend *frontend,
                                          struct wl_output *output);
 

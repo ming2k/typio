@@ -18,6 +18,21 @@ add_compile_options(
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+set(TYPIO_BUILD_SOURCE_LABEL "source")
+find_package(Git QUIET)
+if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}" describe --always --dirty --tags
+        OUTPUT_VARIABLE TYPIO_BUILD_SOURCE_LABEL
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+
+if(NOT TYPIO_BUILD_SOURCE_LABEL)
+    set(TYPIO_BUILD_SOURCE_LABEL "source")
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(BUILD_SHARED_LIBS "Build shared Typio libraries" ON)
@@ -184,6 +199,11 @@ install(
 install(
     DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/icons/hicolor/"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor"
+)
+
+install(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/applications/typio.desktop"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/applications"
 )
 
 if(BUILD_CONTROL_PANEL)

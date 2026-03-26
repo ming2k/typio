@@ -42,10 +42,14 @@ if(HAVE_WAYLAND)
         wayland/lifecycle_model.c
         wayland/modifier_policy.c
         wayland/popup.c
+        wayland/popup_damage.c
+        wayland/popup_render_state.c
+        wayland/popup_state.c
         wayland/repeat_guard.c
         wayland/shortcut_chord.c
         wayland/shortcut_config.c
         wayland/startup_guard.c
+        wayland/text_ui_state.c
         wayland/vk_bridge.c
         wayland/wl_frontend.c
         wayland/preedit_format.c

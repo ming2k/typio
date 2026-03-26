@@ -7,6 +7,7 @@
 #include "identity.h"
 #include "monotonic_time.h"
 #include "preedit_format.h"
+#include "text_ui_state.h"
 #include "wl_trace.h"
 #include "typio/typio.h"
 #include "utils/log.h"
@@ -201,10 +202,12 @@ void typio_wl_session_reset(TypioWlSession *session) {
         return;
     }
 
-    /* Reset preedit change tracking */
-    free(session->last_preedit_text);
-    session->last_preedit_text = nullptr;
-    session->last_preedit_cursor = -1;
+    /* Reset preedit change tracking and cancel any deferred popup work from
+     * the previous activation so stale candidates cannot be redrawn later. */
+    typio_wl_text_ui_reset_tracking(session->frontend ? &session->frontend->popup_update_pending
+                                                      : nullptr,
+                                    &session->last_preedit_text,
+                                    &session->last_preedit_cursor);
 
     /* Reset pending state */
     free(session->pending.surrounding_text);
@@ -452,6 +455,9 @@ static void im_handle_done(void *data, [[maybe_unused]] struct zwp_input_method_
         trace_session_state(frontend, "done_reactivation_complete");
     } else if (!now_active && was_active) {
         typio_log(TYPIO_LOG_INFO, "Input context unfocused");
+        typio_wl_text_ui_reset_tracking(&frontend->popup_update_pending,
+                                        &frontend->session->last_preedit_text,
+                                        &frontend->session->last_preedit_cursor);
         typio_input_context_focus_out(frontend->session->ctx);
         typio_input_context_reset(frontend->session->ctx);
         typio_wl_popup_hide(frontend);
@@ -498,10 +504,9 @@ static void on_commit_callback([[maybe_unused]] TypioInputContext *ctx, const ch
     /* Apply changes */
     typio_wl_commit(session->frontend);
 
-    /* Reset preedit change tracking */
-    free(session->last_preedit_text);
-    session->last_preedit_text = nullptr;
-    session->last_preedit_cursor = -1;
+    typio_wl_text_ui_reset_tracking(&session->frontend->popup_update_pending,
+                                    &session->last_preedit_text,
+                                    &session->last_preedit_cursor);
 }
 
 static void on_preedit_callback([[maybe_unused]] TypioInputContext *ctx,
@@ -530,7 +535,7 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
     const TypioCandidateList *candidate_list;
     char *plain_text;
     int cursor_pos = -1;
-    bool preedit_changed;
+    TypioWlTextUiPlan update_plan;
     uint64_t start_ms;
     uint64_t popup_done_ms;
     uint64_t end_ms;
@@ -552,26 +557,37 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
      * we can skip the protocol commit, avoiding an expensive
      * composition-update round-trip in heavyweight clients like Chrome. */
     const char *new_text = plain_text ? plain_text : "";
-    const char *old_text = session->last_preedit_text ? session->last_preedit_text : "";
-    preedit_changed = (cursor_pos != session->last_preedit_cursor ||
-                       strcmp(new_text, old_text) != 0);
+    update_plan = typio_wl_text_ui_plan_update(session->last_preedit_text,
+                                               session->last_preedit_cursor,
+                                               new_text,
+                                               cursor_pos);
 
-    /* Always update the popup (lightweight, separate surface). */
+    if (update_plan == TYPIO_WL_TEXT_UI_DEFER_POPUP_ONLY) {
+        /* Candidate-only highlight changes are common during Up/Down
+         * navigation. Queue popup work to the next event-loop turn so the
+         * current key handling path can return without waiting for Cairo/Pango
+         * rendering and wl_surface_commit. */
+        session->frontend->popup_update_pending = true;
+        free(plain_text);
+        return;
+    }
+
+    /* Preedit changes still update synchronously so the application sees the
+     * latest composition state in the same protocol turn. */
     typio_wl_popup_update(session->frontend, ctx);
     popup_done_ms = typio_wl_monotonic_ms();
 
-    if (preedit_changed) {
-        if (!plain_text) {
-            typio_wl_set_preedit(session->frontend, "", -1, -1);
-        } else {
-            typio_wl_set_preedit(session->frontend, plain_text, cursor_pos, cursor_pos);
-        }
-        typio_wl_commit(session->frontend);
-
-        free(session->last_preedit_text);
-        session->last_preedit_text = plain_text ? typio_strdup(new_text) : nullptr;
-        session->last_preedit_cursor = cursor_pos;
+    session->frontend->popup_update_pending = false;
+    if (!plain_text) {
+        typio_wl_set_preedit(session->frontend, "", -1, -1);
+    } else {
+        typio_wl_set_preedit(session->frontend, plain_text, cursor_pos, cursor_pos);
     }
+    typio_wl_commit(session->frontend);
+
+    free(session->last_preedit_text);
+    session->last_preedit_text = plain_text ? typio_strdup(new_text) : nullptr;
+    session->last_preedit_cursor = cursor_pos;
 
     end_ms = typio_wl_monotonic_ms();
     popup_ms = (popup_done_ms >= start_ms) ? (popup_done_ms - start_ms) : 0;
@@ -581,7 +597,7 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
             "Wayland text UI slow: total=%" PRIu64 "ms popup=%" PRIu64 "ms preedit_changed=%s candidates=%zu selected=%d signature=%" PRIu64,
             total_ms,
             popup_ms,
-            preedit_changed ? "yes" : "no",
+            update_plan == TYPIO_WL_TEXT_UI_SYNC_PREEDIT_AND_POPUP ? "yes" : "no",
             candidate_list ? candidate_list->count : 0,
             candidate_list ? candidate_list->selected : -1,
             candidate_list ? candidate_list->content_signature : 0);

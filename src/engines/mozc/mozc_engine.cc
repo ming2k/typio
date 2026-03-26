@@ -972,56 +972,6 @@ static TypioKeyProcessResult mozc_process_key(TypioEngine *engine,
     return TYPIO_KEY_HANDLED;
 }
 
-static bool mozc_select_candidate(TypioEngine *engine,
-                                  TypioInputContext *ctx,
-                                  int index) {
-    TypioMozcSession *session = mozc_get_session(engine, ctx, false);
-    if (!session || index < 0) {
-        return false;
-    }
-
-    /* translate page-relative index to candidate id */
-    const TypioCandidateList *current = typio_input_context_get_candidates(ctx);
-    int abs_index = index;
-    if (current && current->page >= 0 && current->page_size > 0) {
-        abs_index = current->page * current->page_size + index;
-    }
-
-    mozc::commands::SessionCommand sc;
-    sc.set_type(mozc::commands::SessionCommand::SELECT_CANDIDATE);
-    sc.set_id(abs_index);
-
-    mozc::commands::Output output;
-    if (!mozc_send_command(session->state, session->session_id, sc, &output)) {
-        return false;
-    }
-
-    mozc_sync_output(output, ctx, session);
-    return true;
-}
-
-static bool mozc_page_candidates(TypioEngine *engine,
-                                 TypioInputContext *ctx,
-                                 bool next) {
-    /* Mozc handles paging via special keys sent as regular key events */
-    TypioMozcSession *session = mozc_get_session(engine, ctx, false);
-    if (!session) {
-        return false;
-    }
-
-    mozc::commands::KeyEvent key;
-    key.set_special_key(next ? mozc::commands::KeyEvent::PAGE_DOWN
-                             : mozc::commands::KeyEvent::PAGE_UP);
-
-    mozc::commands::Output output;
-    if (!mozc_send_key(session->state, session->session_id, key, &output)) {
-        return false;
-    }
-
-    mozc_sync_output(output, ctx, session);
-    return true;
-}
-
 static TypioResult mozc_reload_config(TypioEngine *engine) {
     auto *state = static_cast<TypioMozcState *>(typio_engine_get_user_data(engine));
     if (!state) {
@@ -1092,8 +1042,6 @@ static const TypioEngineOps mozc_engine_ops = {
     .focus_out = mozc_focus_out,
     .reset = mozc_reset,
     .process_key = mozc_process_key,
-    .select_candidate = mozc_select_candidate,
-    .page_candidates = mozc_page_candidates,
     .reload_config = mozc_reload_config,
     .get_status_icon = mozc_get_status_icon,
 };

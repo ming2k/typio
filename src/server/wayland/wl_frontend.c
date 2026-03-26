@@ -7,6 +7,7 @@
 #include "frontend_aux.h"
 #include "identity.h"
 #include "monotonic_time.h"
+#include "text_ui_state.h"
 #include "wl_frontend_internal.h"
 #include "typio/typio.h"
 #include "utils/log.h"
@@ -279,6 +280,8 @@ static void frontend_refresh_runtime_config(TypioWlFrontend *frontend) {
         typio_log(TYPIO_LOG_WARNING, "Config reload: failed to reload instance config");
         return;
     }
+
+    typio_wl_popup_invalidate_config(frontend);
 
     TypioConfig *config = typio_instance_get_config(frontend->instance);
 
@@ -589,6 +592,17 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 
     while (frontend->running) {
         frontend_watchdog_heartbeat(frontend);
+
+        if (typio_wl_text_ui_should_flush_popup_update(
+                frontend->popup_update_pending,
+                frontend->session != nullptr,
+                frontend->session && frontend->session->ctx,
+                frontend->session && frontend->session->ctx &&
+                    typio_input_context_is_focused(frontend->session->ctx))) {
+            frontend->popup_update_pending = false;
+            typio_wl_popup_update(frontend, frontend->session->ctx);
+        }
+
         /* Flush pending requests */
         while (wl_display_prepare_read(frontend->display) != 0) {
             wl_display_dispatch_pending(frontend->display);

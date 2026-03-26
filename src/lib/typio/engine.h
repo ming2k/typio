@@ -48,12 +48,6 @@ typedef struct TypioEngineOps {
     TypioKeyProcessResult (*process_key)(TypioEngine *engine, TypioInputContext *ctx,
                                          const TypioKeyEvent *event);
 
-    /* Candidate selection */
-    bool (*select_candidate)(TypioEngine *engine, TypioInputContext *ctx,
-                             int index);
-    bool (*page_candidates)(TypioEngine *engine, TypioInputContext *ctx,
-                            bool next);
-
     /* Voice input (optional, for voice engines) */
     TypioResult (*voice_start)(TypioEngine *engine, TypioInputContext *ctx);
     TypioResult (*voice_stop)(TypioEngine *engine, TypioInputContext *ctx);

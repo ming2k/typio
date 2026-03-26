@@ -90,10 +90,6 @@ void typio_input_context_reset(TypioInputContext *ctx);
 bool typio_input_context_process_key(TypioInputContext *ctx,
                                       const TypioKeyEvent *event);
 
-/* Candidate selection */
-bool typio_input_context_select_candidate(TypioInputContext *ctx, int index);
-bool typio_input_context_page_candidates(TypioInputContext *ctx, bool next);
-
 /* Commit text to client */
 void typio_input_context_commit(TypioInputContext *ctx, const char *text);
 
