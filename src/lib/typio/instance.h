@@ -95,6 +95,9 @@ TypioInputContext *typio_instance_get_focused_context(TypioInstance *instance);
 void typio_instance_set_engine_changed_callback(TypioInstance *instance,
                                                  TypioEngineChangedCallback callback,
                                                  void *user_data);
+void typio_instance_set_voice_engine_changed_callback(TypioInstance *instance,
+                                                      TypioVoiceEngineChangedCallback callback,
+                                                      void *user_data);
 
 /**
  * @brief Set a callback for engine status icon changes
@@ -188,6 +191,14 @@ char *typio_instance_get_config_text(TypioInstance *instance);
  * @return TYPIO_OK on success, error code on failure
  */
 TypioResult typio_instance_set_config_text(TypioInstance *instance, const char *content);
+
+/* Internal runtime notifications used by the core manager/runtime surfaces. */
+void typio_instance_notify_engine_changed(TypioInstance *instance,
+                                          const TypioEngineInfo *engine);
+void typio_instance_notify_voice_engine_changed(TypioInstance *instance,
+                                                const TypioEngineInfo *engine);
+void typio_instance_set_focused_context(TypioInstance *instance,
+                                        TypioInputContext *ctx);
 
 #ifdef __cplusplus
 }

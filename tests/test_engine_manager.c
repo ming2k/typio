@@ -252,6 +252,33 @@ TEST(list_engines) {
     typio_instance_free(instance);
 }
 
+TEST(list_engines_by_type) {
+    TypioInstance *instance = typio_instance_new();
+    typio_instance_init(instance);
+
+    TypioEngineManager *manager = typio_instance_get_engine_manager(instance);
+
+    typio_engine_manager_register(manager, mock_create, mock_get_info);
+    typio_engine_manager_register(manager, mock_voice_create, mock_voice_get_info);
+
+    size_t keyboard_count = 0;
+    size_t voice_count = 0;
+    const char **keyboard_engines =
+        typio_engine_manager_list_by_type(manager, TYPIO_ENGINE_TYPE_KEYBOARD, &keyboard_count);
+    const char **voice_engines =
+        typio_engine_manager_list_by_type(manager, TYPIO_ENGINE_TYPE_VOICE, &voice_count);
+
+    ASSERT_NOT_NULL(keyboard_engines);
+    ASSERT_NOT_NULL(voice_engines);
+    ASSERT(keyboard_count >= 2);
+    ASSERT_EQ(voice_count, 1);
+    ASSERT_STR_EQ(voice_engines[0], "mock-voice");
+
+    free((void *)keyboard_engines);
+    free((void *)voice_engines);
+    typio_instance_free(instance);
+}
+
 /* Test: Get engine info */
 TEST(get_info) {
     TypioInstance *instance = typio_instance_new();
@@ -295,6 +322,28 @@ TEST(activate_engine) {
     ASSERT_NOT_NULL(active);
     ASSERT_STR_EQ(typio_engine_get_name(active), "mock");
     ASSERT(typio_engine_is_active(active));
+
+    typio_instance_free(instance);
+}
+
+TEST(keyboard_and_voice_slots_are_independent) {
+    TypioInstance *instance = typio_instance_new();
+    typio_instance_init(instance);
+
+    TypioEngineManager *manager = typio_instance_get_engine_manager(instance);
+
+    typio_engine_manager_register(manager, mock_create, mock_get_info);
+    typio_engine_manager_register(manager, mock_voice_create, mock_voice_get_info);
+
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock"), TYPIO_OK);
+    ASSERT_EQ(typio_engine_manager_set_active_voice(manager, "mock-voice"), TYPIO_OK);
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock");
+    ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active_voice(manager)),
+                  "mock-voice");
+    ASSERT_EQ(typio_engine_manager_get_active_by_type(manager, TYPIO_ENGINE_TYPE_KEYBOARD),
+              typio_engine_manager_get_active(manager));
+    ASSERT_EQ(typio_engine_manager_get_active_by_type(manager, TYPIO_ENGINE_TYPE_VOICE),
+              typio_engine_manager_get_active_voice(manager));
 
     typio_instance_free(instance);
 }
@@ -661,8 +710,10 @@ int main(void) {
     run_test_manager_create();
     run_test_register_engine();
     run_test_list_engines();
+    run_test_list_engines_by_type();
     run_test_get_info();
     run_test_activate_engine();
+    run_test_keyboard_and_voice_slots_are_independent();
     run_test_switch_engines();
     run_test_switch_engine_rebinds_focused_context();
     run_test_unload_engine();

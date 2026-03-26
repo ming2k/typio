@@ -51,6 +51,9 @@ void typio_server_test_update_tray_engine_status(TypioServerApp *app);
 void typio_server_test_on_engine_change(TypioInstance *instance,
                                         const TypioEngineInfo *engine,
                                         void *user_data);
+void typio_server_test_on_voice_engine_change(TypioInstance *instance,
+                                              const TypioEngineInfo *engine,
+                                              void *user_data);
 void typio_server_test_on_status_icon_change(TypioInstance *instance,
                                              const char *icon_name,
                                              void *user_data);

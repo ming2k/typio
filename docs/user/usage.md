@@ -55,8 +55,13 @@ Typio exports structured runtime state on the session bus at:
 Read-only properties:
 
 - `Version`
+- `ActiveKeyboardEngine`
 - `ActiveEngine`
+- `AvailableKeyboardEngines`
 - `AvailableEngines`
+- `OrderedKeyboardEngines`
+- `AvailableVoiceEngines`
+- `ActiveVoiceEngine`
 - `ActiveEngineState`
 - `ConfigText`
 
@@ -66,7 +71,7 @@ Methods:
 - `SetConfigText(s)`
 - `ReloadConfig()`
 
-`ActiveEngineState` is an `a{sv}` map containing stable engine metadata plus
+`ActiveEngineState` describes the active keyboard engine. It is an `a{sv}` map containing stable engine metadata plus
 top-level engine config keys prefixed as `config.*`, such as
 `config.shared_data_dir` for Rime. The active Rime schema is exposed
 separately through the `RimeSchema` property. Typio emits the standard
@@ -95,7 +100,7 @@ The control panel reads Typio state from `org.typio.InputMethod1` and can:
 The current layout is split into three top-level pages:
 
 - `Appearance`
-- `Engines`
+- `Input engines`
 - `Shortcuts`
 
 The control panel follows an instant-apply model:
@@ -138,6 +143,17 @@ On Wayland, Typio renders Rime candidates through a dedicated input-method
 popup surface. If popup rendering is unavailable in the current session,
 Typio keeps candidate state visible inline in preedit. Candidate selection
 still uses the engine's normal selection keys.
+
+For candidate navigation, Typio separates candidate ownership from popup
+rendering:
+
+- Rime owns the candidate content and selected index
+- the input context stores the current candidate state
+- the Wayland popup reuses cached layout and redraws only the highlight when
+  possible
+
+That design keeps `Up` / `Down` movement on the fast path and avoids treating
+the popup as the source of truth for selection state.
 
 The popup follows Wayland surface enter/leave events and `wl_output.scale`.
 That keeps integer-scaled outputs such as 2x crisp instead of stretching a 1x

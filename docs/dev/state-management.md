@@ -61,9 +61,13 @@ Rules:
 
 Current runtime properties include:
 
+- `ActiveKeyboardEngine`
 - `ActiveEngine`
+- `AvailableKeyboardEngines`
 - `ActiveVoiceEngine`
+- `AvailableVoiceEngines`
 - `AvailableEngines`
+- `OrderedKeyboardEngines`
 - `ActiveEngineState`
 - `RimeSchema`
 - `ConfigText`
@@ -107,7 +111,7 @@ Patterns:
 Examples:
 
 - keyboard engine selector
-  Read runtime from `ActiveEngine`
+  Read runtime from `ActiveKeyboardEngine`
   Persist via `default_engine`
 - voice backend selector
   Read runtime from `ActiveVoiceEngine`
@@ -145,11 +149,11 @@ Current selector mapping in `typio-control`:
 - keyboard engine
   config key: `default_engine`
   value source: `FROM_RUNTIME`
-  options source: `AvailableEngines`
+  options source: `OrderedKeyboardEngines`
 - voice backend
   config key: `default_voice_engine`
   value source: `RUNTIME_THEN_CONFIG`
-  options source: `AvailableEngines`
+  options source: `AvailableVoiceEngines`
 - Rime schema
   state key: `schema` in `rime-state.toml`
   value source: `FROM_RUNTIME`
@@ -177,7 +181,7 @@ Current rule:
 
 Current examples:
 
-- `default_engine` -> `ActiveEngine`
+- `default_engine` -> `ActiveKeyboardEngine`
 - `default_voice_engine` -> `ActiveVoiceEngine`
 
 This is intentionally narrow. Do not attach a runtime property unless there is

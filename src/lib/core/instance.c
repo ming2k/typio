@@ -138,6 +138,8 @@ struct TypioInstance {
 
     TypioEngineChangedCallback engine_changed_callback;
     void *engine_changed_user_data;
+    TypioVoiceEngineChangedCallback voice_engine_changed_callback;
+    void *voice_engine_changed_user_data;
 
     TypioStatusIconChangedCallback status_icon_changed_callback;
     void *status_icon_changed_user_data;
@@ -485,6 +487,16 @@ void typio_instance_set_engine_changed_callback(TypioInstance *instance,
     instance->engine_changed_user_data = user_data;
 }
 
+void typio_instance_set_voice_engine_changed_callback(TypioInstance *instance,
+                                                      TypioVoiceEngineChangedCallback callback,
+                                                      void *user_data) {
+    if (!instance) {
+        return;
+    }
+    instance->voice_engine_changed_callback = callback;
+    instance->voice_engine_changed_user_data = user_data;
+}
+
 void typio_instance_set_status_icon_changed_callback(TypioInstance *instance,
                                                       TypioStatusIconChangedCallback callback,
                                                       void *user_data) {
@@ -709,6 +721,14 @@ void typio_instance_notify_engine_changed(TypioInstance *instance,
     if (instance && instance->engine_changed_callback) {
         instance->engine_changed_callback(instance, engine,
                                           instance->engine_changed_user_data);
+    }
+}
+
+void typio_instance_notify_voice_engine_changed(TypioInstance *instance,
+                                                const TypioEngineInfo *engine) {
+    if (instance && instance->voice_engine_changed_callback) {
+        instance->voice_engine_changed_callback(instance, engine,
+                                                instance->voice_engine_changed_user_data);
     }
 }
 

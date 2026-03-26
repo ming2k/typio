@@ -71,6 +71,9 @@ TypioResult typio_engine_manager_unload(TypioEngineManager *manager,
  */
 const char **typio_engine_manager_list(TypioEngineManager *manager,
                                         size_t *count);
+const char **typio_engine_manager_list_by_type(TypioEngineManager *manager,
+                                               TypioEngineType type,
+                                               size_t *count);
 const char **typio_engine_manager_list_ordered_keyboards(TypioEngineManager *manager,
                                                           size_t *count);
 
@@ -116,6 +119,8 @@ TypioResult typio_engine_manager_set_active_voice(TypioEngineManager *manager,
  * @return Active keyboard engine or nullptr if none
  */
 TypioEngine *typio_engine_manager_get_active(TypioEngineManager *manager);
+TypioEngine *typio_engine_manager_get_active_by_type(TypioEngineManager *manager,
+                                                     TypioEngineType type);
 
 /**
  * @brief Get the currently active voice engine

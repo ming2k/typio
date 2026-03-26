@@ -24,7 +24,7 @@ static const TypioConfigField schema_fields[] = {
         .key = "default_engine",
         .type = TYPIO_FIELD_STRING,
         .def.s = "",
-        .runtime_property = TYPIO_STATUS_PROP_ACTIVE_ENGINE,
+        .runtime_property = TYPIO_STATUS_PROP_ACTIVE_KEYBOARD_ENGINE,
     },
 
     /* --- Display (candidate popup) --- */

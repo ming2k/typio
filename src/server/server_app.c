@@ -16,6 +16,13 @@
 
 static TypioServerApp *g_active_app = nullptr;
 
+#ifdef HAVE_SYSTRAY
+static void typio_server_update_tray_engine_status(TypioServerApp *app);
+#endif
+#ifdef HAVE_STATUS_BUS
+static void typio_server_update_status_bus_state(TypioServerApp *app);
+#endif
+
 static void typio_server_signal_handler([[maybe_unused]] int sig) {
     if (g_active_app) {
         g_active_app->shutdown_requested_by_signal = true;
@@ -83,9 +90,54 @@ static void typio_server_request_stop(void *user_data) {
 #endif
 }
 
+static const char *typio_server_engine_display_name(const TypioEngine *engine) {
+    if (!engine) {
+        return nullptr;
+    }
+
+    return typio_engine_label_from_info(engine->info);
+}
+
+#ifdef HAVE_SYSTRAY
+static void typio_server_update_tray_tooltip(TypioServerApp *app) {
+    TypioEngineManager *manager;
+    TypioEngine *keyboard;
+    TypioEngine *voice;
+    const char *keyboard_label;
+    const char *voice_label;
+    char description[256];
+
+    if (!app || !app->tray || !app->instance) {
+        return;
+    }
+
+    manager = typio_instance_get_engine_manager(app->instance);
+    keyboard = manager ? typio_engine_manager_get_active(manager) : nullptr;
+    voice = manager ? typio_engine_manager_get_active_voice(manager) : nullptr;
+    keyboard_label = keyboard ? typio_server_engine_display_name(keyboard) : "Unavailable";
+    voice_label = voice ? typio_server_engine_display_name(voice) : "Disabled";
+
+    snprintf(description, sizeof(description),
+             "Keyboard: %s\nVoice: %s",
+             keyboard_label ? keyboard_label : "Unavailable",
+             voice_label ? voice_label : "Disabled");
+    typio_tray_set_tooltip(app->tray, "Typio", description);
+}
+#endif
+
+static void typio_server_sync_runtime_surfaces(TypioServerApp *app) {
+#ifdef HAVE_SYSTRAY
+    typio_server_update_tray_engine_status(app);
+#endif
+#ifdef HAVE_STATUS_BUS
+    typio_server_update_status_bus_state(app);
+#endif
+}
+
 static void typio_server_print_startup_banner(TypioServerApp *app) {
     TypioEngineManager *manager;
-    TypioEngine *active;
+    TypioEngine *active_keyboard;
+    TypioEngine *active_voice;
 
     typio_log(TYPIO_LOG_INFO, "Starting %s", typio_build_display_string());
     printf("%s started\n", typio_build_display_string());
@@ -93,12 +145,15 @@ static void typio_server_print_startup_banner(TypioServerApp *app) {
     printf("Data: %s\n", typio_instance_get_data_dir(app->instance));
 
     manager = typio_instance_get_engine_manager(app->instance);
-    active = manager ? typio_engine_manager_get_active(manager) : nullptr;
-    if (active) {
-        printf("Active engine: %s\n", typio_engine_get_name(active));
+    active_keyboard = manager ? typio_engine_manager_get_active(manager) : nullptr;
+    active_voice = manager ? typio_engine_manager_get_active_voice(manager) : nullptr;
+    if (active_keyboard) {
+        printf("Active keyboard engine: %s\n", typio_engine_get_name(active_keyboard));
     } else {
-        printf("No active engine\n");
+        printf("No active keyboard engine\n");
     }
+    printf("Active voice engine: %s\n",
+           active_voice ? typio_engine_get_name(active_voice) : "(disabled)");
 
     printf("\nPress Ctrl+C to exit\n\n");
 }
@@ -115,7 +170,7 @@ static bool typio_server_write_rime_schema_state(TypioServerApp *app,
 
 static void typio_server_update_tray_engine_status(TypioServerApp *app) {
     TypioEngineManager *manager;
-    TypioEngine *active;
+    TypioEngine *active_keyboard;
     const char *engine_name;
     const char *icon_name;
 
@@ -124,16 +179,17 @@ static void typio_server_update_tray_engine_status(TypioServerApp *app) {
     }
 
     manager = typio_instance_get_engine_manager(app->instance);
-    active = manager ? typio_engine_manager_get_active(manager) : nullptr;
-    engine_name = active ? typio_engine_get_name(active) : nullptr;
+    active_keyboard = manager ? typio_engine_manager_get_active(manager) : nullptr;
+    engine_name = active_keyboard ? typio_engine_get_name(active_keyboard) : nullptr;
     icon_name = typio_instance_get_last_status_icon(app->instance);
     if (!icon_name || !*icon_name) {
-        icon_name = (active && active->info && active->info->icon)
-                        ? active->info->icon
+        icon_name = (active_keyboard && active_keyboard->info && active_keyboard->info->icon)
+                        ? active_keyboard->info->icon
                         : "typio-keyboard";
     }
     typio_tray_set_icon(app->tray, icon_name);
-    typio_tray_update_engine(app->tray, engine_name, active != nullptr);
+    typio_tray_update_engine(app->tray, engine_name, active_keyboard != nullptr);
+    typio_server_update_tray_tooltip(app);
 }
 #endif
 
@@ -172,12 +228,7 @@ static void typio_server_on_engine_change(TypioInstance *instance,
     (void) instance;
     (void) engine;
 
-#ifdef HAVE_SYSTRAY
-    typio_server_update_tray_engine_status(app);
-#endif
-#ifdef HAVE_STATUS_BUS
-    typio_server_update_status_bus_state(app);
-#endif
+    typio_server_sync_runtime_surfaces(app);
     if (!app || !app->instance) {
         return;
     }
@@ -192,6 +243,19 @@ static void typio_server_on_engine_change(TypioInstance *instance,
         }
 #endif
         typio_log(TYPIO_LOG_INFO, "Engine changed to: %s", typio_engine_get_name(active));
+    }
+}
+
+static void typio_server_on_voice_engine_change(TypioInstance *instance,
+                                                const TypioEngineInfo *engine,
+                                                void *user_data) {
+    TypioServerApp *app = user_data;
+
+    (void) instance;
+
+    typio_server_sync_runtime_surfaces(app);
+    if (engine && engine->name) {
+        typio_log(TYPIO_LOG_INFO, "Voice engine changed to: %s", engine->name);
     }
 }
 
@@ -449,6 +513,17 @@ static int typio_server_run_wayland(TypioServerApp *app) {
     int wl_result;
     const char *wl_error;
 
+    typio_instance_set_engine_changed_callback(app->instance,
+                                               typio_server_on_engine_change,
+                                               app);
+    typio_instance_set_voice_engine_changed_callback(app->instance,
+                                                     typio_server_on_voice_engine_change,
+                                                     app);
+    typio_instance_set_status_icon_changed_callback(app->instance,
+                                                    typio_server_on_status_icon_change,
+                                                    app);
+    typio_server_sync_runtime_surfaces(app);
+
     app->wl_frontend = typio_wl_frontend_new(app->instance, nullptr);
     if (!app->wl_frontend) {
         fprintf(stderr, "Failed to create Wayland frontend\n");
@@ -466,13 +541,6 @@ static int typio_server_run_wayland(TypioServerApp *app) {
         typio_wl_frontend_set_status_bus(app->wl_frontend, app->status_bus);
     }
 #endif
-
-    typio_instance_set_engine_changed_callback(app->instance,
-                                               typio_server_on_engine_change,
-                                               app);
-    typio_instance_set_status_icon_changed_callback(app->instance,
-                                                    typio_server_on_status_icon_change,
-                                                    app);
 
     printf("Wayland input method frontend started\n");
 
@@ -568,6 +636,12 @@ void typio_server_test_on_engine_change(TypioInstance *instance,
                                         const TypioEngineInfo *engine,
                                         void *user_data) {
     typio_server_on_engine_change(instance, engine, user_data);
+}
+
+void typio_server_test_on_voice_engine_change(TypioInstance *instance,
+                                              const TypioEngineInfo *engine,
+                                              void *user_data) {
+    typio_server_on_voice_engine_change(instance, engine, user_data);
 }
 
 void typio_server_test_on_status_icon_change(TypioInstance *instance,

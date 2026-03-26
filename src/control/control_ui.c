@@ -205,7 +205,7 @@ static GtkWidget *build_keyboard_section(TypioControl *control) {
     gtk_box_append(GTK_BOX(box),
                    control_create_section_header_named("keyboard-header",
                                                        "Keyboard engines",
-                                                       "Set the active engine, reorder the preferred list, and open engine-specific settings from one place."));
+                                                       "Keyboard input is the primary engine category. Exactly one keyboard engine is active at a time, and it owns composition, candidates, and commit behavior."));
 
     control->engine_model = gtk_string_list_new(nullptr);
     control->engine_id_model = g_ptr_array_new_with_free_func(g_free);
@@ -326,7 +326,7 @@ static GtkWidget *build_voice_section(TypioControl *control) {
     gtk_box_append(GTK_BOX(box),
                    control_create_section_header_named("voice-header",
                                                        "Voice input",
-                                                       "Pick a backend, select an installed model, and manage local downloads."));
+                                                       "Voice backends run alongside keyboard input. They do not replace the active keyboard engine, but only one voice backend is active at a time."));
 
     control->voice_backend_model = gtk_string_list_new(nullptr);
     control->voice_backend_dropdown = GTK_DROP_DOWN(
@@ -691,8 +691,8 @@ GtkWidget *control_build_engines_page(TypioControl *control) {
 
     gtk_box_append(GTK_BOX(page),
                    control_create_section_header_named("engines-header",
-                                                       "Engines",
-                                                       "Keep keyboard and voice backends in one place. Each section stays focused on a single job."));
+                                                       "Input engines",
+                                                       "Typio has two parallel engine categories: keyboard for composition and candidates, and voice for speech recognition. Each category keeps its own single active engine."));
     gtk_box_append(GTK_BOX(page), build_keyboard_section(control));
     gtk_box_append(GTK_BOX(page), build_voice_section(control));
     return page;

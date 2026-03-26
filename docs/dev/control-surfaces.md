@@ -87,10 +87,13 @@ other top-level keys.
 ## Information Architecture
 
 - Top-level navigation should represent stable product areas such as
-  `Appearance`, `Engines`, and `Shortcuts`.
+  `Appearance`, `Input engines`, and `Shortcuts`.
 - Avoid mixing categories and concrete instances in the same navigation layer.
 - Engine/backend/model choices belong in dropdowns, not in extra tabs.
 - Use at most two navigation levels in the control center.
+- Keyboard and voice are engine categories, not competing alternatives.
+  The control panel should show them as separate sections in the same product
+  area, because they can be active at the same time.
 
 ## Visual Hierarchy
 
@@ -136,6 +139,9 @@ binding layer instead of direct one-off widget code.
   part of day-to-day keyboard usage.
 - Voice controls should stay out of the tray unless they become a primary
   frequent action.
+- The tray icon should represent keyboard-engine status, because keyboard
+  engines own composition and status icons. Voice state may appear in tooltip
+  or structured status surfaces, but it must not replace the keyboard icon.
 
 ## Documentation And Tests
 

@@ -165,9 +165,6 @@ typedef struct TypioEngineOps {
                                          TypioInputContext *ctx,
                                          const TypioKeyEvent *event);
 
-    bool (*select_candidate)(TypioEngine *engine, TypioInputContext *ctx, int index);
-    bool (*page_candidates)(TypioEngine *engine, TypioInputContext *ctx, bool next);
-
     TypioResult (*voice_start)(TypioEngine *engine, TypioInputContext *ctx);
     TypioResult (*voice_stop)(TypioEngine *engine, TypioInputContext *ctx);
     TypioResult (*voice_process)(TypioEngine *engine,
@@ -180,6 +177,9 @@ typedef struct TypioEngineOps {
     TypioResult (*get_config)(TypioEngine *engine, TypioConfig **config);
     TypioResult (*set_config)(TypioEngine *engine, const TypioConfig *config);
     TypioResult (*reload_config)(TypioEngine *engine);
+    const char *(*get_preedit)(TypioEngine *engine, TypioInputContext *ctx);
+    TypioCandidateList *(*get_candidates)(TypioEngine *engine, TypioInputContext *ctx);
+    const char *(*get_status_icon)(TypioEngine *engine, TypioInputContext *ctx);
 } TypioEngineOps;
 ```
 

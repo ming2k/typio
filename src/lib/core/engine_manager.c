@@ -629,6 +629,53 @@ const char **typio_engine_manager_list(TypioEngineManager *manager,
     return manager->name_list;
 }
 
+const char **typio_engine_manager_list_by_type(TypioEngineManager *manager,
+                                               TypioEngineType type,
+                                               size_t *count) {
+    const char **all_names;
+    const TypioEngineInfo *info;
+    const char **filtered;
+    size_t all_count = 0;
+    size_t filtered_count = 0;
+
+    if (!manager) {
+        if (count) {
+            *count = 0;
+        }
+        return nullptr;
+    }
+
+    all_names = typio_engine_manager_list(manager, &all_count);
+    if (!all_names) {
+        if (count) {
+            *count = 0;
+        }
+        return nullptr;
+    }
+
+    filtered = calloc(all_count + 1, sizeof(char *));
+    if (!filtered) {
+        if (count) {
+            *count = 0;
+        }
+        return nullptr;
+    }
+
+    for (size_t i = 0; i < all_count; ++i) {
+        info = typio_engine_manager_get_info(manager, all_names[i]);
+        if (!info || info->type != type) {
+            continue;
+        }
+        filtered[filtered_count++] = all_names[i];
+    }
+
+    filtered[filtered_count] = nullptr;
+    if (count) {
+        *count = filtered_count;
+    }
+    return filtered;
+}
+
 const char **typio_engine_manager_list_ordered_keyboards(TypioEngineManager *manager,
                                                           size_t *count) {
     TypioConfig *config;
@@ -755,8 +802,6 @@ TypioEngine *typio_engine_manager_get_engine(TypioEngineManager *manager,
 extern TypioResult typio_engine_activate(TypioEngine *engine,
                                           TypioInstance *instance);
 extern void typio_engine_deactivate(TypioEngine *engine);
-extern void typio_instance_notify_engine_changed(TypioInstance *instance,
-                                                  const TypioEngineInfo *engine);
 
 static void engine_manager_rebind_focused_context(TypioEngineManager *manager,
                                                   TypioEngine *old_engine,
@@ -850,6 +895,7 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
         }
 
         manager->active_voice_index = index;
+        typio_instance_notify_voice_engine_changed(manager->instance, entry->info);
         typio_log_info("Active voice engine: %s", entry->info->name);
         return TYPIO_OK;
     }
@@ -919,6 +965,15 @@ TypioEngine *typio_engine_manager_get_active(TypioEngineManager *manager) {
     }
 
     return manager->entries[manager->active_keyboard_index]->instance;
+}
+
+TypioEngine *typio_engine_manager_get_active_by_type(TypioEngineManager *manager,
+                                                     TypioEngineType type) {
+    if (type == TYPIO_ENGINE_TYPE_VOICE) {
+        return typio_engine_manager_get_active_voice(manager);
+    }
+
+    return typio_engine_manager_get_active(manager);
 }
 
 TypioResult typio_engine_manager_set_active_voice(TypioEngineManager *manager,

@@ -109,6 +109,28 @@ For built-in integrations, Typio's authoritative user configuration now lives
 in the root file `~/.config/typio/typio.toml`, typically under sections such
 as `[engines.rime]` and `[engines.mozc]`.
 
+## Engine Categories
+
+Typio models input engines in two parallel categories:
+
+- `keyboard`
+  The primary input pipeline. Keyboard engines own key processing, preedit,
+  candidate lists, commits, and status icons.
+- `voice`
+  A secondary pipeline for speech recognition. Voice engines do not replace the
+  active keyboard engine; they run alongside it and are selected independently.
+
+Operational rules:
+
+- there is exactly one active keyboard engine slot
+- there is exactly one active voice engine slot
+- keyboard and voice selections do not evict each other
+- the tray, status bus, and control panel should treat keyboard and voice as
+  separate runtime values, not as one flat engine list
+
+The built-in `basic` engine is the baseline keyboard engine. Voice backends
+such as Whisper and sherpa-onnx belong to the voice category.
+
 ## Wayland Data Flow
 
 1. The compositor activates the input method.
@@ -122,6 +144,30 @@ as `[engines.rime]` and `[engines.mozc]`.
    - committed
 6. Commit and preedit callbacks are translated into `zwp_input_method_v2` requests.
 7. Candidate lists are rendered through `zwp_input_popup_surface_v2` when the session exposes the necessary Wayland globals. If popup rendering is unavailable, Typio keeps candidate state visible inline in preedit.
+
+## Candidate Popup Pipeline
+
+The candidate-list UI is intentionally layered so state and rendering stay
+separate:
+
+1. the keyboard engine owns candidate content and the selected index
+2. `TypioInputContext` stores that state as the UI source of truth
+3. `wl_input_method.c` decides whether the update is:
+   - a full text-UI update, or
+   - a selection-only popup refresh
+4. `popup.c` renders the candidate popup over `zwp_input_popup_surface_v2`
+
+Selection-only movement such as `Up` / `Down` is treated as a hot path:
+
+- it should not rebuild preedit when only the highlight changes
+- it should not block the current key handler on popup work
+- it should reuse cached popup layout and row bitmaps whenever possible
+- a transient popup redraw failure should keep the previous visible frame
+  instead of hiding the candidate window
+
+This separation is important because candidate ownership belongs to the engine
+and input context, while popup buffers, damage, and scaling belong to the
+Wayland frontend.
 
 ## Keyboard Safety Model
 

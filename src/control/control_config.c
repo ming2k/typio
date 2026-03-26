@@ -82,6 +82,22 @@ static GVariant *control_get_runtime_property_for_config_key(TypioControl *contr
     return g_dbus_proxy_get_cached_property(control->proxy, property_name);
 }
 
+static GVariant *control_get_cached_property_with_fallback(TypioControl *control,
+                                                           const char *preferred,
+                                                           const char *fallback) {
+    GVariant *value;
+
+    if (!control || !control->proxy) {
+        return NULL;
+    }
+
+    value = preferred ? g_dbus_proxy_get_cached_property(control->proxy, preferred) : NULL;
+    if (!value && fallback) {
+        value = g_dbus_proxy_get_cached_property(control->proxy, fallback);
+    }
+    return value;
+}
+
 static guint control_find_model_index(GtkStringList *model, const char *value) {
     guint count;
 
@@ -1400,12 +1416,18 @@ void control_refresh_from_proxy(TypioControl *control) {
     gtk_widget_set_sensitive(GTK_WIDGET(control->engine_dropdown), TRUE);
     gtk_widget_set_sensitive(GTK_WIDGET(control->voice_backend_dropdown), TRUE);
 
-    active_engine = control_get_runtime_property_for_config_key(control,
-                                                               control->keyboard_engine_state.config_key);
-    available_engines = g_dbus_proxy_get_cached_property(control->proxy,
-                                                         TYPIO_STATUS_PROP_AVAILABLE_ENGINES);
-    ordered_engines = g_dbus_proxy_get_cached_property(control->proxy,
-                                                       TYPIO_STATUS_PROP_ORDERED_ENGINES);
+    active_engine = control_get_cached_property_with_fallback(
+        control,
+        TYPIO_STATUS_PROP_ACTIVE_KEYBOARD_ENGINE,
+        TYPIO_STATUS_PROP_ACTIVE_ENGINE);
+    available_engines = control_get_cached_property_with_fallback(
+        control,
+        TYPIO_STATUS_PROP_AVAILABLE_VOICE_ENGINES,
+        TYPIO_STATUS_PROP_AVAILABLE_ENGINES);
+    ordered_engines = control_get_cached_property_with_fallback(
+        control,
+        TYPIO_STATUS_PROP_ORDERED_KEYBOARD_ENGINES,
+        TYPIO_STATUS_PROP_ORDERED_ENGINES);
     engine_display_names = g_dbus_proxy_get_cached_property(control->proxy,
                                                             TYPIO_STATUS_PROP_ENGINE_DISPLAY_NAMES);
     config_text = g_dbus_proxy_get_cached_property(control->proxy, TYPIO_STATUS_PROP_CONFIG_TEXT);

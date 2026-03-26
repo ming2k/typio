@@ -12,6 +12,14 @@ Wayland text-input/input-method protocol stack and provides:
 - a D-Bus status interface for structured runtime state beyond what a tray icon
   can express
 
+Conceptually, Typio keeps two engine categories in parallel:
+
+- `keyboard` engines own composition, preedit, candidates, and committed text
+- `voice` engines own speech recognition and voice-model selection
+
+The categories do not conflict with each other. A session always has at most
+one active keyboard engine and at most one active voice engine.
+
 ## Protocol Stack
 
 Typio is designed around the native Wayland text input protocol stack:
@@ -53,7 +61,7 @@ cmake --build build
 ```
 
 The control panel uses a native GTK-style preferences layout with
-`Appearance`, `Engines`, and `Shortcuts` pages. Changes are saved
+`Appearance`, `Input engines`, and `Shortcuts` pages. Changes are saved
 automatically in the background; there is no global `Apply` / `Cancel` flow.
 
 Run directly from the build tree (no install needed):
@@ -123,11 +131,12 @@ Installed artifacts:
 - Tray hosts that ignore themed icon paths can still render the current engine icon through the exported `IconPixmap` fallback.
 - When the active engine is `rime`, the tray menu exposes a dedicated submenu with the current schema and schema-switch actions. The selected schema is remembered in XDG state rather than `typio.toml`.
 - Typio also exports a D-Bus status object at `org.typio.InputMethod1` so shells
-  such as quickshell can read the active engine, available engines, and
-  engine/config state as structured properties instead of inferring everything
-  from tray icon changes. Current builds also expose a `RuntimeState` property
-  for live Wayland frontend diagnostics such as lifecycle phase, keyboard-grab
-  activity, virtual-keyboard state, and keymap timing ages.
+  such as quickshell can read the active keyboard engine, active voice engine,
+  available engine lists, and engine/config state as structured properties
+  instead of inferring everything from tray icon changes. Current builds also
+  expose a `RuntimeState` property for live Wayland frontend diagnostics such
+  as lifecycle phase, keyboard-grab activity, virtual-keyboard state, and
+  keymap timing ages.
 - Typio supports a single user-facing config file: `~/.config/typio/typio.toml`.
 - Build-tree plugin testing is supported with `typio --engine-dir <build-dir>/engines`.
 - The pre-`typio-core` prototype API and examples were removed; the maintained public headers now live under `src/lib/typio/`.

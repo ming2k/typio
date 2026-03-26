@@ -44,7 +44,7 @@ GtkWidget *control_build_window(TypioControl *control, GtkApplication *app) {
                          "display", "Appearance");
     gtk_stack_add_titled(GTK_STACK(page_stack),
                          control_wrap_page_scroller(control_build_engines_page(control)),
-                         "engines", "Engines");
+                         "engines", "Input engines");
     gtk_stack_add_titled(GTK_STACK(page_stack),
                          control_wrap_page_scroller(control_build_shortcuts_page(control)),
                          "shortcuts", "Shortcuts");

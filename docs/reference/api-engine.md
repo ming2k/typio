@@ -14,10 +14,19 @@ TypioResult typio_engine_manager_register(TypioEngineManager *manager,
 TypioResult typio_engine_manager_unload(TypioEngineManager *manager, const char *name);
 
 const char **typio_engine_manager_list(TypioEngineManager *manager, size_t *count);
+const char **typio_engine_manager_list_by_type(TypioEngineManager *manager,
+                                               TypioEngineType type,
+                                               size_t *count);
+const char **typio_engine_manager_list_ordered_keyboards(TypioEngineManager *manager,
+                                                         size_t *count);
 const TypioEngineInfo *typio_engine_manager_get_info(TypioEngineManager *manager, const char *name);
 TypioEngine *typio_engine_manager_get_engine(TypioEngineManager *manager, const char *name);
 TypioResult typio_engine_manager_set_active(TypioEngineManager *manager, const char *name);
+TypioResult typio_engine_manager_set_active_voice(TypioEngineManager *manager, const char *name);
 TypioEngine *typio_engine_manager_get_active(TypioEngineManager *manager);
+TypioEngine *typio_engine_manager_get_active_voice(TypioEngineManager *manager);
+TypioEngine *typio_engine_manager_get_active_by_type(TypioEngineManager *manager,
+                                                     TypioEngineType type);
 TypioResult typio_engine_manager_next(TypioEngineManager *manager);
 TypioResult typio_engine_manager_prev(TypioEngineManager *manager);
 ```
@@ -54,9 +63,6 @@ typedef struct TypioEngineOps {
                                          TypioInputContext *ctx,
                                          const TypioKeyEvent *event);
 
-    bool (*select_candidate)(TypioEngine *engine, TypioInputContext *ctx, int index);
-    bool (*page_candidates)(TypioEngine *engine, TypioInputContext *ctx, bool next);
-
     TypioResult (*voice_start)(TypioEngine *engine, TypioInputContext *ctx);
     TypioResult (*voice_stop)(TypioEngine *engine, TypioInputContext *ctx);
     TypioResult (*voice_process)(TypioEngine *engine,
@@ -69,6 +75,9 @@ typedef struct TypioEngineOps {
     TypioResult (*get_config)(TypioEngine *engine, TypioConfig **config);
     TypioResult (*set_config)(TypioEngine *engine, const TypioConfig *config);
     TypioResult (*reload_config)(TypioEngine *engine);
+    const char *(*get_preedit)(TypioEngine *engine, TypioInputContext *ctx);
+    TypioCandidateList *(*get_candidates)(TypioEngine *engine, TypioInputContext *ctx);
+    const char *(*get_status_icon)(TypioEngine *engine, TypioInputContext *ctx);
 } TypioEngineOps;
 ```
 

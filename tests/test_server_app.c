@@ -37,7 +37,9 @@ static int tests_passed = 0;
 
 typedef struct FakeTray {
     char icon[128];
-    char engine[128];
+    char keyboard_engine[128];
+    char tooltip_title[128];
+    char tooltip_description[256];
     bool active;
 } FakeTray;
 
@@ -110,6 +112,27 @@ static TypioEngine *mock_rime_create(void) {
     return typio_engine_new(&mock_rime_info, &mock_rime_ops);
 }
 
+static const TypioEngineInfo mock_voice_info = {
+    .name = "mock-voice",
+    .display_name = "Mock Voice Engine",
+    .description = "Mock voice engine",
+    .version = "1.0",
+    .author = "test",
+    .icon = NULL,
+    .language = "und",
+    .type = TYPIO_ENGINE_TYPE_VOICE,
+    .capabilities = TYPIO_CAP_VOICE_INPUT,
+    .api_version = TYPIO_API_VERSION,
+};
+
+static const TypioEngineInfo *mock_voice_get_info(void) {
+    return &mock_voice_info;
+}
+
+static TypioEngine *mock_voice_create(void) {
+    return typio_engine_new(&mock_voice_info, &mock_rime_ops);
+}
+
 TEST(engine_change_preserves_dynamic_status_icon_for_tray) {
     char root[] = "/tmp/typio-server-app-test-XXXXXX";
     TypioInstanceConfig config = {};
@@ -135,8 +158,9 @@ TEST(engine_change_preserves_dynamic_status_icon_for_tray) {
     typio_server_test_on_engine_change(instance, &mock_rime_info, &app);
 
     ASSERT_STR_EQ(tray.icon, "typio-rime-latin");
-    ASSERT_STR_EQ(tray.engine, "rime");
+    ASSERT_STR_EQ(tray.keyboard_engine, "rime");
     ASSERT(tray.active);
+    ASSERT_STR_EQ(tray.tooltip_title, "Typio");
 
     typio_instance_free(instance);
 }
@@ -167,8 +191,38 @@ TEST(engine_change_uses_static_icon_after_dynamic_engine) {
     typio_server_test_on_engine_change(instance, NULL, &app);
 
     ASSERT_STR_EQ(tray.icon, "typio-keyboard");
-    ASSERT_STR_EQ(tray.engine, "basic");
+    ASSERT_STR_EQ(tray.keyboard_engine, "basic");
     ASSERT(tray.active);
+
+    typio_instance_free(instance);
+}
+
+TEST(voice_engine_change_updates_tray_tooltip) {
+    char root[] = "/tmp/typio-server-app-test-XXXXXX";
+    TypioInstanceConfig config = {};
+    TypioInstance *instance = create_temp_instance(root, &config);
+    TypioEngineManager *manager;
+    TypioServerApp app = {};
+    FakeTray tray = {};
+
+    ASSERT(instance != NULL);
+    ASSERT(typio_instance_init(instance) == TYPIO_OK);
+
+    manager = typio_instance_get_engine_manager(instance);
+    ASSERT(manager != NULL);
+    ASSERT(typio_engine_manager_register(manager,
+                                         mock_voice_create,
+                                         mock_voice_get_info) == TYPIO_OK);
+
+    app.instance = instance;
+    app.tray = (TypioTray *)&tray;
+
+    typio_server_test_update_tray_engine_status(&app);
+    ASSERT(strstr(tray.tooltip_description, "Voice: Disabled") != NULL);
+
+    ASSERT(typio_engine_manager_set_active_voice(manager, "mock-voice") == TYPIO_OK);
+    typio_server_test_on_voice_engine_change(instance, &mock_voice_info, &app);
+    ASSERT(strstr(tray.tooltip_description, "Voice: Mock Voice Engine") != NULL);
 
     typio_instance_free(instance);
 }
@@ -177,6 +231,7 @@ int main(void) {
     printf("Running server app tests:\n");
     run_test_engine_change_preserves_dynamic_status_icon_for_tray();
     run_test_engine_change_uses_static_icon_after_dynamic_engine();
+    run_test_voice_engine_change_updates_tray_tooltip();
     printf("\nPassed %d/%d tests\n", tests_passed, tests_run);
     return 0;
 }
@@ -192,9 +247,14 @@ int typio_tray_get_fd([[maybe_unused]] TypioTray *tray) { return -1; }
 int typio_tray_dispatch([[maybe_unused]] TypioTray *tray) { return 0; }
 void typio_tray_set_status([[maybe_unused]] TypioTray *tray,
                            [[maybe_unused]] TypioTrayStatus status) {}
-void typio_tray_set_tooltip([[maybe_unused]] TypioTray *tray,
-                            [[maybe_unused]] const char *title,
-                            [[maybe_unused]] const char *description) {}
+void typio_tray_set_tooltip(TypioTray *tray,
+                            const char *title,
+                            const char *description) {
+    FakeTray *fake = (FakeTray *)tray;
+    snprintf(fake->tooltip_title, sizeof(fake->tooltip_title), "%s", title ? title : "");
+    snprintf(fake->tooltip_description, sizeof(fake->tooltip_description), "%s",
+             description ? description : "");
+}
 bool typio_tray_is_registered([[maybe_unused]] TypioTray *tray) { return false; }
 
 void typio_tray_set_icon(TypioTray *tray, const char *icon_name) {
@@ -204,7 +264,8 @@ void typio_tray_set_icon(TypioTray *tray, const char *icon_name) {
 
 void typio_tray_update_engine(TypioTray *tray, const char *engine_name, bool is_active) {
     FakeTray *fake = (FakeTray *)tray;
-    snprintf(fake->engine, sizeof(fake->engine), "%s", engine_name ? engine_name : "");
+    snprintf(fake->keyboard_engine, sizeof(fake->keyboard_engine), "%s",
+             engine_name ? engine_name : "");
     fake->active = is_active;
 }
 #endif
