@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-03-28
+
+### Changed
+
+- **Candidate popup modularization**: split the Wayland candidate popup path
+  into dedicated `candidate_popup` modules for coordination, shm buffer
+  pooling, layout/cache management, Cairo painting, theme resolution, and
+  focused state helpers so rendering behavior is easier to trace and maintain.
+- **Internal naming consistency**: renamed the popup subsystem, tests, and
+  developer documentation from generic `popup` internals to
+  `candidate_popup`, aligning implementation structure with the feature's
+  actual responsibility.
+
 ## [2.2.7] - 2026-03-26
 
 ### Changed
