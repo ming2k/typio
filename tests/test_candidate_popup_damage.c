@@ -1,4 +1,4 @@
-#include "popup_damage.h"
+#include "candidate_popup_damage.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,19 +28,19 @@ static int tests_passed = 0;
     } while (0)
 
 TEST(rejects_empty_input) {
-    TypioPopupDamageRect rect = {};
+    TypioCandidatePopupDamageRect rect = {};
 
-    ASSERT(!typio_popup_damage_union(NULL, 0, &rect));
+    ASSERT(!typio_candidate_popup_damage_union(NULL, 0, &rect));
     ASSERT(!rect.valid);
 }
 
 TEST(returns_single_line_damage) {
-    TypioPopupDamageLine lines[] = {
+    TypioCandidatePopupDamageLine lines[] = {
         {.x = 10, .y = 20, .width = 30, .height = 12},
     };
-    TypioPopupDamageRect rect = {};
+    TypioCandidatePopupDamageRect rect = {};
 
-    ASSERT(typio_popup_damage_union(lines, 1, &rect));
+    ASSERT(typio_candidate_popup_damage_union(lines, 1, &rect));
     ASSERT(rect.valid);
     ASSERT(rect.x == 10);
     ASSERT(rect.y == 20);
@@ -49,13 +49,13 @@ TEST(returns_single_line_damage) {
 }
 
 TEST(merges_two_lines_into_bounding_box) {
-    TypioPopupDamageLine lines[] = {
+    TypioCandidatePopupDamageLine lines[] = {
         {.x = 40, .y = 18, .width = 50, .height = 14},
         {.x = 12, .y = 40, .width = 30, .height = 10},
     };
-    TypioPopupDamageRect rect = {};
+    TypioCandidatePopupDamageRect rect = {};
 
-    ASSERT(typio_popup_damage_union(lines, 2, &rect));
+    ASSERT(typio_candidate_popup_damage_union(lines, 2, &rect));
     ASSERT(rect.valid);
     ASSERT(rect.x == 12);
     ASSERT(rect.y == 18);
@@ -64,13 +64,13 @@ TEST(merges_two_lines_into_bounding_box) {
 }
 
 TEST(ignores_invalid_lines) {
-    TypioPopupDamageLine lines[] = {
+    TypioCandidatePopupDamageLine lines[] = {
         {.x = 5, .y = 6, .width = 0, .height = 8},
         {.x = 8, .y = 9, .width = 7, .height = -1},
     };
-    TypioPopupDamageRect rect = {};
+    TypioCandidatePopupDamageRect rect = {};
 
-    ASSERT(!typio_popup_damage_union(lines, 2, &rect));
+    ASSERT(!typio_candidate_popup_damage_union(lines, 2, &rect));
     ASSERT(!rect.valid);
 }
 

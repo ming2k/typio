@@ -1,4 +1,4 @@
-#include "popup_render_state.h"
+#include "candidate_popup_render_state.h"
 
 #include <limits.h>
 #include <string.h>
@@ -16,8 +16,8 @@ static bool popup_scaled_dimension(int logical, int scale, int *physical) {
     return true;
 }
 
-bool typio_popup_render_state_matches(const TypioPopupRenderState *cached,
-                                      const TypioPopupRenderState *current,
+bool typio_candidate_popup_render_state_matches(const TypioCandidatePopupRenderState *cached,
+                                      const TypioCandidatePopupRenderState *current,
                                       int scale) {
     int buffer_w;
     int buffer_h;

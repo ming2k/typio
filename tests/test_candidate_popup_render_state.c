@@ -1,4 +1,4 @@
-#include "popup_render_state.h"
+#include "candidate_popup_render_state.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,8 +29,8 @@ static int tests_passed = 0;
 
 #define ASSERT_EQ(a, b) ASSERT((a) == (b))
 
-static TypioPopupRenderState make_state(void) {
-    TypioPopupRenderState state = {
+static TypioCandidatePopupRenderState make_state(void) {
+    TypioCandidatePopupRenderState state = {
         .cache_valid = true,
         .line_count = 2,
         .content_signature = 42,
@@ -48,52 +48,52 @@ static TypioPopupRenderState make_state(void) {
 }
 
 TEST(matches_when_layout_inputs_are_identical) {
-    TypioPopupRenderState cached = make_state();
-    TypioPopupRenderState current = make_state();
+    TypioCandidatePopupRenderState cached = make_state();
+    TypioCandidatePopupRenderState current = make_state();
 
-    ASSERT_EQ(typio_popup_render_state_matches(&cached, &current, 1), true);
+    ASSERT_EQ(typio_candidate_popup_render_state_matches(&cached, &current, 1), true);
 }
 
 TEST(rejects_when_cache_was_invalidated) {
-    TypioPopupRenderState cached = make_state();
-    TypioPopupRenderState current = make_state();
+    TypioCandidatePopupRenderState cached = make_state();
+    TypioCandidatePopupRenderState current = make_state();
 
     cached.cache_valid = false;
-    ASSERT_EQ(typio_popup_render_state_matches(&cached, &current, 1), false);
+    ASSERT_EQ(typio_candidate_popup_render_state_matches(&cached, &current, 1), false);
 }
 
 TEST(rejects_when_config_reload_changes_layout_inputs) {
-    TypioPopupRenderState cached = make_state();
-    TypioPopupRenderState current = make_state();
+    TypioCandidatePopupRenderState cached = make_state();
+    TypioCandidatePopupRenderState current = make_state();
 
     current.font_size = 14;
     current.font_desc = "Sans 14";
     current.page_font_desc = "Sans 13";
-    ASSERT_EQ(typio_popup_render_state_matches(&cached, &current, 1), false);
+    ASSERT_EQ(typio_candidate_popup_render_state_matches(&cached, &current, 1), false);
 }
 
 TEST(rejects_when_scale_or_preedit_changes) {
-    TypioPopupRenderState cached = make_state();
-    TypioPopupRenderState current = make_state();
+    TypioCandidatePopupRenderState cached = make_state();
+    TypioCandidatePopupRenderState current = make_state();
 
     current.preedit_text = "nih";
-    ASSERT_EQ(typio_popup_render_state_matches(&cached, &current, 1), false);
+    ASSERT_EQ(typio_candidate_popup_render_state_matches(&cached, &current, 1), false);
 
     current = make_state();
     cached.width = -1;
-    ASSERT_EQ(typio_popup_render_state_matches(&cached, &current, 2), false);
+    ASSERT_EQ(typio_candidate_popup_render_state_matches(&cached, &current, 2), false);
 }
 
 TEST(rejects_when_content_signature_or_palette_changes) {
-    TypioPopupRenderState cached = make_state();
-    TypioPopupRenderState current = make_state();
+    TypioCandidatePopupRenderState cached = make_state();
+    TypioCandidatePopupRenderState current = make_state();
 
     current.content_signature = 99;
-    ASSERT_EQ(typio_popup_render_state_matches(&cached, &current, 1), false);
+    ASSERT_EQ(typio_candidate_popup_render_state_matches(&cached, &current, 1), false);
 
     current = make_state();
     current.palette_token = (const void *)0x2;
-    ASSERT_EQ(typio_popup_render_state_matches(&cached, &current, 1), false);
+    ASSERT_EQ(typio_candidate_popup_render_state_matches(&cached, &current, 1), false);
 }
 
 int main(void) {

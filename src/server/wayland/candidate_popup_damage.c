@@ -1,7 +1,7 @@
-#include "popup_damage.h"
+#include "candidate_popup_damage.h"
 
-static void popup_damage_include_line(TypioPopupDamageRect *rect,
-                                      const TypioPopupDamageLine *line) {
+static void popup_damage_include_line(TypioCandidatePopupDamageRect *rect,
+                                      const TypioCandidatePopupDamageLine *line) {
     int right;
     int bottom;
 
@@ -37,9 +37,9 @@ static void popup_damage_include_line(TypioPopupDamageRect *rect,
     }
 }
 
-bool typio_popup_damage_union(const TypioPopupDamageLine *lines,
+bool typio_candidate_popup_damage_union(const TypioCandidatePopupDamageLine *lines,
                               size_t line_count,
-                              TypioPopupDamageRect *rect) {
+                              TypioCandidatePopupDamageRect *rect) {
     if (!rect) {
         return false;
     }

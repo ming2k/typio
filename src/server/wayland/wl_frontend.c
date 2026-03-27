@@ -331,7 +331,7 @@ static void frontend_refresh_runtime_config(TypioWlFrontend *frontend) {
         return;
     }
 
-    typio_wl_popup_invalidate_config(frontend);
+    typio_wl_candidate_popup_invalidate_config(frontend);
 
     TypioConfig *config = typio_instance_get_config(frontend->instance);
 
@@ -549,12 +549,12 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
     }
 
     if (frontend->compositor && frontend->shm) {
-        frontend->popup = typio_wl_popup_create(frontend);
-        if (frontend->popup) {
-            typio_log(TYPIO_LOG_INFO, "Popup candidate surface ready");
+        frontend->candidate_popup = typio_wl_candidate_popup_create(frontend);
+        if (frontend->candidate_popup) {
+            typio_log(TYPIO_LOG_INFO, "Candidate popup surface ready");
         } else {
             typio_log(TYPIO_LOG_WARNING,
-                      "Failed to initialize popup candidate surface; keeping candidate state inline");
+                      "Failed to initialize candidate popup surface; keeping candidate state inline");
         }
     } else {
         typio_log(TYPIO_LOG_WARNING,
@@ -652,7 +652,7 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
                     typio_input_context_is_focused(frontend->session->ctx))) {
             frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_POPUP_UPDATE);
             frontend->popup_update_pending = false;
-            typio_wl_popup_update(frontend, frontend->session->ctx);
+            typio_wl_candidate_popup_update(frontend, frontend->session->ctx);
             frontend_watchdog_heartbeat(frontend);
             frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
         }
@@ -932,9 +932,9 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
         frontend->keyboard = nullptr;
     }
 
-    if (frontend->popup) {
-        typio_wl_popup_destroy(frontend->popup);
-        frontend->popup = nullptr;
+    if (frontend->candidate_popup) {
+        typio_wl_candidate_popup_destroy(frontend->candidate_popup);
+        frontend->candidate_popup = nullptr;
     }
 
     if (frontend->config_dir_watch >= 0 && frontend->config_watch_fd >= 0) {
@@ -1075,7 +1075,7 @@ static void registry_handle_global_remove(void *data,
         if (output->name == name) {
             *link = output->next;
             if (output->output) {
-                typio_wl_popup_handle_output_change(frontend, output->output);
+                typio_wl_candidate_popup_handle_output_change(frontend, output->output);
                 wl_output_destroy(output->output);
             }
             free(output);
@@ -1137,7 +1137,7 @@ static void output_handle_scale(void *data, [[maybe_unused]] struct wl_output *w
     }
 
     output->scale = factor > 0 ? factor : 1;
-    typio_wl_popup_handle_output_change(output->frontend, output->output);
+    typio_wl_candidate_popup_handle_output_change(output->frontend, output->output);
 }
 
 void typio_wl_frontend_set_tray([[maybe_unused]] TypioWlFrontend *frontend,

@@ -460,7 +460,7 @@ static void im_handle_done(void *data, [[maybe_unused]] struct zwp_input_method_
                                         &frontend->session->last_preedit_cursor);
         typio_input_context_focus_out(frontend->session->ctx);
         typio_input_context_reset(frontend->session->ctx);
-        typio_wl_popup_hide(frontend);
+        typio_wl_candidate_popup_hide(frontend);
 
         typio_wl_lifecycle_hard_reset_keyboard(frontend, "focus out");
         typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_INACTIVE, "focus out complete");
@@ -496,7 +496,7 @@ static void on_commit_callback([[maybe_unused]] TypioInputContext *ctx, const ch
 
     /* Clear preedit first */
     typio_wl_set_preedit(session->frontend, "", -1, -1);
-    typio_wl_popup_hide(session->frontend);
+    typio_wl_candidate_popup_hide(session->frontend);
 
     /* Commit the text */
     typio_wl_commit_string(session->frontend, text);
@@ -574,7 +574,7 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
 
     /* Preedit changes still update synchronously so the application sees the
      * latest composition state in the same protocol turn. */
-    typio_wl_popup_update(session->frontend, ctx);
+    typio_wl_candidate_popup_update(session->frontend, ctx);
     popup_done_ms = typio_wl_monotonic_ms();
 
     session->frontend->popup_update_pending = false;

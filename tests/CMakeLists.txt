@@ -222,32 +222,32 @@ target_include_directories(test_candidate_guard PRIVATE
 target_link_libraries(test_candidate_guard PRIVATE typio-core)
 add_test(NAME test_candidate_guard COMMAND test_candidate_guard)
 
-add_executable(test_popup_damage
-    test_popup_damage.c
-    ${CMAKE_SOURCE_DIR}/src/server/wayland/popup_damage.c
+add_executable(test_candidate_popup_damage
+    test_candidate_popup_damage.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/candidate_popup_damage.c
 )
-target_include_directories(test_popup_damage PRIVATE
+target_include_directories(test_candidate_popup_damage PRIVATE
     ${CMAKE_SOURCE_DIR}/src/server/wayland
 )
-add_test(NAME test_popup_damage COMMAND test_popup_damage)
+add_test(NAME test_candidate_popup_damage COMMAND test_candidate_popup_damage)
 
-add_executable(test_popup_state
-    test_popup_state.c
-    ${CMAKE_SOURCE_DIR}/src/server/wayland/popup_state.c
+add_executable(test_candidate_popup_state
+    test_candidate_popup_state.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/candidate_popup_state.c
 )
-target_include_directories(test_popup_state PRIVATE
+target_include_directories(test_candidate_popup_state PRIVATE
     ${CMAKE_SOURCE_DIR}/src/server/wayland
 )
-add_test(NAME test_popup_state COMMAND test_popup_state)
+add_test(NAME test_candidate_popup_state COMMAND test_candidate_popup_state)
 
-add_executable(test_popup_render_state
-    test_popup_render_state.c
-    ${CMAKE_SOURCE_DIR}/src/server/wayland/popup_render_state.c
+add_executable(test_candidate_popup_render_state
+    test_candidate_popup_render_state.c
+    ${CMAKE_SOURCE_DIR}/src/server/wayland/candidate_popup_render_state.c
 )
-target_include_directories(test_popup_render_state PRIVATE
+target_include_directories(test_candidate_popup_render_state PRIVATE
     ${CMAKE_SOURCE_DIR}/src/server/wayland
 )
-add_test(NAME test_popup_render_state COMMAND test_popup_render_state)
+add_test(NAME test_candidate_popup_render_state COMMAND test_candidate_popup_render_state)
 
 add_executable(test_text_ui_state
     test_text_ui_state.c

@@ -44,7 +44,7 @@ extern "C" {
 /* Forward declarations */
 typedef struct TypioWlSession TypioWlSession;
 typedef struct TypioWlKeyboard TypioWlKeyboard;
-typedef struct TypioWlPopup TypioWlPopup;
+typedef struct TypioWlCandidatePopup TypioWlCandidatePopup;
 typedef struct TypioWlOutput TypioWlOutput;
 
 typedef enum TypioWlLoopStage {
@@ -206,7 +206,7 @@ struct TypioWlFrontend {
     /* Session and keyboard state */
     TypioWlSession *session;
     TypioWlKeyboard *keyboard;
-    TypioWlPopup *popup;
+    TypioWlCandidatePopup *candidate_popup;
     TypioWlIdentityProvider *identity_provider;
     TypioWlIdentity current_identity;
 
@@ -283,14 +283,14 @@ void typio_wl_keyboard_process_key_release(TypioWlKeyboard *keyboard,
                                            uint32_t modifiers, uint32_t unicode,
                                            uint32_t time);
 
-/* Popup functions (popup.c) */
-TypioWlPopup *typio_wl_popup_create(TypioWlFrontend *frontend);
-void typio_wl_popup_destroy(TypioWlPopup *popup);
-bool typio_wl_popup_update(TypioWlFrontend *frontend, TypioInputContext *ctx);
-void typio_wl_popup_hide(TypioWlFrontend *frontend);
-bool typio_wl_popup_is_available(TypioWlFrontend *frontend);
-void typio_wl_popup_invalidate_config(TypioWlFrontend *frontend);
-void typio_wl_popup_handle_output_change(TypioWlFrontend *frontend,
+/* Candidate popup functions (candidate_popup.c) */
+TypioWlCandidatePopup *typio_wl_candidate_popup_create(TypioWlFrontend *frontend);
+void typio_wl_candidate_popup_destroy(TypioWlCandidatePopup *candidate_popup);
+bool typio_wl_candidate_popup_update(TypioWlFrontend *frontend, TypioInputContext *ctx);
+void typio_wl_candidate_popup_hide(TypioWlFrontend *frontend);
+bool typio_wl_candidate_popup_is_available(TypioWlFrontend *frontend);
+void typio_wl_candidate_popup_invalidate_config(TypioWlFrontend *frontend);
+void typio_wl_candidate_popup_handle_output_change(TypioWlFrontend *frontend,
                                          struct wl_output *output);
 
 /* Commit helpers */

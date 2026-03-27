@@ -71,7 +71,7 @@ Responsibilities:
 - connect to the Wayland display
 - bind `zwp_input_method_manager_v2`
 - operate within sessions where applications and the compositor expose `zwp_text_input_manager_v3`
-- bind `wl_compositor` and `wl_shm` for popup candidate rendering
+- bind `wl_compositor` and `wl_shm` for candidate popup rendering
 - create per-activation Typio sessions
 - grab keyboard input through the input-method protocol
 - translate XKB keyboard state into `TypioKeyEvent`
@@ -143,7 +143,7 @@ such as Whisper and sherpa-onnx belong to the voice category.
    - composing
    - committed
 6. Commit and preedit callbacks are translated into `zwp_input_method_v2` requests.
-7. Candidate lists are rendered through `zwp_input_popup_surface_v2` when the session exposes the necessary Wayland globals. If popup rendering is unavailable, Typio keeps candidate state visible inline in preedit.
+7. Candidate lists are rendered through `zwp_input_popup_surface_v2` when the session exposes the necessary Wayland globals. If candidate popup rendering is unavailable, Typio keeps candidate state visible inline in preedit.
 
 ## Candidate Popup Pipeline
 
@@ -155,7 +155,7 @@ separate:
 3. `wl_input_method.c` decides whether the update is:
    - a full text-UI update, or
    - a selection-only popup refresh
-4. `popup.c` renders the candidate popup over `zwp_input_popup_surface_v2`
+4. `candidate_popup.c` renders the candidate popup over `zwp_input_popup_surface_v2`
 
 Selection-only movement such as `Up` / `Down` is treated as a hot path:
 
@@ -193,7 +193,7 @@ Implemented:
 - Wayland-native protocol stack based on `zwp_input_method_manager_v2` and compositor/application `zwp_text_input_manager_v3`
 - keyboard grab and XKB integration
 - commit/preedit callback bridge
-- popup candidate surface rendering over pure Wayland protocol objects
+- candidate popup surface rendering over pure Wayland protocol objects
 - dynamic engine loading ABI
 - built-in basic keyboard engine
 - bundled `librime` engine plugin in the default build
