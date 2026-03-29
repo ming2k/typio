@@ -39,12 +39,14 @@ that meaning.
 
 - [Core API](reference/api-core.md)
 - [Engine API](reference/api-engine.md)
+- [D-Bus Interface](reference/dbus-interface.md)
 - [General API Reference](reference/api-reference.md)
 
 ## What Ships in This Repository
 
 - `typio-core`: instance, engine manager, input context, config, events, utilities
 - `typio`: Wayland daemon binary
+- `typio-client`: D-Bus CLI for controlling a running daemon
 - `basic` engine: built-in keyboard engine that commits printable Unicode text
 - `rime` engine: default `librime`-backed plugin
 

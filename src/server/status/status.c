@@ -642,6 +642,27 @@ static DBusMessage *status_handle_activate_engine(TypioStatusBus *bus,
     return dbus_message_new_method_return(msg);
 }
 
+static DBusMessage *status_handle_next_engine(TypioStatusBus *bus,
+                                              DBusMessage *msg) {
+    TypioEngineManager *manager;
+    TypioResult result;
+
+    manager = bus ? typio_instance_get_engine_manager(bus->instance) : nullptr;
+    if (!manager) {
+        return dbus_message_new_error(msg, DBUS_ERROR_FAILED,
+                                      "Engine manager not available");
+    }
+
+    result = typio_engine_manager_next(manager);
+    if (result != TYPIO_OK) {
+        return dbus_message_new_error(msg, DBUS_ERROR_FAILED,
+                                      "Failed to switch to next engine");
+    }
+
+    typio_status_bus_emit_properties_changed(bus);
+    return dbus_message_new_method_return(msg);
+}
+
 static DBusMessage *status_handle_reload_config(TypioStatusBus *bus,
                                                 DBusMessage *msg) {
     TypioResult result;
@@ -769,6 +790,7 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
             "    <property name=\"" TYPIO_STATUS_PROP_RIME_SCHEMA "\" type=\"s\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_CONFIG_TEXT "\" type=\"s\" access=\"read\"/>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_ACTIVATE_ENGINE "\"><arg name=\"engine\" type=\"s\" direction=\"in\"/></method>\n"
+            "    <method name=\"" TYPIO_STATUS_METHOD_NEXT_ENGINE "\"/>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_SET_RIME_SCHEMA "\"><arg name=\"schema\" type=\"s\" direction=\"in\"/></method>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_SET_CONFIG_TEXT "\"><arg name=\"content\" type=\"s\" direction=\"in\"/></method>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_RELOAD_CONFIG "\"/>\n"
@@ -788,6 +810,8 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
                interface[0] == '\0') {
         if (strcmp(member, TYPIO_STATUS_METHOD_ACTIVATE_ENGINE) == 0) {
             reply = status_handle_activate_engine(bus, msg);
+        } else if (strcmp(member, TYPIO_STATUS_METHOD_NEXT_ENGINE) == 0) {
+            reply = status_handle_next_engine(bus, msg);
         } else if (strcmp(member, TYPIO_STATUS_METHOD_SET_RIME_SCHEMA) == 0) {
             reply = status_handle_set_rime_schema(bus, msg);
         } else if (strcmp(member, TYPIO_STATUS_METHOD_SET_CONFIG_TEXT) == 0) {

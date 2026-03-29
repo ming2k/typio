@@ -5,6 +5,7 @@ Wayland text-input/input-method protocol stack and provides:
 
 - `typio-core`: the engine, context, config, and plugin runtime
 - `typio`: a `zwp_input_method_v2` Wayland frontend
+- `typio-client`: a D-Bus CLI for controlling a running daemon
 - `basic`: a built-in keyboard engine that commits printable text directly
 - `rime`: the default Chinese input engine plugin backed by `librime`
 - a shared-library engine ABI for richer out-of-tree engines
@@ -94,6 +95,7 @@ Runtime requirements:
 Installed artifacts:
 
 - `bin/typio`
+- `bin/typio-client`
 - `lib/libtypio-core.so` or `lib/libtypio-core.a`
 - `include/typio/*.h`
 - `lib/pkgconfig/typio.pc`
@@ -113,6 +115,7 @@ Installed artifacts:
 - [Wayland Runtime Diagnostics](docs/user/troubleshooting.md#wayland-runtime-diagnostics)
 - [Control Surfaces](docs/dev/control-surfaces.md)
 - [Creating Engines](docs/dev/creating-engines.md)
+- [D-Bus Interface Reference](docs/reference/dbus-interface.md)
 
 ## Notes
 

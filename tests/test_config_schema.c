@@ -63,7 +63,7 @@ TEST(schema_find_null) {
 
 TEST(runtime_property_lookup) {
     ASSERT_STR_EQ(typio_config_schema_runtime_property("default_engine"),
-                  TYPIO_STATUS_PROP_ACTIVE_ENGINE);
+                  TYPIO_STATUS_PROP_ACTIVE_KEYBOARD_ENGINE);
     ASSERT_STR_EQ(typio_config_schema_runtime_property("default_voice_engine"),
                   TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE);
     ASSERT_NULL(typio_config_schema_runtime_property("engines.rime.font_size"));
@@ -115,7 +115,7 @@ TEST(stateful_engine_keys_expose_runtime_property) {
 
     ASSERT_NOT_NULL(keyboard);
     ASSERT_NOT_NULL(voice);
-    ASSERT_STR_EQ(keyboard->runtime_property, TYPIO_STATUS_PROP_ACTIVE_ENGINE);
+    ASSERT_STR_EQ(keyboard->runtime_property, TYPIO_STATUS_PROP_ACTIVE_KEYBOARD_ENGINE);
     ASSERT_STR_EQ(voice->runtime_property, TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE);
 }
 

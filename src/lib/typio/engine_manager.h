@@ -143,6 +143,16 @@ TypioResult typio_engine_manager_next(TypioEngineManager *manager);
  */
 TypioResult typio_engine_manager_prev(TypioEngineManager *manager);
 
+/**
+ * @brief Notify that the active keyboard engine committed text
+ *
+ * Updates the recent-engine pair used by slow-switch toggling.
+ * Call this from the commit callback path.
+ *
+ * @param manager Engine manager
+ */
+void typio_engine_manager_notify_commit(TypioEngineManager *manager);
+
 #ifdef __cplusplus
 }
 #endif

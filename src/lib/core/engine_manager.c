@@ -54,7 +54,6 @@ struct TypioEngineManager {
     size_t entry_capacity;
     size_t active_keyboard_index;
     size_t active_voice_index;
-    size_t prev_active_keyboard_index;
     uint64_t last_switch_ms;
     char *recent_primary_name;
     char *recent_secondary_name;
@@ -109,17 +108,6 @@ static bool engine_manager_name_is_keyboard(TypioEngineManager *manager,
     entry = find_entry_by_name(manager, name);
     return entry && entry->info &&
            entry->info->type == TYPIO_ENGINE_TYPE_KEYBOARD;
-}
-
-static bool engine_manager_has_explicit_order(TypioEngineManager *manager) {
-    TypioConfig *config;
-
-    if (!manager || !manager->instance) {
-        return false;
-    }
-
-    config = typio_instance_get_config(manager->instance);
-    return config && typio_config_get_array_size(config, "engine_order") > 0;
 }
 
 static void engine_manager_load_recent_state(TypioEngineManager *manager) {
@@ -230,24 +218,6 @@ static void engine_manager_update_recent_pair(TypioEngineManager *manager,
     }
 }
 
-static void engine_manager_note_stable_current(TypioEngineManager *manager,
-                                               uint64_t now_ms) {
-    const char *current_name;
-    uint64_t elapsed;
-
-    if (!manager || manager->active_keyboard_index == (size_t)-1) {
-        return;
-    }
-
-    elapsed = now_ms - manager->last_switch_ms;
-    if (elapsed < TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
-        return;
-    }
-
-    current_name = manager->entries[manager->active_keyboard_index]->name;
-    engine_manager_update_recent_pair(manager, current_name);
-}
-
 static size_t engine_manager_recent_partner_index(TypioEngineManager *manager) {
     const char *current_name;
     const char *partner_name = NULL;
@@ -312,7 +282,6 @@ TypioEngineManager *typio_engine_manager_new(TypioInstance *instance) {
 
     manager->active_keyboard_index = (size_t)-1;
     manager->active_voice_index = (size_t)-1;
-    manager->prev_active_keyboard_index = (size_t)-1;
     engine_manager_load_recent_state(manager);
 
     return manager;
@@ -570,14 +539,6 @@ TypioResult typio_engine_manager_unload(TypioEngineManager *manager,
             } else if (manager->active_voice_index != (size_t)-1 &&
                        manager->active_voice_index > i) {
                 manager->active_voice_index--;
-            }
-
-            /* Keep prev_active_keyboard_index consistent */
-            if (i == manager->prev_active_keyboard_index) {
-                manager->prev_active_keyboard_index = (size_t)-1;
-            } else if (manager->prev_active_keyboard_index != (size_t)-1 &&
-                       manager->prev_active_keyboard_index > i) {
-                manager->prev_active_keyboard_index--;
             }
 
             free_engine_entry(manager->entries[i]);
@@ -909,10 +870,6 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
         return TYPIO_OK;
     }
 
-    if (manager->active_keyboard_index != (size_t)-1) {
-        engine_manager_note_stable_current(manager, now_ms);
-    }
-
     /* Deactivate current keyboard engine */
     EngineEntry *current = nullptr;
     if (manager->active_keyboard_index != (size_t)-1) {
@@ -943,9 +900,14 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
         return result;
     }
 
-    manager->prev_active_keyboard_index = manager->active_keyboard_index;
     manager->active_keyboard_index = index;
     manager->last_switch_ms = now_ms;
+
+    /* Clear stale status icon from the previous engine.  This covers the
+     * no-focused-context path where rebind returns early.  The clear
+     * inside rebind_focused_context handles the case where focus_out
+     * re-sets the icon before the new engine takes over. */
+    typio_instance_clear_status_icon(manager->instance);
 
     engine_manager_rebind_focused_context(manager,
                                           current ? current->instance : nullptr,
@@ -1002,50 +964,73 @@ TypioEngine *typio_engine_manager_get_active_voice(TypioEngineManager *manager) 
     return manager->entries[manager->active_voice_index]->instance;
 }
 
+/**
+ * Resolve the target engine for a next/prev switch.
+ *
+ * Slow switch (elapsed > threshold): toggle between the two most recently
+ * committed engines.  Fast switch (elapsed <= threshold): cycle through
+ * the ordered keyboard engine list.
+ *
+ * @param direction  +1 for next, -1 for prev
+ */
+static size_t engine_manager_resolve_switch(TypioEngineManager *manager,
+                                            int direction) {
+    size_t ordered_count = 0;
+    const char **ordered = typio_engine_manager_list_ordered_keyboards(
+        manager, &ordered_count);
+
+    if (manager->active_keyboard_index == (size_t)-1) {
+        return ordered_count > 0
+            ? (direction > 0 ? 0 : ordered_count - 1)
+            : (size_t)-1;
+    }
+
+    uint64_t now_ms = engine_manager_monotonic_ms();
+    uint64_t elapsed = now_ms - manager->last_switch_ms;
+
+    /* Slow switch: toggle between recent committed pair */
+    if (elapsed > TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
+        size_t partner = engine_manager_recent_partner_index(manager);
+        if (partner != (size_t)-1) {
+            return partner;
+        }
+    }
+
+    /* Fast switch (or no partner available): cycle ordered list */
+    const char *active_name = manager->entries[manager->active_keyboard_index]->name;
+    size_t current_ordered = (size_t)-1;
+    for (size_t i = 0; i < ordered_count; ++i) {
+        if (strcmp(ordered[i], active_name) == 0) {
+            current_ordered = i;
+            break;
+        }
+    }
+
+    if (current_ordered == (size_t)-1) {
+        return ordered_count > 0
+            ? (direction > 0 ? 0 : ordered_count - 1)
+            : (size_t)-1;
+    }
+
+    if (direction > 0) {
+        return (current_ordered + 1) % ordered_count;
+    }
+    return current_ordered == 0 ? ordered_count - 1 : current_ordered - 1;
+}
+
 TypioResult typio_engine_manager_next(TypioEngineManager *manager) {
     if (!manager || manager->entry_count == 0) {
         return TYPIO_ERROR_ENGINE_NOT_AVAILABLE;
     }
 
-    size_t next_index;
     size_t ordered_count = 0;
     const char **ordered = typio_engine_manager_list_ordered_keyboards(manager, &ordered_count);
-    if (manager->active_keyboard_index == (size_t)-1) {
-        next_index = ordered_count > 0 ? 0 : (size_t)-1;
-    } else {
-        uint64_t now_ms = engine_manager_monotonic_ms();
-        uint64_t elapsed = now_ms - manager->last_switch_ms;
+    size_t target = engine_manager_resolve_switch(manager, +1);
 
-        if (!engine_manager_has_explicit_order(manager) &&
-            elapsed > TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
-            engine_manager_note_stable_current(manager, now_ms);
-            next_index = engine_manager_recent_partner_index(manager);
-        } else {
-            next_index = (size_t)-1;
-        }
-
-        if (next_index == (size_t)-1) {
-            const char *active_name = manager->entries[manager->active_keyboard_index]->name;
-            size_t current_ordered = (size_t)-1;
-            for (size_t i = 0; i < ordered_count; ++i) {
-                if (strcmp(ordered[i], active_name) == 0) {
-                    current_ordered = i;
-                    break;
-                }
-            }
-            if (current_ordered == (size_t)-1) {
-                next_index = ordered_count > 0 ? 0 : (size_t)-1;
-            } else {
-                next_index = (current_ordered + 1) % ordered_count;
-            }
-        }
-    }
-
-    if (next_index == (size_t)-1) {
+    if (target == (size_t)-1) {
         return TYPIO_ERROR_ENGINE_NOT_AVAILABLE;
     }
-
-    return typio_engine_manager_set_active(manager, ordered[next_index]);
+    return typio_engine_manager_set_active(manager, ordered[target]);
 }
 
 TypioResult typio_engine_manager_prev(TypioEngineManager *manager) {
@@ -1053,45 +1038,21 @@ TypioResult typio_engine_manager_prev(TypioEngineManager *manager) {
         return TYPIO_ERROR_ENGINE_NOT_AVAILABLE;
     }
 
-    size_t prev_index;
     size_t ordered_count = 0;
     const char **ordered = typio_engine_manager_list_ordered_keyboards(manager, &ordered_count);
-    if (manager->active_keyboard_index == (size_t)-1) {
-        prev_index = ordered_count > 0 ? ordered_count - 1 : (size_t)-1;
-    } else {
-        uint64_t now_ms = engine_manager_monotonic_ms();
-        uint64_t elapsed = now_ms - manager->last_switch_ms;
+    size_t target = engine_manager_resolve_switch(manager, -1);
 
-        if (!engine_manager_has_explicit_order(manager) &&
-            elapsed > TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
-            engine_manager_note_stable_current(manager, now_ms);
-            prev_index = engine_manager_recent_partner_index(manager);
-        } else {
-            prev_index = (size_t)-1;
-        }
-
-        if (prev_index == (size_t)-1) {
-            const char *active_name = manager->entries[manager->active_keyboard_index]->name;
-            size_t current_ordered = (size_t)-1;
-            for (size_t i = 0; i < ordered_count; ++i) {
-                if (strcmp(ordered[i], active_name) == 0) {
-                    current_ordered = i;
-                    break;
-                }
-            }
-            if (current_ordered == (size_t)-1) {
-                prev_index = ordered_count > 0 ? ordered_count - 1 : (size_t)-1;
-            } else if (current_ordered == 0) {
-                prev_index = ordered_count - 1;
-            } else {
-                prev_index = current_ordered - 1;
-            }
-        }
-    }
-
-    if (prev_index == (size_t)-1) {
+    if (target == (size_t)-1) {
         return TYPIO_ERROR_ENGINE_NOT_AVAILABLE;
     }
+    return typio_engine_manager_set_active(manager, ordered[target]);
+}
 
-    return typio_engine_manager_set_active(manager, ordered[prev_index]);
+void typio_engine_manager_notify_commit(TypioEngineManager *manager) {
+    if (!manager || manager->active_keyboard_index == (size_t)-1) {
+        return;
+    }
+
+    const char *name = manager->entries[manager->active_keyboard_index]->name;
+    engine_manager_update_recent_pair(manager, name);
 }

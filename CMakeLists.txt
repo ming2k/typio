@@ -177,6 +177,10 @@ add_subdirectory(src/lib)
 add_subdirectory(src/engines)
 add_subdirectory(src/server)
 
+if(ENABLE_STATUS_BUS)
+    add_subdirectory(src/client)
+endif()
+
 if(BUILD_CONTROL_PANEL)
     add_subdirectory(src/control)
 endif()

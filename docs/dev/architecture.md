@@ -11,11 +11,11 @@ for end-to-end text entry.
 Wayland compositor
         |
         v
-   typio (daemon)
-        |
-        v
-   typio-core
-        |
+   typio (daemon) ---- D-Bus (org.typio.InputMethod1)
+        |                       |
+        v                  +----+----+
+   typio-core              |         |
+        |            typio-client  typio-control
    +----+------------------------------------------+
    |                                               |
 built-in basic engine                 external plugin engines
@@ -76,6 +76,19 @@ Responsibilities:
 - grab keyboard input through the input-method protocol
 - translate XKB keyboard state into `TypioKeyEvent`
 - forward commit and preedit callbacks back into Wayland protocol requests
+
+### `typio-client`
+
+Located under `src/client/`.
+
+Responsibilities:
+
+- provide a CLI for querying and controlling a running Typio daemon
+- communicate exclusively over the `org.typio.InputMethod1` D-Bus interface
+- no dependency on `typio-core`; pure D-Bus client
+
+See [D-Bus Interface Reference](../reference/dbus-interface.md) for the full
+protocol specification.
 
 ### Built-In `basic` Engine
 

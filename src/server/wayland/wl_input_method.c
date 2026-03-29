@@ -507,6 +507,11 @@ static void on_commit_callback([[maybe_unused]] TypioInputContext *ctx, const ch
     typio_wl_text_ui_reset_tracking(&session->frontend->popup_update_pending,
                                     &session->last_preedit_text,
                                     &session->last_preedit_cursor);
+
+    /* Notify the engine manager that the active engine committed text,
+     * so the recent-engine pair used for slow-switch toggling stays current. */
+    typio_engine_manager_notify_commit(
+        typio_instance_get_engine_manager(session->frontend->instance));
 }
 
 static void on_preedit_callback([[maybe_unused]] TypioInputContext *ctx,

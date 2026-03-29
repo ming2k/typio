@@ -80,7 +80,7 @@ sudo cmake --install build --prefix /usr/local
 | `BUILD_TESTS` | `ON` | Build unit tests |
 | `BUILD_BASIC_ENGINE` | `ON` | Build the built-in basic keyboard engine |
 | `ENABLE_WAYLAND` | `ON` | Enable the Wayland frontend |
-| `ENABLE_STATUS_BUS` | `ON` | Enable the D-Bus runtime status/control interface |
+| `ENABLE_STATUS_BUS` | `ON` | Enable the D-Bus runtime status/control interface and build `typio-client` |
 | `ENABLE_SYSTRAY` | `OFF` | Enable D-Bus StatusNotifierItem support |
 | `BUILD_RIME_ENGINE` | `OFF` | Build the optional `librime` engine plugin |
 

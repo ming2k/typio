@@ -635,14 +635,20 @@ TEST(stable_pair_prefers_recent_engines_and_skips_rapid_persistence) {
     typio_engine_manager_register(manager, mock_create, mock_get_info);
     typio_engine_manager_register(manager, mock2_create, mock2_get_info);
 
+    /* Activate mock and commit to register it in the recent pair */
     ASSERT_EQ(typio_engine_manager_set_active(manager, "mock"), TYPIO_OK);
-    sleep_past_switch_threshold();
-    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock2"), TYPIO_OK);
-    sleep_past_switch_threshold();
+    typio_engine_manager_notify_commit(manager);
 
+    /* Activate mock2 and commit to register it as primary */
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock2"), TYPIO_OK);
+    typio_engine_manager_notify_commit(manager);
+
+    /* Slow switch: should toggle to recent partner (mock) */
+    sleep_past_switch_threshold();
     ASSERT_EQ(typio_engine_manager_next(manager), TYPIO_OK);
     ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock");
 
+    /* Rapid next: should cycle (no slow-switch toggle) */
     ASSERT_EQ(typio_engine_manager_next(manager), TYPIO_OK);
     ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock2");
 
@@ -663,14 +669,19 @@ TEST(stable_pair_persists_across_instances) {
     typio_engine_manager_register(manager, mock_create, mock_get_info);
     typio_engine_manager_register(manager, mock2_create, mock2_get_info);
 
+    /* Build the recent pair through commits */
     ASSERT_EQ(typio_engine_manager_set_active(manager, "mock"), TYPIO_OK);
-    sleep_past_switch_threshold();
+    typio_engine_manager_notify_commit(manager);
     ASSERT_EQ(typio_engine_manager_set_active(manager, "mock2"), TYPIO_OK);
+    typio_engine_manager_notify_commit(manager);
+
+    /* Slow-switch should toggle to mock */
     sleep_past_switch_threshold();
     ASSERT_EQ(typio_engine_manager_next(manager), TYPIO_OK);
     ASSERT_STR_EQ(typio_engine_get_name(typio_engine_manager_get_active(manager)), "mock");
     typio_instance_free(instance);
 
+    /* Second instance should reload the persisted pair */
     instance = typio_instance_new_with_config(&config);
     ASSERT_NOT_NULL(instance);
     typio_instance_init(instance);

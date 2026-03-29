@@ -136,6 +136,7 @@ TEST(keymap_timeout_triggers_fail_safe) {
     TypioWlKeyboard keyboard;
 
     init_frontend(&frontend, &keyboard);
+    keyboard.grab = (struct zwp_input_method_keyboard_grab_v2 *)0x1;
     frontend.virtual_keyboard_state = TYPIO_WL_VK_STATE_NEEDS_KEYMAP;
     frontend.virtual_keyboard_keymap_deadline_ms = 1;
     frontend.virtual_keyboard_state_since_ms = 0;

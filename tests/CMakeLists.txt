@@ -63,7 +63,7 @@ if(HAVE_SYSTRAY)
         test_server_app.c
         ${CMAKE_SOURCE_DIR}/src/server/server_app.c
     )
-    target_compile_definitions(test_server_app PRIVATE TYPIO_SERVER_TEST)
+    target_compile_definitions(test_server_app PRIVATE TYPIO_SERVER_TEST HAVE_SYSTRAY)
     target_include_directories(test_server_app PRIVATE
         ${CMAKE_BINARY_DIR}
         ${CMAKE_SOURCE_DIR}/src/server

@@ -68,8 +68,11 @@ Read-only properties:
 Methods:
 
 - `ActivateEngine(s)`
+- `NextEngine()`
+- `SetRimeSchema(s)`
 - `SetConfigText(s)`
 - `ReloadConfig()`
+- `Stop()`
 
 `ActiveEngineState` describes the active keyboard engine. It is an `a{sv}` map containing stable engine metadata plus
 top-level engine config keys prefixed as `config.*`, such as
@@ -78,6 +81,30 @@ separately through the `RimeSchema` property. Typio emits the standard
 `org.freedesktop.DBus.Properties.PropertiesChanged` signal when these values
 change, so richer shells and widgets can react without relying on tray icon
 changes alone.
+
+For the full interface specification, see the
+[D-Bus Interface Reference](../reference/dbus-interface.md).
+
+## `typio-client`
+
+`typio-client` is a lightweight CLI that controls a running Typio daemon over
+D-Bus. It is built automatically when `ENABLE_STATUS_BUS=ON` (the default).
+
+```bash
+typio-client engine             # print active keyboard engine
+typio-client engine list        # list engines (* marks active)
+typio-client engine next        # cycle to next engine
+typio-client engine rime        # switch to rime
+typio-client schema             # print current Rime schema
+typio-client schema luna_pinyin # set Rime schema
+typio-client config reload      # reload config from disk
+typio-client config get         # print current config text
+typio-client config set "..."   # replace config text
+typio-client status             # show server status summary
+typio-client stop               # stop the daemon
+typio-client version            # show server version
+typio-client help               # show help
+```
 
 ## GTK4 Control Panel
 
