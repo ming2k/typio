@@ -34,10 +34,24 @@ state, config, or runtime diagnostics change.
 | `EngineOrder` | `as` | Full `engine_order` array from config |
 | `AvailableVoiceEngines` | `as` | Registered voice engines |
 | `ActiveVoiceEngine` | `s` | Currently active voice engine name |
+| `ActiveEngineMode` | `a{sv}` | Active engine mode dict (see below) |
 | `ActiveEngineState` | `a{sv}` | Active keyboard engine detail dict (see below) |
 | `RuntimeState` | `a{sv}` | Wayland frontend diagnostics dict (see below) |
 | `RimeSchema` | `s` | Current Rime input schema identifier |
 | `ConfigText` | `s` | Full `typio.toml` contents as text |
+
+### `ActiveEngineMode` keys
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `mode_class` | `s` | Coarse classification: `"native"` or `"latin"` |
+| `mode_id` | `s` | Engine-specific mode identifier (e.g. `"chinese"`, `"hiragana"`, `"direct"`) |
+| `display_label` | `s` | Short display label (e.g. `"中"`, `"あ"`, `"A"`) |
+| `icon_name` | `s` | Icon name for this mode (e.g. `"typio-rime"`, `"typio-mozc-katakana"`) |
+
+This property is empty (`a{sv}{}`) when no engine is active or the engine
+does not report mode information. It updates alongside `PropertiesChanged`
+whenever the engine's mode changes.
 
 ### `ActiveEngineState` keys
 
@@ -50,6 +64,10 @@ state, config, or runtime diagnostics change.
 | `engine_type` | `s` | `"keyboard"` or `"voice"` |
 | `capabilities` | `u` | Capability flags |
 | `active` | `b` | Whether the engine is active |
+| `mode_class` | `s` | Current mode class (`"native"` or `"latin"`) |
+| `mode_id` | `s` | Current mode identifier |
+| `mode_display_label` | `s` | Current mode display label |
+| `mode_icon` | `s` | Current mode icon name |
 | `config_path` | `s` | Path to engine config file |
 | `config.*` | varies | Engine-specific config entries |
 

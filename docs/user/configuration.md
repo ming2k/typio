@@ -53,6 +53,13 @@ Top level:
 
 - `default_engine`
 
+Display section: `[display]`
+
+- `popup_theme` — `"auto"`, `"light"`, or `"dark"` (default: `"auto"`)
+- `candidate_layout` — `"horizontal"` or `"vertical"` (default: `"horizontal"`)
+- `font_size` — popup text size, 6–72 (default: `11`)
+- `popup_mode_indicator` — show engine mode label in popup (default: `true`)
+
 Rime section: `[engines.rime]`
 
 - `shared_data_dir`

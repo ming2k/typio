@@ -48,6 +48,28 @@ struct TypioEngineInfo {
 };
 ```
 
+## Engine Mode
+
+```c
+typedef enum {
+    TYPIO_MODE_CLASS_NATIVE = 0,
+    TYPIO_MODE_CLASS_LATIN  = 1,
+} TypioModeClass;
+
+typedef struct TypioEngineMode {
+    TypioModeClass mode_class;
+    const char *mode_id;
+    const char *display_label;
+    const char *icon_name;
+} TypioEngineMode;
+```
+
+Engines expose their sub-mode (e.g. Rime Chinese/Latin, Mozc Hiragana/Katakana)
+through `get_mode`. The framework observes mode state and displays it in the
+tray icon, candidate popup, and D-Bus interface. `mode_class` provides a coarse
+NATIVE vs LATIN classification; `mode_id` and `display_label` carry
+engine-specific detail.
+
 ## Engine Operations
 
 ```c
@@ -78,8 +100,13 @@ typedef struct TypioEngineOps {
     const char *(*get_preedit)(TypioEngine *engine, TypioInputContext *ctx);
     TypioCandidateList *(*get_candidates)(TypioEngine *engine, TypioInputContext *ctx);
     const char *(*get_status_icon)(TypioEngine *engine, TypioInputContext *ctx);
+    const TypioEngineMode *(*get_mode)(TypioEngine *engine, TypioInputContext *ctx);
 } TypioEngineOps;
 ```
+
+Engines should implement `get_mode` to report their current sub-mode. The
+framework prefers `get_mode` over `get_status_icon` when both are set.
+Engines notify mode changes by calling `typio_instance_notify_mode()`.
 
 ## Engine Utilities
 

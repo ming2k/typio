@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-03-30
+
+### Added
+
+- **Engine mode abstraction**: new `TypioModeClass` (NATIVE/LATIN) and
+  `TypioEngineMode` struct give the framework a unified way to observe
+  engine sub-modes without taking over mode switching.
+- **Per-mode icons**: every engine × mode combination now has its own SVG
+  icon. Rime uses an "R" identity with an amber dot for Latin mode; Mozc
+  differentiates Hiragana, Katakana, Half-Katakana, Direct, Half-ASCII,
+  and Full-ASCII with colour-coded corner indicators.
+- **D-Bus `ActiveEngineMode` property**: exposes mode_class, mode_id,
+  display_label, and icon_name as an `a{sv}` dict on the status interface.
+- **Candidate popup mode indicator**: displays "Engine Mode" label
+  (e.g. "Rime 中", "Mozc あ") — bottom-right with divider in vertical
+  layout, inline right-aligned in horizontal layout.
+- **`display.popup_mode_indicator` config toggle**: control panel switch
+  under Appearance to show or hide the popup mode indicator, persisted
+  to `typio.toml`.
+- **Cairo pixmap fallback indicators**: amber indicators for Latin modes
+  (dot for half-width, square for full-width) and blue indicators for
+  Katakana modes (filled dot for full-width, ring for half-width).
+
+### Changed
+
+- **Rime icon redesign**: replaced "中" character with "R" letter across
+  all Rime SVG icons and the Cairo pixmap fallback, giving Rime a
+  distinct visual identity consistent with Mozc's "M".
+- **Engine `get_mode` op**: engines now implement `get_mode` returning
+  `const TypioEngineMode *` instead of `get_status_icon`. The framework
+  falls back to `get_status_icon` for engines that have not migrated.
+
 ## [2.3.2] - 2026-03-29
 
 ### Added
