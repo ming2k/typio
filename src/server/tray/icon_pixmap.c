@@ -19,6 +19,72 @@ static bool icon_is_rime(const char *icon_name) {
     return icon_name && strstr(icon_name, "rime") != nullptr;
 }
 
+static bool icon_is_mozc(const char *icon_name) {
+    return icon_name && strstr(icon_name, "mozc") != nullptr;
+}
+
+static bool icon_is_latin_mode(const char *icon_name) {
+    return icon_name &&
+           (strstr(icon_name, "latin") != nullptr ||
+            strstr(icon_name, "direct") != nullptr ||
+            strstr(icon_name, "ascii") != nullptr);
+}
+
+static bool icon_is_katakana_mode(const char *icon_name) {
+    return icon_name && strstr(icon_name, "katakana") != nullptr;
+}
+
+static bool icon_is_full_width(const char *icon_name) {
+    return icon_name && strstr(icon_name, "full-") != nullptr;
+}
+
+static bool icon_is_half_width(const char *icon_name) {
+    return icon_name && strstr(icon_name, "half-") != nullptr;
+}
+
+/** Draw rounded rectangle helper (forward declaration) */
+static void draw_rounded_rect(cairo_t *cr, double x, double y,
+                               double w, double h, double r);
+
+/**
+ * Draw a small amber indicator dot in the upper-right corner
+ * to indicate ASCII/Latin/Direct mode.
+ */
+static void draw_latin_indicator(cairo_t *cr, int size, bool full_width) {
+    const double cx = size * 0.81;
+    const double cy = size * 0.19;
+    const double r = size * 0.10;
+    cairo_set_source_rgba(cr, 0.91, 0.66, 0.22, 1.0); /* #e8a838 */
+    if (full_width) {
+        double s = r * 1.4;
+        double rx = s * 0.3;
+        draw_rounded_rect(cr, cx - s, cy - s, s * 2.0, s * 2.0, rx);
+        cairo_fill(cr);
+    } else {
+        cairo_arc(cr, cx, cy, r, 0.0, 6.28318);
+        cairo_fill(cr);
+    }
+}
+
+/**
+ * Draw a small blue indicator in the bottom-right corner
+ * to indicate Katakana mode.
+ */
+static void draw_katakana_indicator(cairo_t *cr, int size, bool half_width) {
+    const double cx = size * 0.81;
+    const double cy = size * 0.81;
+    const double r = size * 0.10;
+    cairo_set_source_rgba(cr, 0.24, 0.48, 0.81, 1.0); /* #3d7acf */
+    if (half_width) {
+        cairo_arc(cr, cx, cy, r, 0.0, 6.28318);
+        cairo_set_line_width(cr, size * 0.03);
+        cairo_stroke(cr);
+    } else {
+        cairo_arc(cr, cx, cy, r, 0.0, 6.28318);
+        cairo_fill(cr);
+    }
+}
+
 /**
  * Convert a Cairo ARGB32 surface to the ARGB network byte-order format
  * required by the SNI IconPixmap D-Bus property.
@@ -92,29 +158,71 @@ static void draw_keyboard_icon(cairo_t *cr, int size) {
     cairo_fill(cr);
 }
 
-static void draw_rime_icon(cairo_t *cr, int size) {
-    const double pad = size * 0.10;
-    const double radius = size * 0.20;
-
-    cairo_set_source_rgba(cr, 0.78, 0.17, 0.12, 1.0);
+/** Draw rounded rectangle helper */
+static void draw_rounded_rect(cairo_t *cr, double x, double y,
+                               double w, double h, double r) {
     cairo_new_sub_path(cr);
-    cairo_arc(cr, size - pad - radius, pad + radius, radius, -1.5708, 0.0);
-    cairo_arc(cr, size - pad - radius, size - pad - radius, radius, 0.0, 1.5708);
-    cairo_arc(cr, pad + radius, size - pad - radius, radius, 1.5708, 3.14159);
-    cairo_arc(cr, pad + radius, pad + radius, radius, 3.14159, 4.71239);
+    cairo_arc(cr, x + w - r, y + r, r, -1.5708, 0.0);
+    cairo_arc(cr, x + w - r, y + h - r, r, 0.0, 1.5708);
+    cairo_arc(cr, x + r, y + h - r, r, 1.5708, 3.14159);
+    cairo_arc(cr, x + r, y + r, r, 3.14159, 4.71239);
     cairo_close_path(cr);
+}
+
+static void draw_rime_icon(cairo_t *cr, int size) {
+    const double s = (double)size;
+    const double pad = s * 0.03125;  /* 4/128 */
+    const double side = s * 0.9375;  /* 120/128 */
+    const double radius = s * 0.1875; /* 24/128 */
+
+    /* Blue rounded square background */
+    cairo_set_source_rgba(cr, 0.24, 0.35, 0.50, 1.0); /* #3d5a80 */
+    draw_rounded_rect(cr, pad, pad, side, side, radius);
     cairo_fill(cr);
 
+    /* White "R" letter */
     cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0);
-    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(cr, size * 0.52);
+    cairo_set_line_width(cr, s * 0.0625); /* 8/128 */
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
 
-    cairo_text_extents_t extents;
-    cairo_text_extents(cr, "R", &extents);
-    cairo_move_to(cr,
-                  (size - extents.width) / 2.0 - extents.x_bearing,
-                  (size - extents.height) / 2.0 - extents.y_bearing);
-    cairo_show_text(cr, "R");
+    /* Vertical stroke */
+    cairo_move_to(cr, s * 0.328, s * 0.781);  /* 42/128, 100/128 */
+    cairo_line_to(cr, s * 0.328, s * 0.219);  /* 42/128, 28/128 */
+    /* Top arc: across to right then curve down */
+    cairo_line_to(cr, s * 0.5625, s * 0.219); /* 72/128, 28/128 */
+    cairo_curve_to(cr, s * 0.703, s * 0.219,
+                       s * 0.703, s * 0.5,
+                       s * 0.578, s * 0.531);  /* bow to ~68/128 */
+    /* Diagonal leg */
+    cairo_move_to(cr, s * 0.578, s * 0.531);
+    cairo_line_to(cr, s * 0.719, s * 0.781);  /* 92/128, 100/128 */
+    cairo_stroke(cr);
+}
+
+static void draw_mozc_icon(cairo_t *cr, int size) {
+    const double s = (double)size;
+    const double pad = s * 0.03125;
+    const double side = s * 0.9375;
+    const double radius = s * 0.1875;
+
+    /* Vermillion rounded square background */
+    cairo_set_source_rgba(cr, 0.71, 0.27, 0.23, 1.0); /* #b5453a */
+    draw_rounded_rect(cr, pad, pad, side, side, radius);
+    cairo_fill(cr);
+
+    /* White stylized "M" mark */
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0);
+    cairo_set_line_width(cr, s * 0.0625); /* 8/128 */
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+
+    cairo_move_to(cr, s * 0.266, s * 0.781);  /* 34/128, 100/128 */
+    cairo_line_to(cr, s * 0.328, s * 0.219);  /* 42/128, 28/128 */
+    cairo_line_to(cr, s * 0.5,   s * 0.5625); /* 64/128, 72/128 */
+    cairo_line_to(cr, s * 0.672, s * 0.219);  /* 86/128, 28/128 */
+    cairo_line_to(cr, s * 0.734, s * 0.781);  /* 94/128, 100/128 */
+    cairo_stroke(cr);
 }
 
 bool typio_tray_icon_pixmap_build(const char *icon_name, int preferred_size,
@@ -148,8 +256,17 @@ bool typio_tray_icon_pixmap_build(const char *icon_name, int preferred_size,
 
     if (icon_is_rime(icon_name)) {
         draw_rime_icon(cr, size);
+    } else if (icon_is_mozc(icon_name)) {
+        draw_mozc_icon(cr, size);
     } else {
         draw_keyboard_icon(cr, size);
+    }
+
+    if (icon_is_latin_mode(icon_name)) {
+        draw_latin_indicator(cr, size, icon_is_full_width(icon_name));
+    }
+    if (icon_is_katakana_mode(icon_name)) {
+        draw_katakana_indicator(cr, size, icon_is_half_width(icon_name));
     }
 
     cairo_destroy(cr);

@@ -399,7 +399,11 @@ TEST(refocus_preserves_latin_mode) {
     ASSERT_NOT_NULL(manager);
     active = typio_engine_manager_get_active(manager);
     ASSERT_NOT_NULL(active);
-    icon = active->ops->get_status_icon ? active->ops->get_status_icon(active, ctx) : nullptr;
+    {
+        const TypioEngineMode *mode = active->ops->get_mode ? active->ops->get_mode(active, ctx) : nullptr;
+        ASSERT_NOT_NULL(mode);
+        icon = mode->icon_name;
+    }
     ASSERT_NOT_NULL(icon);
     ASSERT_STR_EQ(icon, "typio-rime-latin");
 
@@ -466,7 +470,11 @@ TEST(engine_switch_preserves_latin_mode_within_context) {
 
     active = typio_engine_manager_get_active(manager);
     ASSERT_NOT_NULL(active);
-    icon = active->ops->get_status_icon ? active->ops->get_status_icon(active, ctx) : nullptr;
+    {
+        const TypioEngineMode *mode = active->ops->get_mode ? active->ops->get_mode(active, ctx) : nullptr;
+        ASSERT_NOT_NULL(mode);
+        icon = mode->icon_name;
+    }
     ASSERT_NOT_NULL(icon);
     ASSERT_STR_EQ(icon, "typio-rime-latin");
 

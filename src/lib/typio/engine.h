@@ -66,6 +66,21 @@ typedef struct TypioEngineOps {
 
     /* Dynamic icon (optional) — returns current icon name based on engine state */
     const char *(*get_status_icon)(TypioEngine *engine, TypioInputContext *ctx);
+
+    /**
+     * @brief Return the current engine sub-mode (optional).
+     *
+     * When implemented, the framework calls this after focus-in and engine
+     * switches to obtain a structured description of the engine's current
+     * mode.  The returned pointer must remain valid until the next call to
+     * any engine operation on the same context.
+     *
+     * Engines that implement get_mode do not need to implement
+     * get_status_icon — the framework derives the icon from
+     * TypioEngineMode::icon_name.  If both are provided, get_mode takes
+     * precedence.
+     */
+    const TypioEngineMode *(*get_mode)(TypioEngine *engine, TypioInputContext *ctx);
 } TypioEngineOps;
 
 /**

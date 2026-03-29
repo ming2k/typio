@@ -145,6 +145,11 @@ struct TypioInstance {
     void *status_icon_changed_user_data;
     char *last_status_icon;
 
+    TypioModeChangedCallback mode_changed_callback;
+    void *mode_changed_user_data;
+    TypioEngineMode last_mode;
+    bool has_mode;
+
     TypioLogCallback log_callback;
     void *log_user_data;
 
@@ -323,6 +328,9 @@ void typio_instance_free(TypioInstance *instance) {
     free(instance->engine_dir);
     free(instance->default_engine);
     free(instance->last_status_icon);
+    free((char *)instance->last_mode.mode_id);
+    free((char *)instance->last_mode.display_label);
+    free((char *)instance->last_mode.icon_name);
     free(instance);
 }
 
@@ -535,6 +543,88 @@ void typio_instance_clear_status_icon(TypioInstance *instance) {
 
 const char *typio_instance_get_last_status_icon(TypioInstance *instance) {
     return instance ? instance->last_status_icon : nullptr;
+}
+
+void typio_instance_set_mode_changed_callback(TypioInstance *instance,
+                                               TypioModeChangedCallback callback,
+                                               void *user_data) {
+    if (!instance) {
+        return;
+    }
+    instance->mode_changed_callback = callback;
+    instance->mode_changed_user_data = user_data;
+}
+
+static bool engine_mode_equal(const TypioEngineMode *a, const TypioEngineMode *b) {
+    if (a->mode_class != b->mode_class) {
+        return false;
+    }
+    if (a->mode_id != b->mode_id) {
+        if (!a->mode_id || !b->mode_id || strcmp(a->mode_id, b->mode_id) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void engine_mode_store(TypioEngineMode *dst, const TypioEngineMode *src) {
+    free((char *)dst->mode_id);
+    free((char *)dst->display_label);
+    free((char *)dst->icon_name);
+
+    dst->mode_class = src->mode_class;
+    dst->mode_id = src->mode_id ? strdup(src->mode_id) : nullptr;
+    dst->display_label = src->display_label ? strdup(src->display_label) : nullptr;
+    dst->icon_name = src->icon_name ? strdup(src->icon_name) : nullptr;
+}
+
+void typio_instance_notify_mode(TypioInstance *instance,
+                                 const TypioEngineMode *mode) {
+    if (!instance || !mode) {
+        return;
+    }
+    if (instance->has_mode && engine_mode_equal(&instance->last_mode, mode)) {
+        return;
+    }
+
+    engine_mode_store(&instance->last_mode, mode);
+    instance->has_mode = true;
+
+    /* Update legacy status icon from mode */
+    if (mode->icon_name) {
+        free(instance->last_status_icon);
+        instance->last_status_icon = strdup(mode->icon_name);
+    }
+
+    if (instance->mode_changed_callback) {
+        instance->mode_changed_callback(instance, &instance->last_mode,
+                                         instance->mode_changed_user_data);
+    }
+
+    /* Also fire legacy icon callback for backward compat */
+    if (instance->status_icon_changed_callback && mode->icon_name) {
+        instance->status_icon_changed_callback(instance, mode->icon_name,
+                                                instance->status_icon_changed_user_data);
+    }
+}
+
+void typio_instance_clear_mode(TypioInstance *instance) {
+    if (!instance || !instance->has_mode) {
+        return;
+    }
+
+    free((char *)instance->last_mode.mode_id);
+    free((char *)instance->last_mode.display_label);
+    free((char *)instance->last_mode.icon_name);
+    memset(&instance->last_mode, 0, sizeof(instance->last_mode));
+    instance->has_mode = false;
+}
+
+const TypioEngineMode *typio_instance_get_last_mode(TypioInstance *instance) {
+    if (!instance || !instance->has_mode) {
+        return nullptr;
+    }
+    return &instance->last_mode;
 }
 
 const char *typio_instance_get_config_dir(TypioInstance *instance) {

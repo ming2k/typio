@@ -15,6 +15,7 @@
 #define TYPIO_CANDIDATE_POPUP_PADDING 8
 #define TYPIO_CANDIDATE_POPUP_ROW_PADDING_X 4
 #define TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y 2
+#define TYPIO_CANDIDATE_POPUP_SECTION_GAP 6
 
 static bool popup_scaled_dimension(int logical, int scale, int *physical) {
     if (!physical || logical < 0 || scale < 1) {
@@ -55,6 +56,7 @@ bool typio_candidate_popup_paint_and_commit(const TypioCandidatePopupPaintTarget
                                   size_t line_count,
                                   int selected,
                                   const char *preedit_text,
+                                  const char *mode_label,
                                   int width, int height,
                                   int scale,
                                   const TypioCandidatePopupRenderConfig *config,
@@ -132,6 +134,60 @@ bool typio_candidate_popup_paint_and_commit(const TypioCandidatePopupPaintTarget
                         line->x + TYPIO_CANDIDATE_POPUP_ROW_PADDING_X,
                         line->y + TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y,
                         palette->text_r, palette->text_g, palette->text_b);
+    }
+
+    if (mode_label && mode_label[0]) {
+        PangoLayout *ml = pango_cairo_create_layout(cr);
+        if (ml) {
+            int ml_w = 0;
+            int ml_h = 0;
+
+            pango_layout_set_font_description(ml, page_font);
+            pango_layout_set_text(ml, mode_label, -1);
+            pango_layout_get_pixel_size(ml, &ml_w, &ml_h);
+
+            if (config->layout_mode == TYPIO_CANDIDATE_POPUP_LAYOUT_HORIZONTAL) {
+                /* Horizontal: mode label sits right-aligned on the candidate row */
+                int label_y = TYPIO_CANDIDATE_POPUP_PADDING;
+                if (preedit_text) {
+                    PangoLayout *tmp = pango_cairo_create_layout(cr);
+                    if (tmp) {
+                        int ph = 0;
+                        pango_layout_set_font_description(tmp, page_font);
+                        pango_layout_set_text(tmp, preedit_text, -1);
+                        pango_layout_get_pixel_size(tmp, NULL, &ph);
+                        label_y += ph + TYPIO_CANDIDATE_POPUP_SECTION_GAP;
+                        g_object_unref(tmp);
+                    }
+                }
+                cairo_move_to(cr,
+                              width - TYPIO_CANDIDATE_POPUP_PADDING - ml_w,
+                              label_y + TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y);
+                cairo_set_source_rgb(cr, palette->muted_r, palette->muted_g,
+                                     palette->muted_b);
+                pango_cairo_show_layout(cr, ml);
+            } else {
+                /* Vertical: mode label below candidates with divider */
+                int divider_y = height - TYPIO_CANDIDATE_POPUP_PADDING - ml_h
+                            - TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y;
+
+                cairo_set_source_rgba(cr, palette->border_r, palette->border_g,
+                                      palette->border_b, palette->border_a * 0.5);
+                cairo_move_to(cr, TYPIO_CANDIDATE_POPUP_PADDING, divider_y + 0.5);
+                cairo_line_to(cr, width - TYPIO_CANDIDATE_POPUP_PADDING, divider_y + 0.5);
+                cairo_set_line_width(cr, 1.0);
+                cairo_stroke(cr);
+
+                cairo_move_to(cr,
+                              width - TYPIO_CANDIDATE_POPUP_PADDING - ml_w,
+                              height - TYPIO_CANDIDATE_POPUP_PADDING - ml_h);
+                cairo_set_source_rgb(cr, palette->muted_r, palette->muted_g,
+                                     palette->muted_b);
+                pango_cairo_show_layout(cr, ml);
+            }
+
+            g_object_unref(ml);
+        }
     }
 
     cairo_surface_flush(surface);

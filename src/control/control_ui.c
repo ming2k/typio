@@ -616,6 +616,14 @@ GtkWidget *control_build_display_page(TypioControl *control) {
                                                             "Adjust the popup text size for candidate and preedit content.",
                                                             GTK_WIDGET(control->font_size_spin)));
 
+    control->popup_mode_indicator_switch = GTK_SWITCH(
+        create_bound_widget(control, "display.popup_mode_indicator"));
+    gtk_list_box_append(GTK_LIST_BOX(appearance_list),
+                        control_create_preference_row_named("popup-mode-indicator-row",
+                                                            "Mode indicator",
+                                                            "Show or hide the engine mode label in the candidate popup.",
+                                                            GTK_WIDGET(control->popup_mode_indicator_switch)));
+
     gtk_box_append(GTK_BOX(appearance_box), appearance_list);
     gtk_box_append(GTK_BOX(page), appearance_box);
 

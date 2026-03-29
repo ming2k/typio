@@ -95,6 +95,26 @@ typedef enum {
     TYPIO_MOD_NUMLOCK = (1 << 5),
 } TypioModifier;
 
+/* Engine mode classification */
+typedef enum {
+    TYPIO_MODE_CLASS_NATIVE = 0,  /* Native script input (Chinese, Japanese, etc.) */
+    TYPIO_MODE_CLASS_LATIN  = 1,  /* Latin/ASCII passthrough */
+} TypioModeClass;
+
+/**
+ * @brief Structured engine mode reported by engines to the framework.
+ *
+ * Engines populate this to describe their current sub-mode.  The framework
+ * uses @c mode_class for generic logic (e.g. indicator styling) and
+ * forwards @c mode_id / @c display_label to control surfaces and D-Bus.
+ */
+typedef struct TypioEngineMode {
+    TypioModeClass mode_class;    /* Broad classification */
+    const char *mode_id;          /* Engine-specific mode identifier (e.g. "hiragana") */
+    const char *display_label;    /* Short UI label (e.g. "あ", "A", "中") */
+    const char *icon_name;        /* Icon name (freedesktop theme) */
+} TypioEngineMode;
+
 /* Callback types */
 typedef void (*TypioCommitCallback)(TypioInputContext *ctx, const char *text, void *user_data);
 typedef void (*TypioPreeditCallback)(TypioInputContext *ctx, const TypioPreedit *preedit, void *user_data);
@@ -102,6 +122,7 @@ typedef void (*TypioCandidateCallback)(TypioInputContext *ctx, const TypioCandid
 typedef void (*TypioEngineChangedCallback)(TypioInstance *instance, const TypioEngineInfo *engine, void *user_data);
 typedef void (*TypioVoiceEngineChangedCallback)(TypioInstance *instance, const TypioEngineInfo *engine, void *user_data);
 typedef void (*TypioStatusIconChangedCallback)(TypioInstance *instance, const char *icon_name, void *user_data);
+typedef void (*TypioModeChangedCallback)(TypioInstance *instance, const TypioEngineMode *mode, void *user_data);
 
 /* Log levels */
 typedef enum {

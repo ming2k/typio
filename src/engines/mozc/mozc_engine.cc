@@ -999,21 +999,74 @@ static TypioResult mozc_reload_config(TypioEngine *engine) {
     return TYPIO_OK;
 }
 
-static const char *mozc_get_status_icon(TypioEngine *engine,
-                                        TypioInputContext *ctx) {
+static const TypioEngineMode mozc_mode_hiragana = {
+    .mode_class = TYPIO_MODE_CLASS_NATIVE,
+    .mode_id = "hiragana",
+    .display_label = "\u3042",
+    .icon_name = "typio-mozc",
+};
+
+static const TypioEngineMode mozc_mode_katakana = {
+    .mode_class = TYPIO_MODE_CLASS_NATIVE,
+    .mode_id = "katakana",
+    .display_label = "\u30A2",
+    .icon_name = "typio-mozc-katakana",
+};
+
+static const TypioEngineMode mozc_mode_half_katakana = {
+    .mode_class = TYPIO_MODE_CLASS_NATIVE,
+    .mode_id = "half_katakana",
+    .display_label = "\uFF71",
+    .icon_name = "typio-mozc-half-katakana",
+};
+
+static const TypioEngineMode mozc_mode_direct = {
+    .mode_class = TYPIO_MODE_CLASS_LATIN,
+    .mode_id = "direct",
+    .display_label = "A",
+    .icon_name = "typio-mozc-direct",
+};
+
+static const TypioEngineMode mozc_mode_half_ascii = {
+    .mode_class = TYPIO_MODE_CLASS_LATIN,
+    .mode_id = "half_ascii",
+    .display_label = "A",
+    .icon_name = "typio-mozc-half-ascii",
+};
+
+static const TypioEngineMode mozc_mode_full_ascii = {
+    .mode_class = TYPIO_MODE_CLASS_LATIN,
+    .mode_id = "full_ascii",
+    .display_label = "\uFF21",
+    .icon_name = "typio-mozc-full-ascii",
+};
+
+static const TypioEngineMode *mozc_mode_for_composition(
+    mozc::commands::CompositionMode mode) {
+    switch (mode) {
+    case mozc::commands::DIRECT:
+        return &mozc_mode_direct;
+    case mozc::commands::HALF_ASCII:
+        return &mozc_mode_half_ascii;
+    case mozc::commands::FULL_ASCII:
+        return &mozc_mode_full_ascii;
+    case mozc::commands::FULL_KATAKANA:
+        return &mozc_mode_katakana;
+    case mozc::commands::HALF_KATAKANA:
+        return &mozc_mode_half_katakana;
+    default:
+        return &mozc_mode_hiragana;
+    }
+}
+
+static const TypioEngineMode *mozc_get_mode(TypioEngine *engine,
+                                             TypioInputContext *ctx) {
     TypioMozcSession *session = mozc_get_session(engine, ctx, false);
     if (!session) {
-        return "typio-mozc";
+        return &mozc_mode_hiragana;
     }
 
-    switch (session->mode) {
-    case mozc::commands::DIRECT:
-    case mozc::commands::HALF_ASCII:
-    case mozc::commands::FULL_ASCII:
-        return "typio-mozc-direct";
-    default:
-        return "typio-mozc";
-    }
+    return mozc_mode_for_composition(session->mode);
 }
 
 /* -- engine definition ---------------------------------------------------- */
@@ -1043,7 +1096,7 @@ static const TypioEngineOps mozc_engine_ops = {
     .reset = mozc_reset,
     .process_key = mozc_process_key,
     .reload_config = mozc_reload_config,
-    .get_status_icon = mozc_get_status_icon,
+    .get_mode = mozc_get_mode,
 };
 #pragma GCC diagnostic pop
 /* clang-format on */

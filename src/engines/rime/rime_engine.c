@@ -63,23 +63,38 @@ typedef struct TypioRimeSession {
     bool ascii_mode;
 } TypioRimeSession;
 
-static void typio_rime_notify_status_icon(TypioEngine *engine,
-                                          TypioRimeSession *session,
-                                          bool ascii_mode) {
-    const char *icon;
+static const TypioEngineMode typio_rime_mode_chinese = {
+    .mode_class = TYPIO_MODE_CLASS_NATIVE,
+    .mode_id = "chinese",
+    .display_label = "中",
+    .icon_name = "typio-rime",
+};
 
+static const TypioEngineMode typio_rime_mode_latin = {
+    .mode_class = TYPIO_MODE_CLASS_LATIN,
+    .mode_id = "ascii",
+    .display_label = "A",
+    .icon_name = "typio-rime-latin",
+};
+
+static const TypioEngineMode *typio_rime_mode_for_ascii(bool ascii_mode) {
+    return ascii_mode ? &typio_rime_mode_latin : &typio_rime_mode_chinese;
+}
+
+static void typio_rime_notify_mode(TypioEngine *engine,
+                                   TypioRimeSession *session,
+                                   bool ascii_mode) {
     if (!engine || !engine->instance || !session) {
         return;
     }
 
     session->ascii_mode_known = true;
     session->ascii_mode = ascii_mode;
-    icon = ascii_mode ? "typio-rime-latin" : "typio-rime";
-    typio_instance_notify_status_icon(engine->instance, icon);
+    typio_instance_notify_mode(engine->instance, typio_rime_mode_for_ascii(ascii_mode));
 }
 
-static void typio_rime_refresh_status_icon(TypioEngine *engine,
-                                           TypioRimeSession *session) {
+static void typio_rime_refresh_mode(TypioEngine *engine,
+                                    TypioRimeSession *session) {
     Bool ascii;
 
     if (!engine || !session || !session->state || !session->state->api ||
@@ -88,7 +103,7 @@ static void typio_rime_refresh_status_icon(TypioEngine *engine,
     }
 
     ascii = session->state->api->get_option(session->session_id, "ascii_mode");
-    typio_rime_notify_status_icon(engine, session, ascii ? true : false);
+    typio_rime_notify_mode(engine, session, ascii ? true : false);
 }
 
 static uint64_t typio_rime_monotonic_ms(void) {
@@ -380,7 +395,7 @@ static TypioRimeSession *typio_rime_get_session(TypioEngine *engine,
     }
 
     typio_input_context_set_property(ctx, TYPIO_RIME_SESSION_KEY, session, typio_rime_free_session);
-    typio_rime_refresh_status_icon(engine, session);
+    typio_rime_refresh_mode(engine, session);
     return session;
 }
 
@@ -717,7 +732,7 @@ static void typio_rime_focus_in(TypioEngine *engine, TypioInputContext *ctx) {
     TypioRimeSession *session = typio_rime_get_session(engine, ctx, true);
     if (session) {
         if (!session->ascii_mode_known) {
-            typio_rime_refresh_status_icon(engine, session);
+            typio_rime_refresh_mode(engine, session);
         }
         typio_rime_sync_context(session, ctx);
     }
@@ -736,9 +751,9 @@ static void typio_rime_reset(TypioEngine *engine, TypioInputContext *ctx) {
     }
     typio_rime_clear_state(ctx);
     if (session->ascii_mode_known) {
-        typio_rime_notify_status_icon(engine, session, session->ascii_mode);
+        typio_rime_notify_mode(engine, session, session->ascii_mode);
     } else {
-        typio_rime_refresh_status_icon(engine, session);
+        typio_rime_refresh_mode(engine, session);
     }
 }
 
@@ -801,7 +816,7 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
     }
 
     if (is_shift && ascii_after >= 0) {
-        typio_rime_notify_status_icon(engine, session, ascii_after != 0);
+        typio_rime_notify_mode(engine, session, ascii_after != 0);
     }
 
     if (!handled) {
@@ -882,15 +897,15 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
     return TYPIO_OK;
 }
 
-static const char *typio_rime_get_status_icon(TypioEngine *engine,
-                                               TypioInputContext *ctx) {
+static const TypioEngineMode *typio_rime_get_mode(TypioEngine *engine,
+                                                   TypioInputContext *ctx) {
     TypioRimeSession *session = typio_rime_get_session(engine, ctx, false);
 
     if (!session || !session->ascii_mode_known) {
-        return "typio-rime";
+        return &typio_rime_mode_chinese;
     }
 
-    return session->ascii_mode ? "typio-rime-latin" : "typio-rime";
+    return typio_rime_mode_for_ascii(session->ascii_mode);
 }
 
 static const TypioEngineInfo typio_rime_engine_info = {
@@ -915,7 +930,7 @@ static const TypioEngineOps typio_rime_engine_ops = {
     .reset = typio_rime_reset,
     .process_key = typio_rime_process_key,
     .reload_config = typio_rime_reload_config,
-    .get_status_icon = typio_rime_get_status_icon,
+    .get_mode = typio_rime_get_mode,
 };
 
 const TypioEngineInfo *typio_engine_get_info(void) {

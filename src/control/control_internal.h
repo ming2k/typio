@@ -61,6 +61,7 @@ typedef struct TypioControl {
     GtkDropDown *candidate_layout_dropdown;
     GtkStringList *candidate_layout_model;
     GtkSpinButton *font_size_spin;
+    GtkSwitch *popup_mode_indicator_switch;
     GtkSwitch *notifications_enable_switch;
     GtkSwitch *notifications_startup_switch;
     GtkSwitch *notifications_runtime_switch;

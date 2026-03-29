@@ -1,6 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="28" fill="#2157a5"/>
-  <rect x="24" y="28" width="80" height="72" rx="18" fill="#ffffff"/>
-  <path d="M43 86V42h12l18 23V42h12v44H73L55 63v23H43z" fill="#2157a5"/>
-  <path d="M91 42h-6v44h6c7 0 13-6 13-13V55c0-7-6-13-13-13z" fill="#38a169"/>
+  <!-- RIME engine icon — ASCII/Latin mode -->
+  <rect x="4" y="4" width="120" height="120" rx="24" fill="#3d5a80"/>
+  <!-- "R" letter for Rime identity -->
+  <path d="M42 100 V28 H72 Q90 28 90 48 Q90 64 74 68 L92 100"
+        fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- ASCII mode indicator dot — upper right -->
+  <circle cx="104" cy="24" r="13" fill="#e8a838"/>
 </svg>

@@ -781,17 +781,24 @@ static void engine_manager_rebind_focused_context(TypioEngineManager *manager,
     if (old_engine && old_engine->ops && old_engine->ops->focus_out) {
         old_engine->ops->focus_out(old_engine, ctx);
     }
-    /* The old engine's focus_out may have emitted a status icon update
+    /* The old engine's focus_out may have emitted a status icon/mode update
      * (e.g. Rime refreshes its icon during reset).  Clear the stale
      * value so the new engine starts with a clean slate. */
     typio_instance_clear_status_icon(manager->instance);
+    typio_instance_clear_mode(manager->instance);
     if (new_engine && new_engine->ops && new_engine->ops->reset) {
         new_engine->ops->reset(new_engine, ctx);
     }
     if (new_engine && new_engine->ops && new_engine->ops->focus_in) {
         new_engine->ops->focus_in(new_engine, ctx);
     }
-    if (new_engine && new_engine->ops && new_engine->ops->get_status_icon) {
+    /* Prefer structured get_mode; fall back to legacy get_status_icon. */
+    if (new_engine && new_engine->ops && new_engine->ops->get_mode) {
+        const TypioEngineMode *mode = new_engine->ops->get_mode(new_engine, ctx);
+        if (mode) {
+            typio_instance_notify_mode(manager->instance, mode);
+        }
+    } else if (new_engine && new_engine->ops && new_engine->ops->get_status_icon) {
         const char *icon = new_engine->ops->get_status_icon(new_engine, ctx);
         if (icon) {
             typio_instance_notify_status_icon(manager->instance, icon);
@@ -903,11 +910,12 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
     manager->active_keyboard_index = index;
     manager->last_switch_ms = now_ms;
 
-    /* Clear stale status icon from the previous engine.  This covers the
-     * no-focused-context path where rebind returns early.  The clear
+    /* Clear stale status icon/mode from the previous engine.  This covers
+     * the no-focused-context path where rebind returns early.  The clear
      * inside rebind_focused_context handles the case where focus_out
      * re-sets the icon before the new engine takes over. */
     typio_instance_clear_status_icon(manager->instance);
+    typio_instance_clear_mode(manager->instance);
 
     engine_manager_rebind_focused_context(manager,
                                           current ? current->instance : nullptr,

@@ -52,5 +52,13 @@ bool typio_candidate_popup_render_state_matches(const TypioCandidatePopupRenderS
         return false;
     }
 
+    {
+        const char *old_mode = cached->mode_label ? cached->mode_label : "";
+        const char *new_mode = current->mode_label ? current->mode_label : "";
+        if (strcmp(old_mode, new_mode) != 0) {
+            return false;
+        }
+    }
+
     return true;
 }

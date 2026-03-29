@@ -1,5 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <!-- Mozc direct/ASCII mode — symbolic, panel will recolor -->
-  <text x="8" y="13" font-family="Sans" font-weight="bold" font-size="13"
-        fill="#2e3436" text-anchor="middle">A</text>
+  <!-- Mozc engine symbolic — Direct/ASCII mode -->
+  <path d="M3 14 L5 2 L8 10 L11 2 L13 14"
+        fill="none" stroke="#2e3436" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Direct mode indicator dot — upper right -->
+  <circle cx="14" cy="2" r="1.8" fill="#2e3436"/>
 </svg>

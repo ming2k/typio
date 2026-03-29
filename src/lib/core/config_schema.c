@@ -52,6 +52,13 @@ static const TypioConfigField schema_fields[] = {
         .ui_section = "display",
         .ui_min = 6, .ui_max = 72, .ui_step = 1,
     },
+    {
+        .key = "display.popup_mode_indicator",
+        .type = TYPIO_FIELD_BOOL,
+        .def.b = true,
+        .ui_label = "Mode indicator",
+        .ui_section = "display",
+    },
 
     /* --- Notifications --- */
     {

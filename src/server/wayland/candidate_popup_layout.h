@@ -23,6 +23,7 @@ typedef struct TypioCandidatePopupRenderConfig {
     TypioCandidatePopupThemeMode theme_mode;
     TypioCandidatePopupLayoutMode layout_mode;
     int font_size;
+    bool mode_indicator;
     char font_desc[64];
     char page_font_desc[64];
 } TypioCandidatePopupRenderConfig;
@@ -45,6 +46,9 @@ typedef struct TypioCandidatePopupCache {
     char *preedit_text;
     int preedit_width;
     int preedit_height;
+    char *mode_label;
+    int mode_label_width;
+    int mode_label_height;
     int width;
     int height;
     TypioCandidatePopupRenderConfig config;
@@ -72,6 +76,8 @@ void typio_candidate_popup_layout_cache_store(TypioCandidatePopupCache *cache,
                                     uint64_t content_signature,
                                     char *preedit_text,
                                     int preedit_width, int preedit_height,
+                                    char *mode_label,
+                                    int mode_label_width, int mode_label_height,
                                     int width, int height,
                                     const TypioCandidatePopupRenderConfig *config,
                                     const TypioCandidatePopupPalette *palette);
@@ -79,6 +85,7 @@ void typio_candidate_popup_layout_cache_store(TypioCandidatePopupCache *cache,
 bool typio_candidate_popup_layout_cache_matches(const TypioCandidatePopupCache *cache,
                                       const TypioCandidateList *candidates,
                                       const char *preedit_text,
+                                      const char *mode_label,
                                       int scale,
                                       const TypioCandidatePopupRenderConfig *config,
                                       const TypioCandidatePopupPalette *palette);
@@ -91,12 +98,15 @@ bool typio_candidate_popup_layout_cache_matches(const TypioCandidatePopupCache *
  */
 bool typio_candidate_popup_layout_compute(const TypioCandidateList *candidates,
                                 const char *preedit_text_in,
+                                const char *mode_label_in,
                                 const TypioCandidatePopupRenderConfig *config,
                                 TypioCandidatePopupFontCache *font_cache,
                                 TypioCandidatePopupLine **out_lines,
                                 size_t *out_line_count,
                                 int *out_preedit_width,
                                 int *out_preedit_height,
+                                int *out_mode_label_width,
+                                int *out_mode_label_height,
                                 int *out_width,
                                 int *out_height);
 

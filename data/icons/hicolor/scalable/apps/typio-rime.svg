@@ -1,9 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="64" height="64">
-  <path
-    d="M8 1.5v12.5M2 14h12M3.5 4v4.5c0 4 9 4 9 0V4"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.5"
-    stroke-linecap="butt"
-  />
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- RIME engine icon — Chinese input mode -->
+  <rect x="4" y="4" width="120" height="120" rx="24" fill="#3d5a80"/>
+  <!-- "R" letter for Rime identity -->
+  <path d="M42 100 V28 H72 Q90 28 90 48 Q90 64 74 68 L92 100"
+        fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

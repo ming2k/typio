@@ -114,6 +114,35 @@ static dbus_bool_t append_config_entries(DBusMessageIter *dict,
     return TRUE;
 }
 
+static const char *mode_class_name(TypioModeClass cls) {
+    return cls == TYPIO_MODE_CLASS_LATIN ? "latin" : "native";
+}
+
+static dbus_bool_t append_active_engine_mode_dict(DBusMessageIter *iter,
+                                                   TypioStatusBus *bus) {
+    DBusMessageIter dict;
+    const TypioEngineMode *mode;
+
+    if (!dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, "{sv}", &dict)) {
+        return FALSE;
+    }
+
+    mode = bus && bus->instance ? typio_instance_get_last_mode(bus->instance) : nullptr;
+    if (mode) {
+        dbus_bool_t ok;
+        ok = typio_dbus_append_dict_entry_string(&dict, "mode_class",
+                                                  mode_class_name(mode->mode_class)) &&
+             typio_dbus_append_dict_entry_string(&dict, "mode_id", mode->mode_id) &&
+             typio_dbus_append_dict_entry_string(&dict, "display_label", mode->display_label) &&
+             typio_dbus_append_dict_entry_string(&dict, "icon_name", mode->icon_name);
+        if (!ok) {
+            return FALSE;
+        }
+    }
+
+    return dbus_message_iter_close_container(iter, &dict);
+}
+
 static dbus_bool_t append_active_engine_state_dict(DBusMessageIter *iter,
                                                    TypioStatusBus *bus) {
     DBusMessageIter dict;
@@ -149,6 +178,17 @@ static dbus_bool_t append_active_engine_state_dict(DBusMessageIter *iter,
 
     if (ok && config_path && *config_path) {
         ok = typio_dbus_append_dict_entry_string(&dict, "config_path", config_path);
+    }
+
+    if (ok && bus && bus->instance) {
+        const TypioEngineMode *mode = typio_instance_get_last_mode(bus->instance);
+        if (mode) {
+            ok = typio_dbus_append_dict_entry_string(&dict, "mode_class",
+                                                      mode_class_name(mode->mode_class)) &&
+                 typio_dbus_append_dict_entry_string(&dict, "mode_id", mode->mode_id) &&
+                 typio_dbus_append_dict_entry_string(&dict, "mode_display_label", mode->display_label) &&
+                 typio_dbus_append_dict_entry_string(&dict, "mode_icon", mode->icon_name);
+        }
     }
 
     if (ok && bus && bus->instance && engine_name && *engine_name) {
@@ -455,6 +495,16 @@ static dbus_bool_t append_property_variant(DBusMessageIter *iter,
         return dbus_message_iter_close_container(iter, &variant);
     }
 
+    if (strcmp(property, TYPIO_STATUS_PROP_ACTIVE_ENGINE_MODE) == 0) {
+        if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "a{sv}", &variant)) {
+            return FALSE;
+        }
+        if (!append_active_engine_mode_dict(&variant, bus)) {
+            return FALSE;
+        }
+        return dbus_message_iter_close_container(iter, &variant);
+    }
+
     if (strcmp(property, TYPIO_STATUS_PROP_RUNTIME_STATE) == 0) {
         if (!dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "a{sv}", &variant)) {
             return FALSE;
@@ -556,6 +606,7 @@ static DBusMessage *status_handle_properties_getall(TypioStatusBus *bus,
         TYPIO_STATUS_PROP_AVAILABLE_VOICE_ENGINES,
         TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE,
         TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE,
+        TYPIO_STATUS_PROP_ACTIVE_ENGINE_MODE,
         TYPIO_STATUS_PROP_RUNTIME_STATE,
         TYPIO_STATUS_PROP_RIME_SCHEMA,
         TYPIO_STATUS_PROP_CONFIG_TEXT,
@@ -786,6 +837,7 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
             "    <property name=\"" TYPIO_STATUS_PROP_AVAILABLE_VOICE_ENGINES "\" type=\"as\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE "\" type=\"s\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE "\" type=\"a{sv}\" access=\"read\"/>\n"
+            "    <property name=\"" TYPIO_STATUS_PROP_ACTIVE_ENGINE_MODE "\" type=\"a{sv}\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_RUNTIME_STATE "\" type=\"a{sv}\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_RIME_SCHEMA "\" type=\"s\" access=\"read\"/>\n"
             "    <property name=\"" TYPIO_STATUS_PROP_CONFIG_TEXT "\" type=\"s\" access=\"read\"/>\n"
@@ -970,6 +1022,7 @@ void typio_status_bus_emit_properties_changed(TypioStatusBus *bus) {
         TYPIO_STATUS_PROP_AVAILABLE_VOICE_ENGINES,
         TYPIO_STATUS_PROP_ACTIVE_VOICE_ENGINE,
         TYPIO_STATUS_PROP_ACTIVE_ENGINE_STATE,
+        TYPIO_STATUS_PROP_ACTIVE_ENGINE_MODE,
         TYPIO_STATUS_PROP_RUNTIME_STATE,
         TYPIO_STATUS_PROP_CONFIG_TEXT,
     };

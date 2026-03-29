@@ -110,6 +110,16 @@ void typio_instance_set_status_icon_changed_callback(TypioInstance *instance,
                                                       void *user_data);
 
 /**
+ * @brief Set a callback for engine mode changes
+ * @param instance Typio instance
+ * @param callback Callback function
+ * @param user_data User data passed to callback
+ */
+void typio_instance_set_mode_changed_callback(TypioInstance *instance,
+                                               TypioModeChangedCallback callback,
+                                               void *user_data);
+
+/**
  * @brief Notify that the engine's status icon has changed
  * @param instance Typio instance
  * @param icon_name New icon name
@@ -122,6 +132,22 @@ void typio_instance_notify_status_icon(TypioInstance *instance,
 void typio_instance_clear_status_icon(TypioInstance *instance);
 
 const char *typio_instance_get_last_status_icon(TypioInstance *instance);
+
+/**
+ * @brief Notify that the engine's mode has changed
+ * @param instance Typio instance
+ * @param mode New engine mode
+ *
+ * Called by engines (or the engine manager) when the sub-mode changes.
+ * Stores a copy of the mode and fires both the mode-changed callback and
+ * the legacy status-icon-changed callback (derived from mode->icon_name).
+ * Only fires if the mode actually changed.
+ */
+void typio_instance_notify_mode(TypioInstance *instance,
+                                 const TypioEngineMode *mode);
+void typio_instance_clear_mode(TypioInstance *instance);
+
+const TypioEngineMode *typio_instance_get_last_mode(TypioInstance *instance);
 
 /**
  * @brief Get the configuration directory path

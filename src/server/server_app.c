@@ -201,6 +201,27 @@ static void typio_server_update_status_bus_state(TypioServerApp *app) {
 }
 #endif
 
+static void typio_server_on_mode_change(TypioInstance *instance,
+                                        const TypioEngineMode *mode,
+                                        void *user_data) {
+    TypioServerApp *app = user_data;
+
+    (void) instance;
+
+#ifdef HAVE_SYSTRAY
+    if (app && app->tray && mode && mode->icon_name) {
+        typio_tray_set_icon(app->tray, mode->icon_name);
+    }
+#endif
+#ifdef HAVE_STATUS_BUS
+    if (app && app->status_bus) {
+        typio_status_bus_emit_properties_changed(app->status_bus);
+    }
+#endif
+    (void) app;
+    (void) mode;
+}
+
 static void typio_server_on_status_icon_change(TypioInstance *instance,
                                                const char *icon_name,
                                                void *user_data) {
@@ -522,6 +543,9 @@ static int typio_server_run_wayland(TypioServerApp *app) {
     typio_instance_set_status_icon_changed_callback(app->instance,
                                                     typio_server_on_status_icon_change,
                                                     app);
+    typio_instance_set_mode_changed_callback(app->instance,
+                                              typio_server_on_mode_change,
+                                              app);
     typio_server_sync_runtime_surfaces(app);
 
     app->wl_frontend = typio_wl_frontend_new(app->instance, nullptr);

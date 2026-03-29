@@ -18,6 +18,7 @@ typedef struct TypioCandidatePopupRenderState {
     int width;
     int height;
     const char *preedit_text;
+    const char *mode_label;
 } TypioCandidatePopupRenderState;
 
 bool typio_candidate_popup_render_state_matches(const TypioCandidatePopupRenderState *cached,

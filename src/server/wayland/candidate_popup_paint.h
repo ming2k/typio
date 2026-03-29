@@ -29,6 +29,7 @@ bool typio_candidate_popup_paint_and_commit(const TypioCandidatePopupPaintTarget
                                   size_t line_count,
                                   int selected,
                                   const char *preedit_text,
+                                  const char *mode_label,
                                   int width, int height,
                                   int scale,
                                   const TypioCandidatePopupRenderConfig *config,

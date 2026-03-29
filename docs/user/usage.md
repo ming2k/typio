@@ -120,7 +120,7 @@ The control panel reads Typio state from `org.typio.InputMethod1` and can:
 - switch the active keyboard engine
 - edit appearance settings such as popup theme, candidate layout, and font size
 - edit notification settings
-- configure engine-specific options such as the active Rime schema or Mozc page size
+- configure engine-specific options such as the active Rime schema
 - pick the voice backend and installed model
 - record shortcut bindings directly from the keyboard
 
@@ -171,25 +171,14 @@ popup surface. If popup rendering is unavailable in the current session,
 Typio keeps candidate state visible inline in preedit. Candidate selection
 still uses the engine's normal selection keys.
 
-For candidate navigation, Typio separates candidate ownership from popup
-rendering:
-
-- Rime owns the candidate content and selected index
-- the input context stores the current candidate state
-- the Wayland popup reuses cached layout and redraws only the highlight when
-  possible
-
-That design keeps `Up` / `Down` movement on the fast path and avoids treating
-the popup as the source of truth for selection state.
-
 The popup follows Wayland surface enter/leave events and `wl_output.scale`.
 That keeps integer-scaled outputs such as 2x crisp instead of stretching a 1x
 buffer. Fractional scaling is still compositor-dependent because Typio does
 not yet use an additional fractional-scale extension protocol.
 
 The popup defaults to a horizontal candidate layout. You can override it in
-`typio.toml` under `[engines.rime]` with `candidate_layout = "vertical"`.
-Popup colors can be forced with `popup_theme = "light"` or
+`typio.toml` under `[display]` with `candidate_layout = "vertical"`.
+Popup colors can be forced under `[display]` with `popup_theme = "light"` or
 `popup_theme = "dark"`; otherwise `popup_theme = "auto"` uses desktop theme
 hints when available.
 

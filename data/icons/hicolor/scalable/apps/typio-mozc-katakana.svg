@@ -1,7 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <!-- Mozc engine icon — Hiragana/composition mode -->
+  <!-- Mozc engine icon — Katakana mode -->
   <rect x="4" y="4" width="120" height="120" rx="24" fill="#b5453a"/>
   <!-- Stylized "M" mark for Mozc identity -->
   <path d="M34 100 L42 28 L64 72 L86 28 L94 100"
         fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Katakana mode indicator — bottom right, blue dot -->
+  <circle cx="104" cy="104" r="13" fill="#3d7acf"/>
 </svg>

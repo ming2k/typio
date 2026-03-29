@@ -85,10 +85,23 @@ static const TypioEngineInfo basic_engine_info = {
     .api_version = TYPIO_API_VERSION,
 };
 
+static const TypioEngineMode basic_mode = {
+    .mode_class = TYPIO_MODE_CLASS_LATIN,
+    .mode_id = "basic",
+    .display_label = "En",
+    .icon_name = "typio-keyboard",
+};
+
+static const TypioEngineMode *basic_get_mode([[maybe_unused]] TypioEngine *engine,
+                                              [[maybe_unused]] TypioInputContext *ctx) {
+    return &basic_mode;
+}
+
 static const TypioEngineOps basic_engine_ops = {
     .init = basic_init,
     .destroy = basic_destroy,
     .process_key = basic_process_key,
+    .get_mode = basic_get_mode,
 };
 
 const TypioEngineInfo *typio_engine_get_info_basic(void) {

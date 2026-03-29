@@ -144,6 +144,44 @@ Operational rules:
 The built-in `basic` engine is the baseline keyboard engine. Voice backends
 such as Whisper and sherpa-onnx belong to the voice category.
 
+## IME / Engine Boundary
+
+Typio is the IME host and framework layer, not a replacement for engine-owned
+language logic.
+
+Authority split:
+
+- engines own linguistic behaviour and engine-specific semantics
+- Typio owns protocol hosting, UI integration, and cross-engine control surfaces
+
+In practice, engine ownership includes:
+
+- composition and conversion behaviour
+- candidate generation, ordering, selection semantics, and paging
+- engine-specific runtime state such as active schema or input mode
+- any behaviour that only the upstream engine can define authoritatively
+
+In practice, Typio ownership includes:
+
+- Wayland input-method and popup-surface integration
+- `TypioInputContext` as the transport and UI state carrier
+- candidate popup rendering, tray/status export, and control-panel plumbing
+- Typio-owned persisted config and runtime state publication
+- converging user experience where presentation can be standardized without
+  changing engine semantics
+
+Design rules:
+
+- Typio should respect the upstream engine's supported behaviour instead of
+  reinterpreting it locally.
+- Typio should prefer official engine APIs, runtime controls, and discovery
+  paths over file-level hacks or private config rewrites.
+- Typio may normalize presentation and workflow across engines, but it must
+  not fake unsupported engine semantics just to make engines look identical.
+- If an engine does not expose a supported control, preserving the engine's
+  real behaviour is preferred over adding a Typio-side override that would
+  contradict user expectations or upstream design intent.
+
 ## Wayland Data Flow
 
 1. The compositor activates the input method.

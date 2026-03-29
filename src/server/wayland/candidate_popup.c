@@ -12,6 +12,8 @@
 #include "candidate_popup_theme.h"
 #include "preedit_format.h"
 #include "typio/config.h"
+#include "typio/engine_label.h"
+#include "typio/engine_manager.h"
 #include "typio/instance.h"
 #include "utils/log.h"
 
@@ -177,6 +179,7 @@ static void popup_load_render_config(TypioWlCandidatePopup *popup, TypioCandidat
     config->theme_mode = TYPIO_CANDIDATE_POPUP_THEME_AUTO;
     config->layout_mode = TYPIO_CANDIDATE_POPUP_LAYOUT_VERTICAL;
     config->font_size = TYPIO_CANDIDATE_POPUP_DEFAULT_FONT_SIZE;
+    config->mode_indicator = true;
 
     global_config = typio_instance_get_config(popup->frontend->instance);
     if (global_config) {
@@ -198,6 +201,9 @@ static void popup_load_render_config(TypioWlCandidatePopup *popup, TypioCandidat
         config->font_size = typio_config_get_int(global_config,
                                                  "display.font_size",
                                                  TYPIO_CANDIDATE_POPUP_DEFAULT_FONT_SIZE);
+        config->mode_indicator = typio_config_get_bool(global_config,
+                                                       "display.popup_mode_indicator",
+                                                       true);
         if (config->font_size < 6) {
             config->font_size = 6;
         } else if (config->font_size > 72) {
@@ -238,14 +244,48 @@ static void popup_free_layout_result(TypioCandidatePopupLine *lines, size_t line
     typio_candidate_popup_layout_cache_invalidate(&transient_cache);
 }
 
+static char *popup_build_mode_label(TypioWlCandidatePopup *popup) {
+    const TypioEngineMode *mode;
+    TypioEngineManager *mgr;
+    TypioEngine *active;
+    const char *engine_name;
+    const char *engine_label;
+    char buf[128];
+
+    if (!popup || !popup->frontend || !popup->frontend->instance) {
+        return nullptr;
+    }
+
+    mode = typio_instance_get_last_mode(popup->frontend->instance);
+    if (!mode || !mode->display_label || !mode->display_label[0]) {
+        return nullptr;
+    }
+
+    mgr = typio_instance_get_engine_manager(popup->frontend->instance);
+    active = mgr ? typio_engine_manager_get_active(mgr) : nullptr;
+    engine_name = active ? typio_engine_get_name(active) : nullptr;
+    engine_label = typio_engine_label_fallback(engine_name);
+
+    if (engine_label && *engine_label) {
+        snprintf(buf, sizeof(buf), "%s %s", engine_label, mode->display_label);
+    } else {
+        snprintf(buf, sizeof(buf), "%s", mode->display_label);
+    }
+
+    return strdup(buf);
+}
+
 static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preedit,
                          const TypioCandidateList *candidates) {
     const TypioCandidatePopupRenderConfig *render_config;
     const TypioCandidatePopupPalette *palette;
     TypioCandidatePopupPaintTarget target;
     char *preedit_text = nullptr;
+    char *mode_label = nullptr;
     int preedit_width = 0;
     int preedit_height = 0;
+    int mode_label_width = 0;
+    int mode_label_height = 0;
     int width = 0;
     int height = 0;
     int scale;
@@ -260,15 +300,18 @@ static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preed
 
     render_start_ms = typio_wl_monotonic_ms();
 
+    scale = popup_render_scale(popup);
+    render_config = popup_get_render_config(popup);
+    if (!render_config) {
+        return false;
+    }
+
     if (preedit && preedit->segment_count > 0) {
         preedit_text = typio_wl_build_plain_preedit(preedit, nullptr);
     }
 
-    scale = popup_render_scale(popup);
-    render_config = popup_get_render_config(popup);
-    if (!render_config) {
-        free(preedit_text);
-        return false;
+    if (render_config->mode_indicator) {
+        mode_label = popup_build_mode_label(popup);
     }
 
     palette = typio_candidate_popup_theme_resolve(&popup->theme_cache, render_config->theme_mode);
@@ -281,13 +324,14 @@ static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preed
 
     if (popup->cache.valid &&
         typio_candidate_popup_layout_cache_matches(&popup->cache, candidates, preedit_text,
-                                         scale, render_config, palette) &&
+                                         mode_label, scale, render_config, palette) &&
         popup->cache.selected != candidates->selected) {
         bool ok = typio_candidate_popup_paint_and_commit(&target, &popup->font_cache,
                                                popup->cache.lines,
                                                popup->cache.line_count,
                                                candidates->selected,
                                                popup->cache.preedit_text,
+                                               popup->cache.mode_label,
                                                popup->cache.width,
                                                popup->cache.height,
                                                scale,
@@ -299,6 +343,7 @@ static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preed
         }
 
         free(preedit_text);
+        free(mode_label);
         render_end_ms = typio_wl_monotonic_ms();
         if (ok && (render_end_ms - render_start_ms) >= TYPIO_CANDIDATE_POPUP_SLOW_RENDER_MS) {
             typio_log_debug(
@@ -314,11 +359,14 @@ static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preed
         return ok;
     }
 
-    if (!typio_candidate_popup_layout_compute(candidates, preedit_text, render_config,
+    if (!typio_candidate_popup_layout_compute(candidates, preedit_text, mode_label,
+                                    render_config,
                                     &popup->font_cache, &lines, &line_count,
                                     &preedit_width, &preedit_height,
+                                    &mode_label_width, &mode_label_height,
                                     &width, &height)) {
         free(preedit_text);
+        free(mode_label);
         return false;
     }
 
@@ -326,9 +374,11 @@ static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preed
                                       lines, line_count,
                                       candidates->selected,
                                       preedit_text,
+                                      mode_label,
                                       width, height, scale,
                                       render_config, palette)) {
         popup_free_layout_result(lines, line_count, preedit_text);
+        free(mode_label);
         return false;
     }
 
@@ -338,6 +388,8 @@ static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preed
                                    candidates->content_signature,
                                    preedit_text,
                                    preedit_width, preedit_height,
+                                   mode_label,
+                                   mode_label_width, mode_label_height,
                                    width, height,
                                    render_config, palette);
 

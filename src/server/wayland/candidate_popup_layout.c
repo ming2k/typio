@@ -131,6 +131,7 @@ void typio_candidate_popup_layout_cache_invalidate(TypioCandidatePopupCache *cac
     }
     free_lines(cache->lines, cache->line_count);
     free(cache->preedit_text);
+    free(cache->mode_label);
     memset(cache, 0, sizeof(*cache));
     cache->selected = -1;
 }
@@ -141,11 +142,14 @@ void typio_candidate_popup_layout_cache_store(TypioCandidatePopupCache *cache,
                                     uint64_t content_signature,
                                     char *preedit_text,
                                     int preedit_width, int preedit_height,
+                                    char *mode_label,
+                                    int mode_label_width, int mode_label_height,
                                     int width, int height,
                                     const TypioCandidatePopupRenderConfig *config,
                                     const TypioCandidatePopupPalette *palette) {
     free_lines(cache->lines, cache->line_count);
     free(cache->preedit_text);
+    free(cache->mode_label);
 
     cache->lines = lines;
     cache->line_count = line_count;
@@ -154,6 +158,9 @@ void typio_candidate_popup_layout_cache_store(TypioCandidatePopupCache *cache,
     cache->preedit_text = preedit_text;
     cache->preedit_width = preedit_width;
     cache->preedit_height = preedit_height;
+    cache->mode_label = mode_label;
+    cache->mode_label_width = mode_label_width;
+    cache->mode_label_height = mode_label_height;
     cache->width = width;
     cache->height = height;
     cache->config = *config;
@@ -164,6 +171,7 @@ void typio_candidate_popup_layout_cache_store(TypioCandidatePopupCache *cache,
 bool typio_candidate_popup_layout_cache_matches(const TypioCandidatePopupCache *cache,
                                       const TypioCandidateList *candidates,
                                       const char *preedit_text,
+                                      const char *mode_label,
                                       int scale,
                                       const TypioCandidatePopupRenderConfig *config,
                                       const TypioCandidatePopupPalette *palette) {
@@ -180,6 +188,7 @@ bool typio_candidate_popup_layout_cache_matches(const TypioCandidatePopupCache *
         .width = cache->width,
         .height = cache->height,
         .preedit_text = cache->preedit_text,
+        .mode_label = cache->mode_label,
     };
     TypioCandidatePopupRenderState current = {
         .cache_valid = true,
@@ -194,6 +203,7 @@ bool typio_candidate_popup_layout_cache_matches(const TypioCandidatePopupCache *
         .width = cache->width,
         .height = cache->height,
         .preedit_text = preedit_text,
+        .mode_label = mode_label,
     };
 
     return typio_candidate_popup_render_state_matches(&cached, &current, scale);
@@ -203,12 +213,15 @@ bool typio_candidate_popup_layout_cache_matches(const TypioCandidatePopupCache *
 
 bool typio_candidate_popup_layout_compute(const TypioCandidateList *candidates,
                                 const char *preedit_text_in,
+                                const char *mode_label_in,
                                 const TypioCandidatePopupRenderConfig *config,
                                 TypioCandidatePopupFontCache *font_cache,
                                 TypioCandidatePopupLine **out_lines,
                                 size_t *out_line_count,
                                 int *out_preedit_width,
                                 int *out_preedit_height,
+                                int *out_mode_label_width,
+                                int *out_mode_label_height,
                                 int *out_width,
                                 int *out_height) {
     size_t line_count = candidates->count;
@@ -230,6 +243,17 @@ bool typio_candidate_popup_layout_compute(const TypioCandidateList *candidates,
     if (preedit_text_in && !measure_text(cr, page_font,
                                          preedit_text_in, &preedit_width,
                                          &preedit_height)) {
+        cairo_destroy(cr);
+        cairo_surface_destroy(scratch);
+        free_lines(lines, line_count);
+        return false;
+    }
+
+    int mode_label_width = 0;
+    int mode_label_height = 0;
+    if (mode_label_in && !measure_text(cr, page_font,
+                                       mode_label_in, &mode_label_width,
+                                       &mode_label_height)) {
         cairo_destroy(cr);
         cairo_surface_destroy(scratch);
         free_lines(lines, line_count);
@@ -282,8 +306,12 @@ bool typio_candidate_popup_layout_compute(const TypioCandidateList *candidates,
         if (row_height > 0) {
             items_height += row_height;
         }
-        if (row_width > content_width) {
-            content_width = row_width;
+        int total_row = row_width;
+        if (mode_label_in && mode_label_width > 0) {
+            total_row += TYPIO_CANDIDATE_POPUP_COLUMN_GAP + mode_label_width;
+        }
+        if (total_row > content_width) {
+            content_width = total_row;
         }
     }
 
@@ -291,6 +319,14 @@ bool typio_candidate_popup_layout_compute(const TypioCandidateList *candidates,
         content_height += TYPIO_CANDIDATE_POPUP_SECTION_GAP;
     }
     content_height += items_height;
+
+    if (mode_label_in && mode_label_height > 0 &&
+        config->layout_mode == TYPIO_CANDIDATE_POPUP_LAYOUT_VERTICAL) {
+        content_height += TYPIO_CANDIDATE_POPUP_SECTION_GAP + mode_label_height;
+        if (mode_label_width > content_width) {
+            content_width = mode_label_width;
+        }
+    }
 
     int width = content_width + TYPIO_CANDIDATE_POPUP_PADDING * 2;
     if (width < TYPIO_CANDIDATE_POPUP_MIN_WIDTH) {
@@ -327,6 +363,8 @@ bool typio_candidate_popup_layout_compute(const TypioCandidateList *candidates,
     *out_line_count = line_count;
     *out_preedit_width = preedit_width;
     *out_preedit_height = preedit_height;
+    *out_mode_label_width = mode_label_width;
+    *out_mode_label_height = mode_label_height;
     *out_width = width;
     *out_height = height;
     return true;

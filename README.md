@@ -130,7 +130,7 @@ Installed artifacts:
 - Typio directly implements the Wayland input-method side and depends on the compositor/application text-input-v3 path for end-to-end text input.
 - The built-in `basic` engine does not provide candidate UI.
 - When enabled, the `rime` engine renders candidates through `zwp_input_popup_surface_v2`. The candidate popup follows Wayland `wl_surface.enter/leave` and `wl_output.scale` so integer HiDPI scaling such as 2x stays sharp. If candidate popup rendering is unavailable in the current session, Typio keeps candidate state visible inline in preedit.
-- When enabled, the Rime candidate popup defaults to a horizontal layout and can follow common desktop light/dark theme hints, with `typio.toml` overrides under `[engines.rime]` when needed.
+- When enabled, the Rime candidate popup defaults to a horizontal layout and can follow common desktop light/dark theme hints, with `typio.toml` overrides under `[display]` when needed.
 - Tray hosts that ignore themed icon paths can still render the current engine icon through the exported `IconPixmap` fallback.
 - When the active engine is `rime`, the tray menu exposes a dedicated submenu with the current schema and schema-switch actions. The selected schema is remembered in XDG state rather than `typio.toml`.
 - Typio also exports a D-Bus status object at `org.typio.InputMethod1` so shells
