@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-03-29
+
+### Fixed
+
+- **Tray icon not updating on engine switch**: switching engines via
+  Ctrl+Shift (e.g. Rime → Basic) left the tray showing the previous
+  engine's icon because Rime's `focus_out` re-set the status icon cache
+  after it was cleared.
+
+### Changed
+
+- **Rime tray icon**: replaced the red "R" badge and hardcoded trident
+  symbol with a minimal `currentColor` stroke glyph that adapts to both
+  light and dark desktop themes.
+
 ## [2.3.0] - 2026-03-28
 
 ### Changed
