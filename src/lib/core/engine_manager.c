@@ -820,6 +820,10 @@ static void engine_manager_rebind_focused_context(TypioEngineManager *manager,
     if (old_engine && old_engine->ops && old_engine->ops->focus_out) {
         old_engine->ops->focus_out(old_engine, ctx);
     }
+    /* The old engine's focus_out may have emitted a status icon update
+     * (e.g. Rime refreshes its icon during reset).  Clear the stale
+     * value so the new engine starts with a clean slate. */
+    typio_instance_clear_status_icon(manager->instance);
     if (new_engine && new_engine->ops && new_engine->ops->reset) {
         new_engine->ops->reset(new_engine, ctx);
     }
@@ -942,11 +946,6 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
     manager->prev_active_keyboard_index = manager->active_keyboard_index;
     manager->active_keyboard_index = index;
     manager->last_switch_ms = now_ms;
-
-    /* Dynamic status icons belong to the previously active engine.
-     * Clear the cache before rebinding so static-icon engines do not
-     * inherit a stale tray icon from Rime. */
-    typio_instance_clear_status_icon(manager->instance);
 
     engine_manager_rebind_focused_context(manager,
                                           current ? current->instance : nullptr,
