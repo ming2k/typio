@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.2] - 2026-03-29
+
+### Added
+
+- **`typio-client` CLI**: new D-Bus client binary for controlling a running
+  Typio daemon from the command line, with subcommands for engine switching,
+  Rime schema selection, config management, status display, and daemon stop.
+  Built automatically when `ENABLE_STATUS_BUS=ON`.
+- **`NextEngine` D-Bus method**: the `org.typio.InputMethod1` interface now
+  exposes a `NextEngine()` method so external tools can cycle engines without
+  knowing engine names.
+- **D-Bus interface reference**: added `docs/reference/dbus-interface.md`
+  documenting the full property and method surface.
+
+### Changed
+
+- **Fast/slow engine switching**: Ctrl+Shift rapid presses cycle through the
+  ordered keyboard engine list (fast switch); presses after a 1 s idle interval
+  toggle between the two most recently committed engines (slow switch).  The
+  recent pair is now tracked by commit events instead of switch timing and
+  persists across daemon restarts in `engine-state.toml`.
+- **Status icon clearing on switch**: stale status icons from the previous
+  engine are now cleared before the new engine's focused-context rebind,
+  preventing icon flicker when switching away from engines that refresh their
+  icon during `focus_out`.
+
+### Removed
+
+- Dead engine-switch bookkeeping: `prev_active_keyboard_index`,
+  `engine_manager_note_stable_current`, and `engine_manager_has_explicit_order`
+  have been removed in favour of the commit-based recent-pair model.
+
 ## [2.3.1] - 2026-03-29
 
 ### Fixed
@@ -627,6 +659,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `wayland_generate_protocol()` macro. Supports build-tree testing without
   installation.
 
+[2.3.2]: https://github.com/user/typio/releases/tag/v2.3.2
 [1.2.0]: https://github.com/user/typio/releases/tag/v1.2.0
 [1.4.0]: https://github.com/user/typio/releases/tag/v1.4.0
 [1.4.1]: https://github.com/user/typio/releases/tag/v1.4.1
