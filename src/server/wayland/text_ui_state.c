@@ -15,7 +15,7 @@ TypioWlTextUiPlan typio_wl_text_ui_plan_update(const char *last_preedit_text,
         return TYPIO_WL_TEXT_UI_SYNC_PREEDIT_AND_POPUP;
     }
 
-    return TYPIO_WL_TEXT_UI_DEFER_POPUP_ONLY;
+    return TYPIO_WL_TEXT_UI_SYNC_POPUP_ONLY;
 }
 
 void typio_wl_text_ui_reset_tracking(bool *popup_update_pending,

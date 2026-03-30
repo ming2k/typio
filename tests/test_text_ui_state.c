@@ -30,9 +30,9 @@ static int tests_passed = 0;
 
 #define ASSERT_EQ(a, b) ASSERT((a) == (b))
 
-TEST(defers_when_preedit_and_cursor_match) {
+TEST(syncs_popup_only_when_preedit_and_cursor_match) {
     ASSERT_EQ(typio_wl_text_ui_plan_update("ni", 2, "ni", 2),
-              TYPIO_WL_TEXT_UI_DEFER_POPUP_ONLY);
+              TYPIO_WL_TEXT_UI_SYNC_POPUP_ONLY);
 }
 
 TEST(syncs_when_preedit_text_changes) {
@@ -47,9 +47,9 @@ TEST(syncs_when_cursor_changes) {
 
 TEST(treats_null_preedit_as_empty_string) {
     ASSERT_EQ(typio_wl_text_ui_plan_update(nullptr, -1, nullptr, -1),
-              TYPIO_WL_TEXT_UI_DEFER_POPUP_ONLY);
+              TYPIO_WL_TEXT_UI_SYNC_POPUP_ONLY);
     ASSERT_EQ(typio_wl_text_ui_plan_update(nullptr, -1, "", -1),
-              TYPIO_WL_TEXT_UI_DEFER_POPUP_ONLY);
+              TYPIO_WL_TEXT_UI_SYNC_POPUP_ONLY);
     ASSERT_EQ(typio_wl_text_ui_plan_update("", -1, "ni", 2),
               TYPIO_WL_TEXT_UI_SYNC_PREEDIT_AND_POPUP);
 }
@@ -89,7 +89,7 @@ TEST(flush_popup_update_requires_focused_context) {
 
 int main(void) {
     printf("Running text UI state tests:\n");
-    run_test_defers_when_preedit_and_cursor_match();
+    run_test_syncs_popup_only_when_preedit_and_cursor_match();
     run_test_syncs_when_preedit_text_changes();
     run_test_syncs_when_cursor_changes();
     run_test_treats_null_preedit_as_empty_string();

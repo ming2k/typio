@@ -3,7 +3,7 @@
 
 typedef enum TypioWlTextUiPlan {
     TYPIO_WL_TEXT_UI_SYNC_PREEDIT_AND_POPUP = 0,
-    TYPIO_WL_TEXT_UI_DEFER_POPUP_ONLY = 1,
+    TYPIO_WL_TEXT_UI_SYNC_POPUP_ONLY = 1,
 } TypioWlTextUiPlan;
 
 TypioWlTextUiPlan typio_wl_text_ui_plan_update(const char *last_preedit_text,

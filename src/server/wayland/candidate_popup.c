@@ -48,6 +48,13 @@ struct TypioWlCandidatePopup {
     TypioCandidatePopupConfigCache config_cache;
 };
 
+bool typio_wl_candidate_popup_update(TypioWlTextUiBackend *backend, TypioInputContext *ctx);
+void typio_wl_candidate_popup_hide(TypioWlTextUiBackend *backend);
+bool typio_wl_candidate_popup_is_available(TypioWlTextUiBackend *backend);
+void typio_wl_candidate_popup_invalidate_config(TypioWlTextUiBackend *backend);
+void typio_wl_candidate_popup_handle_output_change(TypioWlTextUiBackend *backend,
+                                                   struct wl_output *output);
+
 static void popup_handle_text_input_rectangle(void *data,
                                               struct zwp_input_popup_surface_v2 *popup_surface,
                                               int32_t x, int32_t y,
@@ -118,7 +125,7 @@ static void popup_refresh_visible_surface(TypioWlCandidatePopup *popup) {
         return;
     }
 
-    typio_wl_candidate_popup_update(popup->frontend, ctx);
+    typio_wl_text_ui_backend_update(popup->frontend->text_ui_backend, ctx);
 }
 
 static void popup_track_output(TypioWlCandidatePopup *popup, struct wl_output *output) {
@@ -445,20 +452,27 @@ static void popup_hide_surface(TypioWlCandidatePopup *popup) {
 }
 
 static bool popup_ensure_created(TypioWlFrontend *frontend) {
+    TypioWlTextUiBackend *backend;
+
     if (!frontend) {
         return false;
     }
 
-    if (frontend->candidate_popup) {
-        return frontend->candidate_popup->surface && frontend->candidate_popup->popup_surface;
+    backend = frontend->text_ui_backend;
+    if (!backend) {
+        return false;
+    }
+
+    if (backend->candidate_popup) {
+        return backend->candidate_popup->surface && backend->candidate_popup->popup_surface;
     }
 
     if (!frontend->compositor || !frontend->shm || !frontend->input_method) {
         return false;
     }
 
-    frontend->candidate_popup = typio_wl_candidate_popup_create(frontend);
-    if (!frontend->candidate_popup) {
+    backend->candidate_popup = typio_wl_candidate_popup_create(frontend);
+    if (!backend->candidate_popup) {
         typio_log(TYPIO_LOG_WARNING,
                   "Failed to create candidate popup surface on demand; using inline candidates");
         return false;
@@ -525,15 +539,15 @@ void typio_wl_candidate_popup_destroy(TypioWlCandidatePopup *popup) {
     free(popup);
 }
 
-void typio_wl_candidate_popup_invalidate_config(TypioWlFrontend *frontend) {
+void typio_wl_candidate_popup_invalidate_config(TypioWlTextUiBackend *backend) {
     TypioWlCandidatePopup *popup;
     TypioCandidatePopupInvalidationState state;
 
-    if (!frontend || !frontend->candidate_popup) {
+    if (!backend || !backend->candidate_popup) {
         return;
     }
 
-    popup = frontend->candidate_popup;
+    popup = backend->candidate_popup;
     state.config_cache_valid = popup->config_cache.valid;
     state.theme_cache_valid = popup->theme_cache.palette != nullptr;
     state.render_cache_valid = popup->cache.valid;
@@ -548,24 +562,26 @@ void typio_wl_candidate_popup_invalidate_config(TypioWlFrontend *frontend) {
     }
 }
 
-bool typio_wl_candidate_popup_update(TypioWlFrontend *frontend, TypioInputContext *ctx) {
+bool typio_wl_candidate_popup_update(TypioWlTextUiBackend *backend, TypioInputContext *ctx) {
     const TypioCandidateList *candidates;
+    TypioWlFrontend *frontend;
 
-    if (!frontend || !ctx) {
+    if (!backend || !backend->frontend || !ctx) {
         return false;
     }
 
+    frontend = backend->frontend;
     if (!popup_ensure_created(frontend)) {
         return false;
     }
 
     candidates = typio_input_context_get_candidates(ctx);
     if (!candidates || candidates->count == 0) {
-        popup_hide_surface(frontend->candidate_popup);
+        popup_hide_surface(backend->candidate_popup);
         return true;
     }
 
-    if (!popup_render(frontend->candidate_popup, nullptr, candidates)) {
+    if (!popup_render(backend->candidate_popup, nullptr, candidates)) {
         typio_log(TYPIO_LOG_WARNING,
                   "Popup render failed; keeping previous popup frame");
         return false;
@@ -576,32 +592,32 @@ bool typio_wl_candidate_popup_update(TypioWlFrontend *frontend, TypioInputContex
     return true;
 }
 
-void typio_wl_candidate_popup_hide(TypioWlFrontend *frontend) {
-    if (!frontend || !frontend->candidate_popup) {
+void typio_wl_candidate_popup_hide(TypioWlTextUiBackend *backend) {
+    if (!backend || !backend->candidate_popup) {
         return;
     }
 
-    popup_hide_surface(frontend->candidate_popup);
+    popup_hide_surface(backend->candidate_popup);
 }
 
-bool typio_wl_candidate_popup_is_available(TypioWlFrontend *frontend) {
-    return frontend && frontend->candidate_popup && frontend->candidate_popup->surface &&
-           frontend->candidate_popup->popup_surface;
+bool typio_wl_candidate_popup_is_available(TypioWlTextUiBackend *backend) {
+    return backend && backend->candidate_popup && backend->candidate_popup->surface &&
+           backend->candidate_popup->popup_surface;
 }
 
-void typio_wl_candidate_popup_handle_output_change(TypioWlFrontend *frontend,
-                                         struct wl_output *output) {
+void typio_wl_candidate_popup_handle_output_change(TypioWlTextUiBackend *backend,
+                                                   struct wl_output *output) {
     TypioWlCandidatePopup *popup;
     TypioCandidatePopupOutputChangeAction action;
 
-    if (!frontend || !output) {
+    if (!backend || !output) {
         return;
     }
 
-    popup = frontend->candidate_popup;
+    popup = backend->candidate_popup;
     action = typio_candidate_popup_state_handle_output_change(popup != nullptr,
-                                                    popup && popup_tracks_output(popup, output),
-                                                    popup && popup_find_frontend_output(popup, output));
+                                                              popup && popup_tracks_output(popup, output),
+                                                              popup && popup_find_frontend_output(popup, output));
     switch (action) {
         case TYPIO_CANDIDATE_POPUP_OUTPUT_CHANGE_UNTRACK:
             popup_untrack_output(popup, output);

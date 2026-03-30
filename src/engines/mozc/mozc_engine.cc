@@ -719,6 +719,7 @@ static bool mozc_sync_output(const mozc::commands::Output &output,
                 .selected = focused >= 0 ? focused - first_index : -1,
                 .has_prev = first_index > 0,
                 .has_next = first_index + count < total,
+                .content_signature = 0,
             };
             typio_input_context_set_candidates(ctx, &list);
             composing = true;

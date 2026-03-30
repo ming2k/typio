@@ -40,7 +40,7 @@ static void typio_server_log_callback(TypioLogLevel level,
     const char *level_str;
     struct timespec ts;
     struct tm tm;
-    char timebuf[32];
+    char timebuf[sizeof("YYYY-MM-DD HH:MM:SS")];
 
     switch (level) {
         case TYPIO_LOG_DEBUG:
@@ -62,9 +62,9 @@ static void typio_server_log_callback(TypioLogLevel level,
 
     if (clock_gettime(CLOCK_REALTIME, &ts) == 0 &&
         localtime_r(&ts.tv_sec, &tm)) {
-        snprintf(timebuf, sizeof(timebuf), "%04d-%02d-%02d %02d:%02d:%02d",
-                 tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-                 tm.tm_hour, tm.tm_min, tm.tm_sec);
+        if (strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S", &tm) == 0) {
+            timebuf[0] = '\0';
+        }
     } else {
         timebuf[0] = '\0';
     }

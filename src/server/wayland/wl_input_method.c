@@ -460,7 +460,7 @@ static void im_handle_done(void *data, [[maybe_unused]] struct zwp_input_method_
                                         &frontend->session->last_preedit_cursor);
         typio_input_context_focus_out(frontend->session->ctx);
         typio_input_context_reset(frontend->session->ctx);
-        typio_wl_candidate_popup_hide(frontend);
+        typio_wl_text_ui_backend_hide(frontend->text_ui_backend);
 
         typio_wl_lifecycle_hard_reset_keyboard(frontend, "focus out");
         typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_INACTIVE, "focus out complete");
@@ -496,7 +496,7 @@ static void on_commit_callback([[maybe_unused]] TypioInputContext *ctx, const ch
 
     /* Clear preedit first */
     typio_wl_set_preedit(session->frontend, "", -1, -1);
-    typio_wl_candidate_popup_hide(session->frontend);
+    typio_wl_text_ui_backend_hide(session->frontend->text_ui_backend);
 
     /* Commit the text */
     typio_wl_commit_string(session->frontend, text);
@@ -567,28 +567,21 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
                                                new_text,
                                                cursor_pos);
 
-    if (update_plan == TYPIO_WL_TEXT_UI_DEFER_POPUP_ONLY) {
-        /* Candidate-only highlight changes are common during Up/Down
-         * navigation. Queue popup work to the next event-loop turn so the
-         * current key handling path can return without waiting for Cairo/Pango
-         * rendering and wl_surface_commit. */
-        session->frontend->popup_update_pending = true;
-        free(plain_text);
-        return;
-    }
-
-    /* Preedit changes still update synchronously so the application sees the
-     * latest composition state in the same protocol turn. */
-    typio_wl_candidate_popup_update(session->frontend, ctx);
+    /* Keep the popup synchronous so candidate navigation updates the visible
+     * highlight immediately. When the preedit is unchanged, skip the protocol
+     * round-trip to the focused application and only refresh the popup. */
+    typio_wl_text_ui_backend_update(session->frontend->text_ui_backend, ctx);
     popup_done_ms = typio_wl_monotonic_ms();
 
     session->frontend->popup_update_pending = false;
-    if (!plain_text) {
-        typio_wl_set_preedit(session->frontend, "", -1, -1);
-    } else {
-        typio_wl_set_preedit(session->frontend, plain_text, cursor_pos, cursor_pos);
+    if (update_plan == TYPIO_WL_TEXT_UI_SYNC_PREEDIT_AND_POPUP) {
+        if (!plain_text) {
+            typio_wl_set_preedit(session->frontend, "", -1, -1);
+        } else {
+            typio_wl_set_preedit(session->frontend, plain_text, cursor_pos, cursor_pos);
+        }
+        typio_wl_commit(session->frontend);
     }
-    typio_wl_commit(session->frontend);
 
     free(session->last_preedit_text);
     session->last_preedit_text = plain_text ? typio_strdup(new_text) : nullptr;

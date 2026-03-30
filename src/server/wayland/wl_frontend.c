@@ -4,10 +4,8 @@
  */
 
 #include "wl_frontend.h"
-#include "frontend_aux.h"
 #include "identity.h"
 #include "monotonic_time.h"
-#include "text_ui_state.h"
 #include "wl_frontend_internal.h"
 #include "typio/typio.h"
 #include "utils/log.h"
@@ -15,7 +13,6 @@
 #include <wayland-client.h>
 #include <inttypes.h>
 #include <signal.h>
-#include <poll.h>
 #include <errno.h>
 #include <sys/inotify.h>
 #include <string.h>
@@ -70,34 +67,8 @@ static void *frontend_watchdog_thread_main(void *data);
 static void frontend_fill_runtime_state(void *user_data,
                                         TypioStatusRuntimeState *state);
 static const char *frontend_loop_stage_name(TypioWlLoopStage stage);
-static void frontend_watchdog_set_stage(TypioWlFrontend *frontend,
-                                        TypioWlLoopStage stage);
 
-static void frontend_log_shortcuts(TypioWlFrontend *frontend,
-                                   const char *prefix) {
-    char *switch_engine;
-    char *emergency_exit;
-    char *voice_ptt;
-
-    if (!frontend || !prefix) {
-        return;
-    }
-
-    switch_engine = typio_shortcut_format(&frontend->shortcuts.switch_engine);
-    emergency_exit = typio_shortcut_format(&frontend->shortcuts.emergency_exit);
-    voice_ptt = typio_shortcut_format(&frontend->shortcuts.voice_ptt);
-    typio_log(TYPIO_LOG_INFO,
-              "%s switch_engine=%s emergency_exit=%s voice_ptt=%s",
-              prefix,
-              switch_engine ? switch_engine : "(none)",
-              emergency_exit ? emergency_exit : "(none)",
-              voice_ptt ? voice_ptt : "(none)");
-    free(switch_engine);
-    free(emergency_exit);
-    free(voice_ptt);
-}
-
-static void frontend_watchdog_heartbeat(TypioWlFrontend *frontend) {
+void typio_wl_frontend_watchdog_heartbeat(TypioWlFrontend *frontend) {
     if (!frontend) {
         return;
     }
@@ -132,8 +103,8 @@ static const char *frontend_loop_stage_name(TypioWlLoopStage stage) {
     }
 }
 
-static void frontend_watchdog_set_stage(TypioWlFrontend *frontend,
-                                        TypioWlLoopStage stage) {
+void typio_wl_frontend_watchdog_set_stage(TypioWlFrontend *frontend,
+                                          TypioWlLoopStage stage) {
     if (!frontend) {
         return;
     }
@@ -142,13 +113,13 @@ static void frontend_watchdog_set_stage(TypioWlFrontend *frontend,
     atomic_store(&frontend->watchdog_stage_since_ms, typio_wl_monotonic_ms());
 }
 
-static void frontend_watchdog_start(TypioWlFrontend *frontend) {
+void typio_wl_frontend_watchdog_start(TypioWlFrontend *frontend) {
     if (!frontend || frontend->watchdog_thread_started) {
         return;
     }
 
-    frontend_watchdog_heartbeat(frontend);
-    frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
+    typio_wl_frontend_watchdog_heartbeat(frontend);
+    typio_wl_frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
     atomic_store(&frontend->watchdog_stop, false);
     atomic_store(&frontend->watchdog_armed, false);
     if (pthread_create(&frontend->watchdog_thread, nullptr,
@@ -159,7 +130,7 @@ static void frontend_watchdog_start(TypioWlFrontend *frontend) {
     }
 }
 
-static void frontend_watchdog_stop(TypioWlFrontend *frontend) {
+void typio_wl_frontend_watchdog_stop(TypioWlFrontend *frontend) {
     if (!frontend || !frontend->watchdog_thread_started) {
         return;
     }
@@ -307,108 +278,6 @@ static void *frontend_watchdog_thread_main(void *data) {
     return nullptr;
 }
 
-/**
- * Reload runtime configuration for all subsystems.
- *
- * Ordering contract — each step may depend on the previous:
- *   1. instance_reload_config — re-reads TOML, switches keyboard engine
- *   2. shortcuts — re-parse shortcut bindings from new config
- *   3. voice engine switch — check default_voice_engine, activate if changed
- *   4. voice engine reload — tell backend to re-read its config section
- *   5. voice service refresh — re-fetch engine reference, ensure audio infra
- *   6. status bus — broadcast property change to D-Bus listeners
- */
-static void frontend_refresh_runtime_config(TypioWlFrontend *frontend) {
-    if (!frontend || !frontend->instance) {
-        return;
-    }
-
-    typio_log(TYPIO_LOG_DEBUG, "Config reload: begin");
-
-    /* 1. Core: re-read TOML, switch keyboard engine, reload its config */
-    if (typio_instance_reload_config(frontend->instance) != TYPIO_OK) {
-        typio_log(TYPIO_LOG_WARNING, "Config reload: failed to reload instance config");
-        return;
-    }
-
-    typio_wl_candidate_popup_invalidate_config(frontend);
-
-    TypioConfig *config = typio_instance_get_config(frontend->instance);
-
-    /* 2. Shortcuts */
-    typio_shortcut_config_load(&frontend->shortcuts, config);
-    frontend_log_shortcuts(frontend, "Config reload: shortcuts");
-
-#ifdef HAVE_VOICE
-    {
-        TypioEngineManager *mgr = typio_instance_get_engine_manager(frontend->instance);
-
-        /* 3. Voice engine switch — check if configured engine changed */
-        const char *configured_voice = typio_config_get_string(config,
-                                                                "default_voice_engine",
-                                                                NULL);
-        if (configured_voice && *configured_voice) {
-            TypioEngine *voice = typio_engine_manager_get_active_voice(mgr);
-            const char *cur = voice ? typio_engine_get_name(voice) : NULL;
-            if (!cur || strcmp(configured_voice, cur) != 0) {
-                typio_engine_manager_set_active_voice(mgr, configured_voice);
-            }
-        }
-
-        /* 4. Voice engine reload — re-read [engines.*] config */
-        TypioEngine *voice = typio_engine_manager_get_active_voice(mgr);
-        if (voice && voice->ops && voice->ops->reload_config) {
-            voice->ops->reload_config(voice);
-        }
-
-        /* 5. Voice service refresh — re-fetch engine ref, ensure audio infra */
-        if (frontend->voice) {
-            typio_voice_service_reload(frontend->voice);
-            typio_log(TYPIO_LOG_INFO,
-                      "Config reload: voice available=%s",
-                      typio_voice_service_is_available(frontend->voice) ? "yes" : "no");
-        }
-    }
-#endif
-
-#ifdef HAVE_STATUS_BUS
-    /* 6. Status bus — notify external listeners */
-    if (frontend->status_bus) {
-        typio_status_bus_emit_properties_changed(frontend->status_bus);
-    }
-#endif
-
-    typio_log(TYPIO_LOG_DEBUG, "Config reload: complete");
-}
-
-static void frontend_handle_config_watch(TypioWlFrontend *frontend) {
-    char buffer[4096];
-    ssize_t nread;
-
-    if (!frontend || frontend->config_watch_fd < 0) {
-        return;
-    }
-
-    while ((nread = read(frontend->config_watch_fd, buffer, sizeof(buffer))) > 0) {
-        ssize_t offset = 0;
-        bool should_reload = false;
-
-        while (offset < nread) {
-            const struct inotify_event *event =
-                (const struct inotify_event *)(buffer + offset);
-            if ((event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE |
-                                IN_DELETE_SELF | IN_MOVE_SELF | IN_ATTRIB)) != 0) {
-                should_reload = true;
-            }
-            offset += (ssize_t)sizeof(struct inotify_event) + event->len;
-        }
-
-        if (should_reload) {
-            frontend_refresh_runtime_config(frontend);
-        }
-    }
-}
-
 static void frontend_setup_config_watch(TypioWlFrontend *frontend) {
     char engines_dir[512];
     const char *config_dir;
@@ -466,7 +335,7 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
     /* Load shortcut bindings from config */
     typio_shortcut_config_load(&frontend->shortcuts,
                                typio_instance_get_config(instance));
-    frontend_log_shortcuts(frontend, "Shortcuts:");
+    typio_wl_frontend_log_shortcuts(frontend, "Shortcuts:");
 
     /* Connect to Wayland display */
     const char *display_name = config ? config->display_name : nullptr;
@@ -548,18 +417,20 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
                   "No virtual keyboard manager; unhandled keys will be lost");
     }
 
-    if (frontend->compositor && frontend->shm) {
-        frontend->candidate_popup = typio_wl_candidate_popup_create(frontend);
-        if (frontend->candidate_popup) {
+    frontend->text_ui_backend = typio_wl_text_ui_backend_create(frontend);
+    if (frontend->text_ui_backend) {
+        if (typio_wl_text_ui_backend_is_available(frontend->text_ui_backend)) {
             typio_log(TYPIO_LOG_INFO, "Candidate popup surface ready");
+        } else if (!frontend->compositor || !frontend->shm) {
+            typio_log(TYPIO_LOG_WARNING,
+                      "Popup disabled: compositor=%p, shm=%p",
+                      (void *)frontend->compositor, (void *)frontend->shm);
         } else {
             typio_log(TYPIO_LOG_WARNING,
                       "Failed to initialize candidate popup surface; keeping candidate state inline");
         }
     } else {
-        typio_log(TYPIO_LOG_WARNING,
-                  "Popup disabled: compositor=%p, shm=%p",
-                  (void *)frontend->compositor, (void *)frontend->shm);
+        typio_log(TYPIO_LOG_WARNING, "Failed to initialize text UI backend");
     }
 
     typio_log(TYPIO_LOG_INFO, "Wayland input method frontend initialized");
@@ -611,294 +482,6 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
     return frontend;
 }
 
-int typio_wl_frontend_run(TypioWlFrontend *frontend) {
-    if (!frontend || !frontend->display) {
-        return -1;
-    }
-
-    frontend_watchdog_start(frontend);
-    frontend->running = true;
-    frontend_watchdog_heartbeat(frontend);
-    typio_log(TYPIO_LOG_INFO, "Starting Wayland event loop");
-
-    int display_fd = wl_display_get_fd(frontend->display);
-
-#ifdef HAVE_SYSTRAY
-    int tray_fd = frontend->tray ? typio_tray_get_fd(frontend->tray) : -1;
-#endif
-#ifdef HAVE_STATUS_BUS
-    int status_fd = frontend->status_bus ? typio_status_bus_get_fd(frontend->status_bus) : -1;
-#endif
-#ifdef HAVE_VOICE
-    int voice_fd = frontend->voice ? typio_voice_service_get_fd(frontend->voice) : -1;
-    bool voice_disabled = false;
-#endif
-#ifdef HAVE_SYSTRAY
-    bool tray_disabled = false;
-#endif
-#ifdef HAVE_STATUS_BUS
-    bool status_disabled = false;
-#endif
-
-    while (frontend->running) {
-        frontend_watchdog_heartbeat(frontend);
-        frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
-
-        if (typio_wl_text_ui_should_flush_popup_update(
-                frontend->popup_update_pending,
-                frontend->session != nullptr,
-                frontend->session && frontend->session->ctx,
-                frontend->session && frontend->session->ctx &&
-                    typio_input_context_is_focused(frontend->session->ctx))) {
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_POPUP_UPDATE);
-            frontend->popup_update_pending = false;
-            typio_wl_candidate_popup_update(frontend, frontend->session->ctx);
-            frontend_watchdog_heartbeat(frontend);
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
-        }
-
-        /* Flush pending requests */
-        while (wl_display_prepare_read(frontend->display) != 0) {
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_PREPARE_READ);
-            wl_display_dispatch_pending(frontend->display);
-            frontend_watchdog_heartbeat(frontend);
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
-        }
-
-        frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_FLUSH);
-        if (wl_display_flush(frontend->display) < 0 && errno != EAGAIN) {
-            typio_log(TYPIO_LOG_ERROR, "Wayland display flush failed: %s",
-                      strerror(errno));
-            wl_display_cancel_read(frontend->display);
-            frontend->running = false;
-            return -1;
-        }
-        frontend_watchdog_heartbeat(frontend);
-
-        /* Build poll set: wayland fd + optional tray/status/voice/repeat fds */
-        struct pollfd fds[6];
-        int nfds = 0;
-        int idx_display = nfds;
-        fds[nfds++] = (struct pollfd){ .fd = display_fd, .events = POLLIN };
-
-#ifdef HAVE_SYSTRAY
-        int idx_tray = -1;
-        if (!tray_disabled && tray_fd >= 0) {
-            idx_tray = nfds;
-            fds[nfds++] = (struct pollfd){ .fd = tray_fd, .events = POLLIN };
-        }
-#endif
-
-        int idx_status = -1;
-#ifdef HAVE_STATUS_BUS
-        if (!status_disabled && status_fd >= 0) {
-            idx_status = nfds;
-            fds[nfds++] = (struct pollfd){ .fd = status_fd, .events = POLLIN };
-        }
-#endif
-
-#ifdef HAVE_VOICE
-        int idx_voice = -1;
-        if (!voice_disabled && voice_fd >= 0) {
-            idx_voice = nfds;
-            fds[nfds++] = (struct pollfd){ .fd = voice_fd, .events = POLLIN };
-        }
-#endif
-
-        int idx_repeat = -1;
-        int repeat_fd = frontend->keyboard ?
-            typio_wl_keyboard_get_repeat_fd(frontend->keyboard) : -1;
-        if (repeat_fd >= 0) {
-            idx_repeat = nfds;
-            fds[nfds++] = (struct pollfd){ .fd = repeat_fd, .events = POLLIN };
-        }
-
-        int idx_config = -1;
-        if (frontend->config_watch_fd >= 0) {
-            idx_config = nfds;
-            fds[nfds++] = (struct pollfd){ .fd = frontend->config_watch_fd, .events = POLLIN };
-        }
-
-        frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_POLL);
-        int ret = poll(fds, (nfds_t)nfds, 100);
-
-        if (ret < 0) {
-            if (errno == EINTR) {
-                wl_display_cancel_read(frontend->display);
-                continue;
-            }
-            typio_log(TYPIO_LOG_ERROR, "poll failed: %s", strerror(errno));
-            wl_display_cancel_read(frontend->display);
-            frontend->running = false;
-            return -1;
-        }
-
-        if (ret == 0) {
-            wl_display_cancel_read(frontend->display);
-            typio_wl_vk_health_check(frontend);
-            frontend_watchdog_heartbeat(frontend);
-            continue;
-        }
-
-        /* Handle Wayland events */
-        if (fds[idx_display].revents & POLLIN) {
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_READ_EVENTS);
-            if (wl_display_read_events(frontend->display) < 0) {
-                typio_log(TYPIO_LOG_ERROR, "Failed to read Wayland events: %s",
-                          strerror(errno));
-                frontend->running = false;
-                return -1;
-            }
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_DISPATCH_PENDING);
-            wl_display_dispatch_pending(frontend->display);
-            frontend->dispatch_epoch++;
-            frontend_watchdog_heartbeat(frontend);
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
-        } else {
-            wl_display_cancel_read(frontend->display);
-        }
-
-        if (fds[idx_display].revents & (POLLERR | POLLHUP)) {
-            typio_log(TYPIO_LOG_ERROR, "Wayland display connection error");
-            frontend->running = false;
-            return -1;
-        }
-
-#ifdef HAVE_SYSTRAY
-        /* Handle tray D-Bus events */
-        if (idx_tray >= 0 && fds[idx_tray].revents) {
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_AUX_IO);
-            TypioWlAuxState tray_state = { .fd = tray_fd, .disabled = tray_disabled };
-            if (typio_wl_aux_should_disable_on_revents(fds[idx_tray].revents)) {
-                typio_log(TYPIO_LOG_WARNING,
-                          "Disabling tray integration after poll error: revents=0x%x",
-                          fds[idx_tray].revents);
-                tray_state = typio_wl_aux_apply_transition(tray_state,
-                                                           fds[idx_tray].revents,
-                                                           0,
-                                                           -1);
-            } else if (fds[idx_tray].revents & POLLIN) {
-                int dispatch_result = typio_tray_dispatch(frontend->tray);
-                if (typio_wl_aux_should_disable_on_dispatch_result(dispatch_result)) {
-                    typio_log(TYPIO_LOG_WARNING,
-                              "Disabling tray integration after dispatch failure");
-                    tray_state = typio_wl_aux_apply_transition(tray_state,
-                                                               fds[idx_tray].revents,
-                                                               dispatch_result,
-                                                               -1);
-                } else {
-                    tray_state = typio_wl_aux_apply_transition(
-                        tray_state,
-                        fds[idx_tray].revents,
-                        dispatch_result,
-                        frontend->tray ? typio_tray_get_fd(frontend->tray) : -1);
-                }
-            }
-            tray_fd = tray_state.fd;
-            tray_disabled = tray_state.disabled;
-            frontend_watchdog_heartbeat(frontend);
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
-        }
-#endif
-
-#ifdef HAVE_STATUS_BUS
-        if (idx_status >= 0 && fds[idx_status].revents) {
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_AUX_IO);
-            TypioWlAuxState status_state = { .fd = status_fd, .disabled = status_disabled };
-            if (typio_wl_aux_should_disable_on_revents(fds[idx_status].revents)) {
-                typio_log(TYPIO_LOG_WARNING,
-                          "Disabling status bus after poll error: revents=0x%x",
-                          fds[idx_status].revents);
-                status_state = typio_wl_aux_apply_transition(status_state,
-                                                             fds[idx_status].revents,
-                                                             0,
-                                                             -1);
-            } else if (fds[idx_status].revents & POLLIN) {
-                int dispatch_result =
-                    typio_status_bus_dispatch(frontend->status_bus);
-                if (typio_wl_aux_should_disable_on_dispatch_result(dispatch_result)) {
-                    typio_log(TYPIO_LOG_WARNING,
-                              "Disabling status bus after dispatch failure");
-                    status_state = typio_wl_aux_apply_transition(status_state,
-                                                                 fds[idx_status].revents,
-                                                                 dispatch_result,
-                                                                 -1);
-                } else {
-                    status_state = typio_wl_aux_apply_transition(
-                        status_state,
-                        fds[idx_status].revents,
-                        dispatch_result,
-                        frontend->status_bus ? typio_status_bus_get_fd(frontend->status_bus) : -1);
-                }
-            }
-            status_fd = status_state.fd;
-            status_disabled = status_state.disabled;
-            frontend_watchdog_heartbeat(frontend);
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
-        }
-#endif
-
-        /* Handle key repeat timer */
-        if (idx_repeat >= 0 && (fds[idx_repeat].revents & POLLIN)) {
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_REPEAT);
-            typio_wl_keyboard_dispatch_repeat(frontend->keyboard);
-            frontend_watchdog_heartbeat(frontend);
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
-        }
-
-#ifdef HAVE_VOICE
-        /* Handle voice inference completion */
-        if (idx_voice >= 0 && fds[idx_voice].revents) {
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_AUX_IO);
-            TypioWlAuxState voice_state = { .fd = voice_fd, .disabled = voice_disabled };
-            if (typio_wl_aux_should_disable_on_revents(fds[idx_voice].revents)) {
-                typio_log(TYPIO_LOG_WARNING,
-                          "Disabling voice eventfd after poll error: revents=0x%x",
-                          fds[idx_voice].revents);
-                voice_state = typio_wl_aux_apply_transition(voice_state,
-                                                            fds[idx_voice].revents,
-                                                            0,
-                                                            -1);
-            } else if (fds[idx_voice].revents & POLLIN) {
-                TypioInputContext *ctx = frontend->session ?
-                    frontend->session->ctx : nullptr;
-                typio_voice_service_dispatch(frontend->voice, ctx);
-                /* Clear the "Processing..." preedit */
-                typio_wl_set_preedit(frontend, "", 0, 0);
-                typio_wl_commit(frontend);
-                voice_state = typio_wl_aux_apply_transition(
-                    voice_state,
-                    fds[idx_voice].revents,
-                    0,
-                    frontend->voice ? typio_voice_service_get_fd(frontend->voice) : -1);
-            }
-            voice_fd = voice_state.fd;
-            voice_disabled = voice_state.disabled;
-            frontend_watchdog_heartbeat(frontend);
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
-        }
-#endif
-
-        if (idx_config >= 0 && (fds[idx_config].revents & POLLIN)) {
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_CONFIG_RELOAD);
-            frontend_handle_config_watch(frontend);
-            frontend_watchdog_heartbeat(frontend);
-            frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
-        }
-
-        typio_wl_vk_health_check(frontend);
-
-        if (!frontend->running) {
-            break;
-        }
-
-        frontend_watchdog_heartbeat(frontend);
-    }
-
-    typio_log(TYPIO_LOG_INFO, "Wayland event loop stopped");
-    return 0;
-}
-
 void typio_wl_frontend_stop(TypioWlFrontend *frontend) {
     if (frontend) {
         frontend->running = false;
@@ -915,7 +498,7 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
     }
 
     frontend->running = false;
-    frontend_watchdog_stop(frontend);
+    typio_wl_frontend_watchdog_stop(frontend);
 
     /* Clean up session */
     if (frontend->session) {
@@ -932,9 +515,9 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
         frontend->keyboard = nullptr;
     }
 
-    if (frontend->candidate_popup) {
-        typio_wl_candidate_popup_destroy(frontend->candidate_popup);
-        frontend->candidate_popup = nullptr;
+    if (frontend->text_ui_backend) {
+        typio_wl_text_ui_backend_destroy(frontend->text_ui_backend);
+        frontend->text_ui_backend = nullptr;
     }
 
     if (frontend->config_dir_watch >= 0 && frontend->config_watch_fd >= 0) {
@@ -1075,7 +658,8 @@ static void registry_handle_global_remove(void *data,
         if (output->name == name) {
             *link = output->next;
             if (output->output) {
-                typio_wl_candidate_popup_handle_output_change(frontend, output->output);
+                typio_wl_text_ui_backend_handle_output_change(frontend->text_ui_backend,
+                                                              output->output);
                 wl_output_destroy(output->output);
             }
             free(output);
@@ -1137,7 +721,8 @@ static void output_handle_scale(void *data, [[maybe_unused]] struct wl_output *w
     }
 
     output->scale = factor > 0 ? factor : 1;
-    typio_wl_candidate_popup_handle_output_change(output->frontend, output->output);
+    typio_wl_text_ui_backend_handle_output_change(output->frontend->text_ui_backend,
+                                                  output->output);
 }
 
 void typio_wl_frontend_set_tray([[maybe_unused]] TypioWlFrontend *frontend,

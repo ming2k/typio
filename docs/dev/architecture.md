@@ -77,6 +77,26 @@ Responsibilities:
 - translate XKB keyboard state into `TypioKeyEvent`
 - forward commit and preedit callbacks back into Wayland protocol requests
 
+Within the Wayland daemon, responsibilities are intentionally split by layer:
+
+- `wl_input_method.c`
+  Owns protocol-facing text entry updates and decides when the focused
+  application needs a preedit round-trip.
+- `text_ui_backend.c`
+  Owns the backend boundary for Typio-managed text UI. It receives the
+  current `TypioInputContext` state and forwards it to a concrete UI
+  implementation.
+- `candidate_popup.c`
+  Implements the current Wayland-native popup backend over
+  `zwp_input_popup_surface_v2`.
+- `wl_event_loop.c`
+  Owns the polling loop, Wayland dispatch, watchdog staging, and aux-fd
+  integration such as tray, status bus, voice, repeat, and config watch.
+- `wl_runtime_config.c`
+  Owns runtime config reload, shortcut refresh, and text-UI config invalidation.
+- `wl_frontend.c`
+  Owns frontend construction, registry/global binding, and teardown glue.
+
 ### `typio-client`
 
 Located under `src/client/`.
@@ -206,19 +226,42 @@ separate:
 3. `wl_input_method.c` decides whether the update is:
    - a full text-UI update, or
    - a selection-only popup refresh
-4. `candidate_popup.c` renders the candidate popup over `zwp_input_popup_surface_v2`
+4. `text_ui_backend.c` provides the Typio-side UI backend boundary
+5. `candidate_popup.c` renders the current Wayland popup backend over
+   `zwp_input_popup_surface_v2`
+
+The important design rule is that `wl_input_method.c` should depend on the
+text-UI backend abstraction, not on a concrete popup implementation. This
+keeps candidate/preedit semantics in the input-method path while letting the
+actual presentation backend evolve independently.
 
 Selection-only movement such as `Up` / `Down` is treated as a hot path:
 
 - it should not rebuild preedit when only the highlight changes
-- it should not block the current key handler on popup work
 - it should reuse cached popup layout and row bitmaps whenever possible
 - a transient popup redraw failure should keep the previous visible frame
   instead of hiding the candidate window
 
+Current scheduling is intentionally asymmetric:
+
+- when preedit text or cursor changes, Typio updates the popup and sends the
+  new preedit to the focused application in the same call path
+- when only the selected candidate changes, Typio still updates the popup
+  synchronously in the same call path, but skips the redundant preedit
+  protocol round-trip to the application
+
+The short timing difference is:
+
+1. `Up` / `Down` arrives
+2. the engine updates the selected candidate
+3. `update_wayland_text_ui()` calls `typio_wl_text_ui_backend_update()`
+4. if preedit changed, Typio also sends `zwp_input_method_v2.set_preedit_string`
+   and `commit`; if preedit did not change, that protocol work is skipped
+5. the popup `wl_surface` is committed with the new highlight in the same turn
+
 This separation is important because candidate ownership belongs to the engine
-and input context, while popup buffers, damage, and scaling belong to the
-Wayland frontend.
+and input context, while popup buffers, damage, scaling, and backend-specific
+surface management belong to the Wayland text-UI implementation.
 
 ## Keyboard Safety Model
 

@@ -41,6 +41,8 @@ if(HAVE_WAYLAND)
         wayland/lifecycle.c
         wayland/lifecycle_model.c
         wayland/modifier_policy.c
+        wayland/wl_event_loop.c
+        wayland/wl_runtime_config.c
         wayland/candidate_popup.c
         wayland/candidate_popup_buffer.c
         wayland/candidate_popup_damage.c
@@ -53,6 +55,7 @@ if(HAVE_WAYLAND)
         wayland/shortcut_chord.c
         wayland/shortcut_config.c
         wayland/startup_guard.c
+        wayland/text_ui_backend.c
         wayland/text_ui_state.c
         wayland/vk_bridge.c
         wayland/wl_frontend.c

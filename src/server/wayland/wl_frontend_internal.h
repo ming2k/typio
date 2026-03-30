@@ -14,6 +14,7 @@
 #include "keyboard_repeat.h"
 #include "identity.h"
 #include "startup_guard.h"
+#include "text_ui_backend.h"
 #include "vk_bridge.h"
 #include "typio/types.h"
 #include "typio_build_config.h"
@@ -46,6 +47,11 @@ typedef struct TypioWlSession TypioWlSession;
 typedef struct TypioWlKeyboard TypioWlKeyboard;
 typedef struct TypioWlCandidatePopup TypioWlCandidatePopup;
 typedef struct TypioWlOutput TypioWlOutput;
+
+struct TypioWlTextUiBackend {
+    TypioWlFrontend *frontend;
+    TypioWlCandidatePopup *candidate_popup;
+};
 
 typedef enum TypioWlLoopStage {
     TYPIO_WL_LOOP_STAGE_IDLE = 0,
@@ -206,7 +212,7 @@ struct TypioWlFrontend {
     /* Session and keyboard state */
     TypioWlSession *session;
     TypioWlKeyboard *keyboard;
-    TypioWlCandidatePopup *candidate_popup;
+    TypioWlTextUiBackend *text_ui_backend;
     TypioWlIdentityProvider *identity_provider;
     TypioWlIdentity current_identity;
 
@@ -255,6 +261,14 @@ struct TypioWlOutput {
 };
 
 void typio_wl_frontend_emit_runtime_state_changed(TypioWlFrontend *frontend);
+void typio_wl_frontend_watchdog_heartbeat(TypioWlFrontend *frontend);
+void typio_wl_frontend_watchdog_set_stage(TypioWlFrontend *frontend,
+                                          TypioWlLoopStage stage);
+void typio_wl_frontend_watchdog_start(TypioWlFrontend *frontend);
+void typio_wl_frontend_watchdog_stop(TypioWlFrontend *frontend);
+void typio_wl_frontend_log_shortcuts(TypioWlFrontend *frontend,
+                                     const char *prefix);
+void typio_wl_frontend_handle_config_watch(TypioWlFrontend *frontend);
 
 /* Input method functions (wl_input_method.c) */
 void typio_wl_input_method_setup(TypioWlFrontend *frontend);
@@ -283,15 +297,16 @@ void typio_wl_keyboard_process_key_release(TypioWlKeyboard *keyboard,
                                            uint32_t modifiers, uint32_t unicode,
                                            uint32_t time);
 
-/* Candidate popup functions (candidate_popup.c) */
+/* Candidate popup implementation (candidate_popup.c) */
+typedef struct TypioWlCandidatePopup TypioWlCandidatePopup;
 TypioWlCandidatePopup *typio_wl_candidate_popup_create(TypioWlFrontend *frontend);
 void typio_wl_candidate_popup_destroy(TypioWlCandidatePopup *candidate_popup);
-bool typio_wl_candidate_popup_update(TypioWlFrontend *frontend, TypioInputContext *ctx);
-void typio_wl_candidate_popup_hide(TypioWlFrontend *frontend);
-bool typio_wl_candidate_popup_is_available(TypioWlFrontend *frontend);
-void typio_wl_candidate_popup_invalidate_config(TypioWlFrontend *frontend);
-void typio_wl_candidate_popup_handle_output_change(TypioWlFrontend *frontend,
-                                         struct wl_output *output);
+bool typio_wl_candidate_popup_update(TypioWlTextUiBackend *backend, TypioInputContext *ctx);
+void typio_wl_candidate_popup_hide(TypioWlTextUiBackend *backend);
+bool typio_wl_candidate_popup_is_available(TypioWlTextUiBackend *backend);
+void typio_wl_candidate_popup_invalidate_config(TypioWlTextUiBackend *backend);
+void typio_wl_candidate_popup_handle_output_change(TypioWlTextUiBackend *backend,
+                                                   struct wl_output *output);
 
 /* Commit helpers */
 void typio_wl_commit_string(TypioWlFrontend *frontend, const char *text);
