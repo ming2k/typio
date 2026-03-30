@@ -97,6 +97,13 @@ Within the Wayland daemon, responsibilities are intentionally split by layer:
 - `wl_frontend.c`
   Owns frontend construction, registry/global binding, and teardown glue.
 
+This document only defines the structural split. Detailed timing rules,
+runtime-state authority, and control-surface binding rules live in:
+
+- [Timing Model](timing-model.md)
+- [State Management](state-management.md)
+- [Control Surfaces](control-surfaces.md)
+
 ### `typio-client`
 
 Located under `src/client/`.
@@ -223,45 +230,15 @@ separate:
 
 1. the keyboard engine owns candidate content and the selected index
 2. `TypioInputContext` stores that state as the UI source of truth
-3. `wl_input_method.c` decides whether the update is:
-   - a full text-UI update, or
-   - a selection-only popup refresh
+3. `wl_input_method.c` decides when text UI must be refreshed
 4. `text_ui_backend.c` provides the Typio-side UI backend boundary
 5. `candidate_popup.c` renders the current Wayland popup backend over
    `zwp_input_popup_surface_v2`
 
-The important design rule is that `wl_input_method.c` should depend on the
-text-UI backend abstraction, not on a concrete popup implementation. This
-keeps candidate/preedit semantics in the input-method path while letting the
-actual presentation backend evolve independently.
-
-Selection-only movement such as `Up` / `Down` is treated as a hot path:
-
-- it should not rebuild preedit when only the highlight changes
-- it should reuse cached popup layout and row bitmaps whenever possible
-- a transient popup redraw failure should keep the previous visible frame
-  instead of hiding the candidate window
-
-Current scheduling is intentionally asymmetric:
-
-- when preedit text or cursor changes, Typio updates the popup and sends the
-  new preedit to the focused application in the same call path
-- when only the selected candidate changes, Typio still updates the popup
-  synchronously in the same call path, but skips the redundant preedit
-  protocol round-trip to the application
-
-The short timing difference is:
-
-1. `Up` / `Down` arrives
-2. the engine updates the selected candidate
-3. `update_wayland_text_ui()` calls `typio_wl_text_ui_backend_update()`
-4. if preedit changed, Typio also sends `zwp_input_method_v2.set_preedit_string`
-   and `commit`; if preedit did not change, that protocol work is skipped
-5. the popup `wl_surface` is committed with the new highlight in the same turn
-
-This separation is important because candidate ownership belongs to the engine
-and input context, while popup buffers, damage, scaling, and backend-specific
-surface management belong to the Wayland text-UI implementation.
+The important architectural rule is that `wl_input_method.c` depends on the
+text-UI backend abstraction, not on a concrete popup implementation. Timing
+details for synchronous candidate refresh and related hot-path constraints are
+documented in [Timing Model](timing-model.md).
 
 ## Keyboard Safety Model
 

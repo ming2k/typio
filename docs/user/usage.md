@@ -56,13 +56,10 @@ Read-only properties:
 
 - `Version`
 - `ActiveKeyboardEngine`
-- `ActiveEngine`
-- `AvailableKeyboardEngines`
-- `AvailableEngines`
-- `OrderedKeyboardEngines`
-- `AvailableVoiceEngines`
 - `ActiveVoiceEngine`
 - `ActiveEngineState`
+- `ActiveEngineMode`
+- `RuntimeState`
 - `ConfigText`
 
 Methods:
@@ -82,7 +79,8 @@ separately through the `RimeSchema` property. Typio emits the standard
 change, so richer shells and widgets can react without relying on tray icon
 changes alone.
 
-For the full interface specification, see the
+The list above is intentionally abbreviated to the most commonly useful entry
+points. For the full interface specification, see the
 [D-Bus Interface Reference](../reference/dbus-interface.md).
 
 ## `typio-client`

@@ -143,7 +143,7 @@ gdbus monitor --session \
   --object-path /org/typio/InputMethod1
 ```
 
-The most useful `RuntimeState` fields are:
+The most useful `RuntimeState` fields for troubleshooting are:
 
 - `lifecycle_phase`: should normally settle at `active` while typing
 - `keyboard_grab_active`: whether Typio still owns the Wayland keyboard grab
@@ -170,6 +170,9 @@ Interpret the most common bad combinations like this:
   should fail open instead of continuing to swallow keys
 - increasing `virtual_keyboard_drop_count`: Typio is receiving input it cannot
   safely forward to the focused client
+
+For the complete diagnostic meaning of these fields and the underlying timing
+model, see [Developer Timing Model](../dev/timing-model.md).
 
 If you report a timing or freeze problem, include both:
 

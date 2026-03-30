@@ -150,20 +150,13 @@ Rule:
 
 ## Shortcut Policy
 
-Application shortcuts are decided in the Wayland frontend, not per engine.
-Compositor-style modifier shortcuts such as `Ctrl+Shift` should remain
-application/compositor-owned behavior unless an explicit out-of-band
-integration is added.
+The normative shortcut rules live in [Timing Model](timing-model.md). For
+maintenance work, treat them as non-negotiable invariants:
 
-Rule:
-
-- non-modifier keys pressed with Ctrl, Alt, or Super bypass the engine
-- the matching release must bypass the engine too
-- engines should not need ad-hoc shortcut bypass logic to stay symmetric
-- Typio should not claim `Ctrl+Shift` or similar modifier-only shortcuts from
-  inside the keyboard grab
-- modifier changes must not synthesize releases for unrelated keys during the
-  normal key path; cleanup belongs at lifecycle boundaries only
+- shortcut bypass policy belongs to the Wayland frontend, not per engine
+- shortcut press/release handling must remain symmetric
+- modifier-only compositor shortcuts such as `Ctrl+Shift` stay transparent
+- cleanup rewrites belong at lifecycle boundaries, not in the normal key path
 
 ## Safe Change Checklist
 

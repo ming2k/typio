@@ -24,29 +24,21 @@ They must not become a second source of truth for runtime or config state.
 
 ## Sources Of Truth
 
-Every control surface must keep these layers separate:
+The canonical ownership model is defined in
+[State Management](state-management.md). Control-surface code should not
+redefine those domains locally.
 
-- `runtime state`
-  Data exposed by the daemon, primarily over the D-Bus status interface.
-- `persisted config`
-  The authoritative `typio.toml` as seen by the daemon.
-- `local stage`
-  The most recent client-side representation of edits not yet confirmed by the
-  daemon.
-- `view state`
-  Widget state such as dropdown selections, switches, and spin buttons.
+For UI work, the practical rules are:
 
-Rules:
-
-- Runtime state must come from the daemon, not from client-side filesystem
-  guesses.
-- If a runtime selection is unknown, the UI must keep the widget unselected
-  instead of guessing a fallback entry.
-- Persistent edits must start from the daemon's current `ConfigText`.
-- Widget state is never authoritative by itself.
-- Programmatic refresh must not overwrite newer local staged edits.
-- Selector widgets should prefer the shared `ControlStateBinding` model over
-  bespoke sync logic.
+- runtime state must come from the daemon, not from client-side filesystem
+  guesses
+- if a runtime selection is unknown, keep the widget unselected instead of
+  guessing a fallback entry
+- persistent edits must start from the daemon's current `ConfigText`
+- widget state is never authoritative by itself
+- programmatic refresh must not overwrite newer local staged edits
+- selector widgets should prefer the shared `ControlStateBinding` model over
+  bespoke sync logic
 
 ## Editing Model
 
