@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-03-30
+
+### Changed
+
+- **Wayland text UI backend boundary**: introduced an internal
+  `text_ui_backend` layer between `wl_input_method` and the concrete
+  candidate popup implementation so UI presentation can evolve without
+  coupling style/layout work to input-method protocol code.
+- **Wayland frontend convergence**: extracted event-loop and runtime-config
+  responsibilities out of `wl_frontend.c` into dedicated modules, reducing
+  the amount of lifecycle, polling, and reload logic concentrated in one file.
+
+### Fixed
+
+- **Build warning cleanup**: removed release-build warnings in the Mozc
+  candidate list path, server log timestamp formatting, and `test_server_app`
+  systray macro definitions.
+
 ## [2.4.0] - 2026-03-30
 
 ### Added
