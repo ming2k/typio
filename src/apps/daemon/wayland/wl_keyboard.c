@@ -28,11 +28,15 @@
 #include "utils/log.h"
 #include "utils/string.h"
 
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/timerfd.h>
+
+#define TYPIO_WL_GUARD_REJECT_FAILSAFE_WINDOW_MS 1500
+#define TYPIO_WL_GUARD_REJECT_FAILSAFE_THRESHOLD 8
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
@@ -129,6 +133,110 @@ static void keyboard_sync_physical_modifiers(TypioWlKeyboard *keyboard) {
             typio_wl_xkb_effective_modifiers(keyboard));
 }
 
+static const char *keyboard_guard_reject_reason(TypioWlFrontend *frontend) {
+    if (!frontend)
+        return "frontend_missing";
+    if (!frontend->session)
+        return "session_missing";
+    if (!typio_wl_lifecycle_phase_allows_key_events(frontend->lifecycle_phase))
+        return "lifecycle_not_active";
+    if (!frontend->session->ctx)
+        return "context_missing";
+    if (!typio_input_context_is_focused(frontend->session->ctx))
+        return "context_not_focused";
+    return "unknown";
+}
+
+static void keyboard_reset_guard_reject_tracking(TypioWlFrontend *frontend) {
+    if (!frontend)
+        return;
+
+    frontend->guard_reject_press_streak = 0;
+    frontend->guard_reject_press_window_start_ms = 0;
+}
+
+static void keyboard_trigger_guard_reject_fail_safe(TypioWlKeyboard *keyboard,
+                                                    const char *reason,
+                                                    uint32_t key,
+                                                    uint32_t keysym,
+                                                    uint32_t modifiers) {
+    TypioWlFrontend *frontend;
+
+    if (!keyboard || !keyboard->frontend)
+        return;
+
+    frontend = keyboard->frontend;
+    typio_log(TYPIO_LOG_ERROR,
+              "Keyboard routing guard stuck: reason=%s phase=%s keycode=%u keysym=0x%x mods=0x%x streak=%" PRIu64 ", releasing keyboard grab to recover",
+              reason ? reason : "unknown",
+              typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
+              key, keysym, modifiers,
+              frontend->guard_reject_press_streak);
+    typio_log_dump_recent_to_configured_path("keyboard routing guard stuck");
+    typio_wl_keyboard_release_grab(keyboard);
+    typio_wl_frontend_stop(frontend);
+}
+
+static void keyboard_note_guard_reject(TypioWlKeyboard *keyboard,
+                                       uint32_t key,
+                                       uint32_t keysym,
+                                       uint32_t modifiers,
+                                       uint32_t state) {
+    TypioWlFrontend *frontend;
+    uint64_t now_ms;
+    const char *reason;
+    bool session_present;
+    bool ctx_present;
+    bool ctx_focused;
+    bool keyboard_grab_active;
+
+    if (!keyboard || !keyboard->frontend)
+        return;
+
+    frontend = keyboard->frontend;
+    reason = keyboard_guard_reject_reason(frontend);
+    session_present = frontend->session != nullptr;
+    ctx_present = session_present && frontend->session->ctx != nullptr;
+    ctx_focused = ctx_present &&
+                  typio_input_context_is_focused(frontend->session->ctx);
+    keyboard_grab_active = keyboard->grab != nullptr;
+
+    typio_log(state == WL_KEYBOARD_KEY_STATE_PRESSED ? TYPIO_LOG_WARNING
+                                                     : TYPIO_LOG_DEBUG,
+              "Keyboard event rejected by routing guard: reason=%s phase=%s keycode=%u keysym=0x%x mods=0x%x session=%s ctx=%s focused=%s keyboard_grab=%s pending_active=%s pending_reactivation=%s",
+              reason,
+              typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
+              key, keysym, modifiers,
+              session_present ? "yes" : "no",
+              ctx_present ? "yes" : "no",
+              ctx_focused ? "yes" : "no",
+              keyboard_grab_active ? "yes" : "no",
+              session_present && frontend->session->pending.active ? "yes" : "no",
+              frontend->pending_reactivation ? "yes" : "no");
+
+    if (state != WL_KEYBOARD_KEY_STATE_PRESSED || !keyboard_grab_active) {
+        return;
+    }
+
+    now_ms = typio_wl_monotonic_ms();
+    if (frontend->guard_reject_press_window_start_ms == 0 ||
+        now_ms < frontend->guard_reject_press_window_start_ms ||
+        now_ms - frontend->guard_reject_press_window_start_ms >
+            TYPIO_WL_GUARD_REJECT_FAILSAFE_WINDOW_MS) {
+        frontend->guard_reject_press_window_start_ms = now_ms;
+        frontend->guard_reject_press_streak = 1;
+    } else {
+        frontend->guard_reject_press_streak++;
+    }
+
+    if (frontend->guard_reject_press_streak >=
+            TYPIO_WL_GUARD_REJECT_FAILSAFE_THRESHOLD &&
+        frontend->lifecycle_phase != TYPIO_WL_PHASE_ACTIVATING) {
+        keyboard_trigger_guard_reject_fail_safe(keyboard, reason, key, keysym,
+                                                modifiers);
+    }
+}
+
 /* ── Per-key state machine ───────────────────────────────────────── */
 
 static void keyboard_reset_tracking(TypioWlFrontend *frontend) {
@@ -139,6 +247,7 @@ static void keyboard_reset_tracking(TypioWlFrontend *frontend) {
                                 TYPIO_WL_MAX_TRACKED_KEYS);
     typio_wl_key_tracking_reset_generations(frontend->key_generations,
                                             TYPIO_WL_MAX_TRACKED_KEYS);
+    keyboard_reset_guard_reject_tracking(frontend);
 }
 
 /* ── Keyboard grab event handler declarations ────────────────────── */
@@ -404,6 +513,8 @@ static void kb_handle_key(void *data,
         !typio_wl_lifecycle_phase_allows_key_events(frontend->lifecycle_phase) ||
         !frontend->session->ctx ||
         !typio_input_context_is_focused(frontend->session->ctx)) {
+        keyboard_note_guard_reject(keyboard, key, (uint32_t)keysym, modifiers,
+                                   state);
         keyboard_trace_event(keyboard,
                              state == WL_KEYBOARD_KEY_STATE_PRESSED ? "guard-reject-press" : "guard-reject-release",
                              key, (uint32_t)keysym, modifiers, unicode,
@@ -418,6 +529,8 @@ static void kb_handle_key(void *data,
         }
         return;
     }
+
+    keyboard_reset_guard_reject_tracking(frontend);
 
     TypioWlSession *session = frontend->session;
 

@@ -198,6 +198,8 @@ struct TypioWlFrontend {
     uint64_t virtual_keyboard_last_keymap_ms;
     uint64_t virtual_keyboard_last_forward_ms;
     uint64_t virtual_keyboard_keymap_deadline_ms;
+    uint64_t guard_reject_press_streak;
+    uint64_t guard_reject_press_window_start_ms;
     _Atomic uint64_t watchdog_heartbeat_ms;
     _Atomic uint64_t watchdog_stage_since_ms;
     _Atomic bool watchdog_stop;

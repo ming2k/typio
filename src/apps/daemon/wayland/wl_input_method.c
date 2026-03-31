@@ -70,6 +70,16 @@ static void set_pending_reactivation(TypioWlFrontend *frontend, bool pending) {
     }
 }
 
+static bool frontend_has_non_routable_grab(TypioWlFrontend *frontend,
+                                           bool now_active) {
+    if (!frontend || !frontend->keyboard) {
+        return false;
+    }
+
+    return !now_active || !session_is_focused(frontend) ||
+           frontend->lifecycle_phase != TYPIO_WL_PHASE_ACTIVE;
+}
+
 static TypioEngine *active_engine(TypioWlFrontend *frontend) {
     TypioEngineManager *manager;
 
@@ -468,6 +478,23 @@ static void im_handle_done(void *data, [[maybe_unused]] struct zwp_input_method_
         set_pending_reactivation(frontend, false);
         trace_session_state(frontend, "done_focus_out_complete");
     } else {
+        if (frontend_has_non_routable_grab(frontend, now_active)) {
+            typio_log(TYPIO_LOG_WARNING,
+                      "Done completed without focus transition, but keyboard grab is still active in a non-routable state: phase=%s was_active=%s now_active=%s focused=%s pending_reactivation=%s",
+                      typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
+                      was_active ? "yes" : "no",
+                      now_active ? "yes" : "no",
+                      session_is_focused(frontend) ? "yes" : "no",
+                      frontend->pending_reactivation ? "yes" : "no");
+            if (!now_active || !session_is_focused(frontend)) {
+                typio_log(TYPIO_LOG_WARNING,
+                          "Recovering from stale non-routable keyboard grab after done without transition");
+                typio_wl_lifecycle_hard_reset_keyboard(
+                    frontend, "done no transition stale grab");
+                typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_INACTIVE,
+                                             "done no transition stale grab");
+            }
+        }
         trace_session_state(frontend, "done_no_transition");
     }
 }
