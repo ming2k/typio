@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-03-31
+
+### Added
+
+- **Source-tree architecture docs**: documented the new `src/core`,
+  `src/apps`, and `src/engines` layout across the main README and developer
+  documentation so build-tree paths, source ownership, and control-surface
+  boundaries are described consistently.
+
+### Changed
+
+- **Source tree reorganization**: regrouped the codebase around stable product
+  boundaries, moving shared library code to `src/core/`, executable entrypoints
+  to `src/apps/`, and keeping engine implementations under `src/engines/`.
+- **Core library split**: clarified the internal `typio-core` boundary by
+  separating installed public headers (`src/core/include/typio/`), runtime
+  implementation (`src/core/runtime/`), and internal support code
+  (`src/core/utils/`).
+- **Daemon naming cleanup**: renamed daemon-local app/CLI units from the old
+  `server_*` terminology to `daemon_*` naming so file names, types, functions,
+  and build structure use one vocabulary.
+- **Build graph cleanup**: updated CMake and tests to match the new source
+  layout, including explicit Wayland protocol generation dependencies for
+  daemon-adjacent test targets.
+
 ## [2.4.1] - 2026-03-30
 
 ### Changed
