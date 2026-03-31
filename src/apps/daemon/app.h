@@ -1,5 +1,5 @@
-#ifndef TYPIO_SERVER_APP_H
-#define TYPIO_SERVER_APP_H
+#ifndef TYPIO_DAEMON_APP_H
+#define TYPIO_DAEMON_APP_H
 
 #include "typio_build_config.h"
 #include "typio/instance.h"
@@ -20,7 +20,7 @@
 extern "C" {
 #endif
 
-typedef struct TypioServerApp {
+typedef struct TypioDaemonApp {
     TypioInstance *instance;
     char **argv;
     bool restart_requested;
@@ -35,26 +35,26 @@ typedef struct TypioServerApp {
 #ifdef HAVE_SYSTRAY
     TypioTray *tray;
 #endif
-} TypioServerApp;
+} TypioDaemonApp;
 
-bool typio_server_app_init(TypioServerApp *app,
+bool typio_daemon_app_init(TypioDaemonApp *app,
                            const TypioInstanceConfig *config,
                            bool verbose,
                            char *argv[]);
-void typio_server_app_list_engines(TypioServerApp *app);
-int typio_server_app_run(TypioServerApp *app);
-void typio_server_app_shutdown(TypioServerApp *app);
-int typio_server_app_finish(TypioServerApp *app, int exit_code);
+void typio_daemon_app_list_engines(TypioDaemonApp *app);
+int typio_daemon_app_run(TypioDaemonApp *app);
+void typio_daemon_app_shutdown(TypioDaemonApp *app);
+int typio_daemon_app_finish(TypioDaemonApp *app, int exit_code);
 
-#ifdef TYPIO_SERVER_TEST
-void typio_server_test_update_tray_engine_status(TypioServerApp *app);
-void typio_server_test_on_engine_change(TypioInstance *instance,
+#ifdef TYPIO_DAEMON_TEST
+void typio_daemon_test_update_tray_engine_status(TypioDaemonApp *app);
+void typio_daemon_test_on_engine_change(TypioInstance *instance,
                                         const TypioEngineInfo *engine,
                                         void *user_data);
-void typio_server_test_on_voice_engine_change(TypioInstance *instance,
+void typio_daemon_test_on_voice_engine_change(TypioInstance *instance,
                                               const TypioEngineInfo *engine,
                                               void *user_data);
-void typio_server_test_on_status_icon_change(TypioInstance *instance,
+void typio_daemon_test_on_status_icon_change(TypioInstance *instance,
                                              const char *icon_name,
                                              void *user_data);
 #endif
@@ -63,4 +63,4 @@ void typio_server_test_on_status_icon_change(TypioInstance *instance,
 }
 #endif
 
-#endif /* TYPIO_SERVER_APP_H */
+#endif /* TYPIO_DAEMON_APP_H */

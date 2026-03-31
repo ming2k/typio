@@ -3,8 +3,8 @@
  * @brief Shared libdbus container helpers for server-side D-Bus surfaces.
  */
 
-#ifndef TYPIO_SERVER_DBUS_HELPERS_H
-#define TYPIO_SERVER_DBUS_HELPERS_H
+#ifndef TYPIO_DAEMON_DBUS_HELPERS_H
+#define TYPIO_DAEMON_DBUS_HELPERS_H
 
 #include <dbus/dbus.h>
 

@@ -58,7 +58,7 @@ Build with the optional GTK4 control panel:
 ```bash
 cmake -S . -B build -DBUILD_CONTROL_PANEL=ON
 cmake --build build
-./build/src/control/typio-control
+./build/src/apps/control/typio-control
 ```
 
 The control panel uses a native GTK-style preferences layout with
@@ -68,7 +68,7 @@ automatically in the background; there is no global `Apply` / `Cancel` flow.
 Run directly from the build tree (no install needed):
 
 ```bash
-./build/src/server/typio --engine basic --verbose
+./build/src/apps/daemon/typio --engine basic --verbose
 ```
 
 Install is only needed for packaging or verifying the installed layout:
@@ -117,6 +117,16 @@ Installed artifacts:
 - [Creating Engines](docs/dev/creating-engines.md)
 - [D-Bus Interface Reference](docs/reference/dbus-interface.md)
 
+## Source Layout
+
+The source tree is organized by product boundary:
+
+- `src/core/`: shared library code and public headers under `include/typio/`
+- `src/apps/daemon/`: the `typio` Wayland daemon
+- `src/apps/cli/`: the `typio-client` D-Bus CLI
+- `src/apps/control/`: the `typio-control` GTK control panel
+- `src/engines/`: built-in and plugin engine implementations
+
 ## Notes
 
 - Typio currently targets Wayland only.
@@ -142,4 +152,4 @@ Installed artifacts:
   keymap timing ages.
 - Typio supports a single user-facing config file: `~/.config/typio/typio.toml`.
 - Build-tree plugin testing is supported with `typio --engine-dir <build-dir>/engines`.
-- The pre-`typio-core` prototype API and examples were removed; the maintained public headers now live under `src/lib/typio/`.
+- The pre-`typio-core` prototype API and examples were removed; the maintained public headers now live under `src/core/include/typio/`.

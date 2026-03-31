@@ -17,7 +17,8 @@ add_library(typio-engine-mozc MODULE
 
 target_include_directories(typio-engine-mozc PRIVATE
     ${CMAKE_BINARY_DIR}
-    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/core
+    ${CMAKE_SOURCE_DIR}/src/core/include
     ${CMAKE_CURRENT_BINARY_DIR}   # generated proto headers
     ${Protobuf_INCLUDE_DIRS}
 )
@@ -31,7 +32,7 @@ set_target_properties(typio-engine-mozc PROPERTIES
     PREFIX ""
     OUTPUT_NAME "mozc"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/engines"
-    BUILD_RPATH "${CMAKE_BINARY_DIR}/src/lib"
+    BUILD_RPATH "${CMAKE_BINARY_DIR}/src/core"
     INSTALL_RPATH "\$ORIGIN/../.."
 )
 

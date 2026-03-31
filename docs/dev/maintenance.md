@@ -56,7 +56,7 @@ Rule: no `TypioKeyTrackState` value may survive from one activation to the next.
 
 ## Key Tracking State Machine
 
-`TypioKeyTrackState` lives in `src/server/wayland/wl_frontend_internal.h`.
+`TypioKeyTrackState` lives in `src/apps/daemon/wayland/wl_frontend_internal.h`.
 Per-key ownership also tracks a `key_generation`: a key cycle belongs to the
 current grab only if Typio observed its press in the current generation.
 

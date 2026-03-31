@@ -5,7 +5,8 @@ add_library(typio-engine-rime MODULE
 
 target_include_directories(typio-engine-rime PRIVATE
     ${CMAKE_BINARY_DIR}
-    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/core
+    ${CMAKE_SOURCE_DIR}/src/core/include
     ${RIME_INCLUDE_DIRS}
 )
 
@@ -26,7 +27,7 @@ set_target_properties(typio-engine-rime PROPERTIES
     PREFIX ""
     OUTPUT_NAME "rime"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/engines"
-    BUILD_RPATH "${CMAKE_BINARY_DIR}/src/lib"
+    BUILD_RPATH "${CMAKE_BINARY_DIR}/src/core"
     INSTALL_RPATH "\$ORIGIN/../.."
 )
 

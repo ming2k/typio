@@ -30,7 +30,7 @@ cmake --build build
 You can run Typio directly from the build tree:
 
 ```bash
-./build/src/server/typio --engine basic --verbose
+./build/src/apps/daemon/typio --engine basic --verbose
 ```
 
 ## Install
@@ -108,5 +108,5 @@ Expected baseline output includes the built-in `basic` engine even if no externa
 When running from the build tree, point Typio at the module directory explicitly:
 
 ```bash
-./build/src/server/typio --engine-dir ./build/engines --list
+./build/src/apps/daemon/typio --engine-dir ./build/engines --list
 ```

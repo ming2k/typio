@@ -1,4 +1,4 @@
-#include "server_app.h"
+#include "app.h"
 
 #include "typio/config.h"
 #include "typio/engine_manager.h"
@@ -14,16 +14,16 @@
 #include <time.h>
 #include <unistd.h>
 
-static TypioServerApp *g_active_app = nullptr;
+static TypioDaemonApp *g_active_app = nullptr;
 
 #ifdef HAVE_SYSTRAY
-static void typio_server_update_tray_engine_status(TypioServerApp *app);
+static void typio_daemon_update_tray_engine_status(TypioDaemonApp *app);
 #endif
 #ifdef HAVE_STATUS_BUS
-static void typio_server_update_status_bus_state(TypioServerApp *app);
+static void typio_daemon_update_status_bus_state(TypioDaemonApp *app);
 #endif
 
-static void typio_server_signal_handler([[maybe_unused]] int sig) {
+static void typio_daemon_signal_handler([[maybe_unused]] int sig) {
     if (g_active_app) {
         g_active_app->shutdown_requested_by_signal = true;
     }
@@ -34,7 +34,7 @@ static void typio_server_signal_handler([[maybe_unused]] int sig) {
 #endif
 }
 
-static void typio_server_log_callback(TypioLogLevel level,
+static void typio_daemon_log_callback(TypioLogLevel level,
                                       const char *message,
                                       [[maybe_unused]] void *user_data) {
     const char *level_str;
@@ -76,8 +76,8 @@ static void typio_server_log_callback(TypioLogLevel level,
     }
 }
 
-static void typio_server_request_stop(void *user_data) {
-    TypioServerApp *app = user_data;
+static void typio_daemon_request_stop(void *user_data) {
+    TypioDaemonApp *app = user_data;
 
     if (!app) {
         return;
@@ -90,7 +90,7 @@ static void typio_server_request_stop(void *user_data) {
 #endif
 }
 
-static const char *typio_server_engine_display_name(const TypioEngine *engine) {
+static const char *typio_daemon_engine_display_name(const TypioEngine *engine) {
     if (!engine) {
         return nullptr;
     }
@@ -99,7 +99,7 @@ static const char *typio_server_engine_display_name(const TypioEngine *engine) {
 }
 
 #ifdef HAVE_SYSTRAY
-static void typio_server_update_tray_tooltip(TypioServerApp *app) {
+static void typio_daemon_update_tray_tooltip(TypioDaemonApp *app) {
     TypioEngineManager *manager;
     TypioEngine *keyboard;
     TypioEngine *voice;
@@ -114,8 +114,8 @@ static void typio_server_update_tray_tooltip(TypioServerApp *app) {
     manager = typio_instance_get_engine_manager(app->instance);
     keyboard = manager ? typio_engine_manager_get_active(manager) : nullptr;
     voice = manager ? typio_engine_manager_get_active_voice(manager) : nullptr;
-    keyboard_label = keyboard ? typio_server_engine_display_name(keyboard) : "Unavailable";
-    voice_label = voice ? typio_server_engine_display_name(voice) : "Disabled";
+    keyboard_label = keyboard ? typio_daemon_engine_display_name(keyboard) : "Unavailable";
+    voice_label = voice ? typio_daemon_engine_display_name(voice) : "Disabled";
 
     snprintf(description, sizeof(description),
              "Keyboard: %s\nVoice: %s",
@@ -125,16 +125,16 @@ static void typio_server_update_tray_tooltip(TypioServerApp *app) {
 }
 #endif
 
-static void typio_server_sync_runtime_surfaces(TypioServerApp *app) {
+static void typio_daemon_sync_runtime_surfaces(TypioDaemonApp *app) {
 #ifdef HAVE_SYSTRAY
-    typio_server_update_tray_engine_status(app);
+    typio_daemon_update_tray_engine_status(app);
 #endif
 #ifdef HAVE_STATUS_BUS
-    typio_server_update_status_bus_state(app);
+    typio_daemon_update_status_bus_state(app);
 #endif
 }
 
-static void typio_server_print_startup_banner(TypioServerApp *app) {
+static void typio_daemon_print_startup_banner(TypioDaemonApp *app) {
     TypioEngineManager *manager;
     TypioEngine *active_keyboard;
     TypioEngine *active_voice;
@@ -159,7 +159,7 @@ static void typio_server_print_startup_banner(TypioServerApp *app) {
 }
 
 #ifdef HAVE_SYSTRAY
-static bool typio_server_write_rime_schema_state(TypioServerApp *app,
+static bool typio_daemon_write_rime_schema_state(TypioDaemonApp *app,
                                                  const char *schema_name) {
     if (!app || !app->instance || !schema_name || !*schema_name) {
         return false;
@@ -168,7 +168,7 @@ static bool typio_server_write_rime_schema_state(TypioServerApp *app,
     return typio_instance_set_rime_schema(app->instance, schema_name) == TYPIO_OK;
 }
 
-static void typio_server_update_tray_engine_status(TypioServerApp *app) {
+static void typio_daemon_update_tray_engine_status(TypioDaemonApp *app) {
     TypioEngineManager *manager;
     TypioEngine *active_keyboard;
     const char *engine_name;
@@ -189,22 +189,22 @@ static void typio_server_update_tray_engine_status(TypioServerApp *app) {
     }
     typio_tray_set_icon(app->tray, icon_name);
     typio_tray_update_engine(app->tray, engine_name, active_keyboard != nullptr);
-    typio_server_update_tray_tooltip(app);
+    typio_daemon_update_tray_tooltip(app);
 }
 #endif
 
 #ifdef HAVE_STATUS_BUS
-static void typio_server_update_status_bus_state(TypioServerApp *app) {
+static void typio_daemon_update_status_bus_state(TypioDaemonApp *app) {
     if (app && app->status_bus) {
         typio_status_bus_emit_properties_changed(app->status_bus);
     }
 }
 #endif
 
-static void typio_server_on_mode_change(TypioInstance *instance,
+static void typio_daemon_on_mode_change(TypioInstance *instance,
                                         const TypioEngineMode *mode,
                                         void *user_data) {
-    TypioServerApp *app = user_data;
+    TypioDaemonApp *app = user_data;
 
     (void) instance;
 
@@ -222,10 +222,10 @@ static void typio_server_on_mode_change(TypioInstance *instance,
     (void) mode;
 }
 
-static void typio_server_on_status_icon_change(TypioInstance *instance,
+static void typio_daemon_on_status_icon_change(TypioInstance *instance,
                                                const char *icon_name,
                                                void *user_data) {
-    TypioServerApp *app = user_data;
+    TypioDaemonApp *app = user_data;
 
     (void) instance;
 
@@ -239,17 +239,17 @@ static void typio_server_on_status_icon_change(TypioInstance *instance,
 #endif
 }
 
-static void typio_server_on_engine_change(TypioInstance *instance,
+static void typio_daemon_on_engine_change(TypioInstance *instance,
                                           const TypioEngineInfo *engine,
                                           void *user_data) {
-    TypioServerApp *app = user_data;
+    TypioDaemonApp *app = user_data;
     TypioEngineManager *manager;
     TypioEngine *active;
 
     (void) instance;
     (void) engine;
 
-    typio_server_sync_runtime_surfaces(app);
+    typio_daemon_sync_runtime_surfaces(app);
     if (!app || !app->instance) {
         return;
     }
@@ -267,24 +267,24 @@ static void typio_server_on_engine_change(TypioInstance *instance,
     }
 }
 
-static void typio_server_on_voice_engine_change(TypioInstance *instance,
+static void typio_daemon_on_voice_engine_change(TypioInstance *instance,
                                                 const TypioEngineInfo *engine,
                                                 void *user_data) {
-    TypioServerApp *app = user_data;
+    TypioDaemonApp *app = user_data;
 
     (void) instance;
 
-    typio_server_sync_runtime_surfaces(app);
+    typio_daemon_sync_runtime_surfaces(app);
     if (engine && engine->name) {
         typio_log(TYPIO_LOG_INFO, "Voice engine changed to: %s", engine->name);
     }
 }
 
 #ifdef HAVE_SYSTRAY
-static void typio_server_tray_menu_callback([[maybe_unused]] TypioTray *tray,
+static void typio_daemon_tray_menu_callback([[maybe_unused]] TypioTray *tray,
                                             const char *action,
                                             void *user_data) {
-    TypioServerApp *app = user_data;
+    TypioDaemonApp *app = user_data;
     TypioEngineManager *manager;
 
     if (!app || !action) {
@@ -343,11 +343,11 @@ static void typio_server_tray_menu_callback([[maybe_unused]] TypioTray *tray,
     if (strncmp(action, "rime-schema:", 12) == 0) {
         const char *schema_name = action + 12;
 
-        if (typio_server_write_rime_schema_state(app, schema_name) &&
+        if (typio_daemon_write_rime_schema_state(app, schema_name) &&
             typio_instance_reload_config(app->instance) == TYPIO_OK) {
-            typio_server_update_tray_engine_status(app);
+            typio_daemon_update_tray_engine_status(app);
 #ifdef HAVE_STATUS_BUS
-            typio_server_update_status_bus_state(app);
+            typio_daemon_update_status_bus_state(app);
 #endif
             typio_log(TYPIO_LOG_INFO, "Switched Rime schema to: %s", schema_name);
         } else {
@@ -358,9 +358,9 @@ static void typio_server_tray_menu_callback([[maybe_unused]] TypioTray *tray,
 
     if (strcmp(action, "rime-reload") == 0) {
         if (typio_instance_reload_config(app->instance) == TYPIO_OK) {
-            typio_server_update_tray_engine_status(app);
+            typio_daemon_update_tray_engine_status(app);
 #ifdef HAVE_STATUS_BUS
-            typio_server_update_status_bus_state(app);
+            typio_daemon_update_status_bus_state(app);
 #endif
             typio_log(TYPIO_LOG_INFO, "Reloaded Rime configuration");
         } else {
@@ -370,13 +370,13 @@ static void typio_server_tray_menu_callback([[maybe_unused]] TypioTray *tray,
 }
 #endif
 
-static void typio_server_install_signal_handlers(TypioServerApp *app) {
+static void typio_daemon_install_signal_handlers(TypioDaemonApp *app) {
     g_active_app = app;
-    signal(SIGINT, typio_server_signal_handler);
-    signal(SIGTERM, typio_server_signal_handler);
+    signal(SIGINT, typio_daemon_signal_handler);
+    signal(SIGTERM, typio_daemon_signal_handler);
 }
 
-static void typio_server_configure_recent_log_dump(TypioServerApp *app) {
+static void typio_daemon_configure_recent_log_dump(TypioDaemonApp *app) {
     const char *state_dir;
 
     if (!app || !app->instance) {
@@ -398,7 +398,7 @@ static void typio_server_configure_recent_log_dump(TypioServerApp *app) {
     typio_log_set_recent_dump_path(app->recent_log_dump_path);
 }
 
-bool typio_server_app_init(TypioServerApp *app,
+bool typio_daemon_app_init(TypioDaemonApp *app,
                            const TypioInstanceConfig *config,
                            bool verbose,
                            char *argv[]) {
@@ -415,7 +415,7 @@ bool typio_server_app_init(TypioServerApp *app,
     if (config) {
         instance_config = *config;
     }
-    instance_config.log_callback = typio_server_log_callback;
+    instance_config.log_callback = typio_daemon_log_callback;
     typio_log_set_level(verbose ? TYPIO_LOG_DEBUG : TYPIO_LOG_INFO);
 
     app->instance = typio_instance_new_with_config(&instance_config);
@@ -432,12 +432,12 @@ bool typio_server_app_init(TypioServerApp *app,
         return false;
     }
 
-    typio_server_configure_recent_log_dump(app);
+    typio_daemon_configure_recent_log_dump(app);
 
     return true;
 }
 
-void typio_server_app_list_engines(TypioServerApp *app) {
+void typio_daemon_app_list_engines(TypioDaemonApp *app) {
     TypioEngineManager *manager;
     size_t count;
     const char **engines;
@@ -474,12 +474,12 @@ void typio_server_app_list_engines(TypioServerApp *app) {
     }
 }
 
-static void typio_server_init_status_bus(TypioServerApp *app) {
+static void typio_daemon_init_status_bus(TypioDaemonApp *app) {
 #ifdef HAVE_STATUS_BUS
     app->status_bus = typio_status_bus_new(app->instance);
     if (app->status_bus) {
         typio_status_bus_set_stop_callback(app->status_bus,
-                                           typio_server_request_stop,
+                                           typio_daemon_request_stop,
                                            app);
         printf("D-Bus status interface initialized\n");
     } else {
@@ -490,21 +490,21 @@ static void typio_server_init_status_bus(TypioServerApp *app) {
 #endif
 }
 
-static void typio_server_init_tray(TypioServerApp *app) {
+static void typio_daemon_init_tray(TypioDaemonApp *app) {
 #ifdef HAVE_SYSTRAY
     TypioTrayConfig tray_config = {
         .icon_name = "typio-keyboard",
         .tooltip = "Typio Input Method",
-        .menu_callback = typio_server_tray_menu_callback,
+        .menu_callback = typio_daemon_tray_menu_callback,
         .user_data = app,
     };
 
     app->tray = typio_tray_new(app->instance, &tray_config);
     if (app->tray && typio_tray_is_registered(app->tray)) {
-        typio_server_update_tray_engine_status(app);
+        typio_daemon_update_tray_engine_status(app);
         printf("System tray initialized\n");
     } else if (app->tray) {
-        typio_server_update_tray_engine_status(app);
+        typio_daemon_update_tray_engine_status(app);
         printf("System tray pending (StatusNotifierWatcher not running yet)\n");
     } else {
         printf("System tray not available (StatusNotifierWatcher may not be running)\n");
@@ -514,7 +514,7 @@ static void typio_server_init_tray(TypioServerApp *app) {
 #endif
 }
 
-static void typio_server_destroy_runtime_services(TypioServerApp *app) {
+static void typio_daemon_destroy_runtime_services(TypioDaemonApp *app) {
 #ifdef HAVE_SYSTRAY
     if (app->tray) {
         typio_tray_destroy(app->tray);
@@ -529,24 +529,24 @@ static void typio_server_destroy_runtime_services(TypioServerApp *app) {
 #endif
 }
 
-static int typio_server_run_wayland(TypioServerApp *app) {
+static int typio_daemon_run_wayland(TypioDaemonApp *app) {
 #ifdef HAVE_WAYLAND
     int wl_result;
     const char *wl_error;
 
     typio_instance_set_engine_changed_callback(app->instance,
-                                               typio_server_on_engine_change,
+                                               typio_daemon_on_engine_change,
                                                app);
     typio_instance_set_voice_engine_changed_callback(app->instance,
-                                                     typio_server_on_voice_engine_change,
+                                                     typio_daemon_on_voice_engine_change,
                                                      app);
     typio_instance_set_status_icon_changed_callback(app->instance,
-                                                    typio_server_on_status_icon_change,
+                                                    typio_daemon_on_status_icon_change,
                                                     app);
     typio_instance_set_mode_changed_callback(app->instance,
-                                              typio_server_on_mode_change,
+                                              typio_daemon_on_mode_change,
                                               app);
-    typio_server_sync_runtime_surfaces(app);
+    typio_daemon_sync_runtime_surfaces(app);
 
     app->wl_frontend = typio_wl_frontend_new(app->instance, nullptr);
     if (!app->wl_frontend) {
@@ -586,18 +586,18 @@ static int typio_server_run_wayland(TypioServerApp *app) {
 #endif
 }
 
-int typio_server_app_run(TypioServerApp *app) {
+int typio_daemon_app_run(TypioDaemonApp *app) {
     int exit_code;
 
     if (!app || !app->instance) {
         return 1;
     }
 
-    typio_server_install_signal_handlers(app);
-    typio_server_print_startup_banner(app);
-    typio_server_init_status_bus(app);
-    typio_server_init_tray(app);
-    exit_code = typio_server_run_wayland(app);
+    typio_daemon_install_signal_handlers(app);
+    typio_daemon_print_startup_banner(app);
+    typio_daemon_init_status_bus(app);
+    typio_daemon_init_tray(app);
+    exit_code = typio_daemon_run_wayland(app);
 
     if (exit_code == 0) {
         printf("\nShutting down...\n");
@@ -606,7 +606,7 @@ int typio_server_app_run(TypioServerApp *app) {
     return exit_code;
 }
 
-void typio_server_app_shutdown(TypioServerApp *app) {
+void typio_daemon_app_shutdown(TypioDaemonApp *app) {
     if (!app) {
         return;
     }
@@ -615,14 +615,14 @@ void typio_server_app_shutdown(TypioServerApp *app) {
         g_active_app = nullptr;
     }
 
-    typio_server_destroy_runtime_services(app);
+    typio_daemon_destroy_runtime_services(app);
     if (app->instance) {
         typio_instance_free(app->instance);
         app->instance = nullptr;
     }
 }
 
-int typio_server_app_finish(TypioServerApp *app, int exit_code) {
+int typio_daemon_app_finish(TypioDaemonApp *app, int exit_code) {
     if (!app) {
         return exit_code;
     }
@@ -647,30 +647,30 @@ int typio_server_app_finish(TypioServerApp *app, int exit_code) {
     return exit_code;
 }
 
-#ifdef TYPIO_SERVER_TEST
-void typio_server_test_update_tray_engine_status(TypioServerApp *app) {
+#ifdef TYPIO_DAEMON_TEST
+void typio_daemon_test_update_tray_engine_status(TypioDaemonApp *app) {
 #ifdef HAVE_SYSTRAY
-    typio_server_update_tray_engine_status(app);
+    typio_daemon_update_tray_engine_status(app);
 #else
     (void)app;
 #endif
 }
 
-void typio_server_test_on_engine_change(TypioInstance *instance,
+void typio_daemon_test_on_engine_change(TypioInstance *instance,
                                         const TypioEngineInfo *engine,
                                         void *user_data) {
-    typio_server_on_engine_change(instance, engine, user_data);
+    typio_daemon_on_engine_change(instance, engine, user_data);
 }
 
-void typio_server_test_on_voice_engine_change(TypioInstance *instance,
+void typio_daemon_test_on_voice_engine_change(TypioInstance *instance,
                                               const TypioEngineInfo *engine,
                                               void *user_data) {
-    typio_server_on_voice_engine_change(instance, engine, user_data);
+    typio_daemon_on_voice_engine_change(instance, engine, user_data);
 }
 
-void typio_server_test_on_status_icon_change(TypioInstance *instance,
+void typio_daemon_test_on_status_icon_change(TypioInstance *instance,
                                              const char *icon_name,
                                              void *user_data) {
-    typio_server_on_status_icon_change(instance, icon_name, user_data);
+    typio_daemon_on_status_icon_change(instance, icon_name, user_data);
 }
 #endif

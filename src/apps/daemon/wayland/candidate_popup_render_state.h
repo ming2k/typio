@@ -25,4 +25,8 @@ bool typio_candidate_popup_render_state_matches(const TypioCandidatePopupRenderS
                                       const TypioCandidatePopupRenderState *current,
                                       int scale);
 
+bool typio_candidate_popup_render_state_matches_static(const TypioCandidatePopupRenderState *cached,
+                                             const TypioCandidatePopupRenderState *current,
+                                             int scale);
+
 #endif /* TYPIO_WL_CANDIDATE_POPUP_RENDER_STATE_H */

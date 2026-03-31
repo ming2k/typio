@@ -1,6 +1,6 @@
 # API Reference
 
-This document summarizes the main public C surface under `src/lib/typio/*.h`.
+This document summarizes the main public C surface under `src/core/include/typio/*.h`.
 It is an overview, not a replacement for the installed headers.
 
 ## Core Lifecycle
@@ -235,4 +235,4 @@ void typio_rime_schema_list_clear(TypioRimeSchemaList *list);
 ## Authoritative Source
 
 For exact signatures and comments, read the public headers under
-`include/typio/` or `src/lib/typio/`.
+`include/typio/` or `src/core/include/typio/`.

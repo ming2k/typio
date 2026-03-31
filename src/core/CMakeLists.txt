@@ -1,15 +1,15 @@
 # Core library
 add_library(typio-core
-    core/build_info.c
-    core/instance.c
-    core/engine.c
-    core/engine_label.c
-    core/engine_manager.c
-    core/input_context.c
-    core/event.c
-    core/config.c
-    core/config_schema.c
-    core/rime_schema_list.c
+    runtime/build_info.c
+    runtime/instance.c
+    runtime/engine.c
+    runtime/engine_label.c
+    runtime/engine_manager.c
+    runtime/input_context.c
+    runtime/event.c
+    runtime/config.c
+    runtime/config_schema.c
+    runtime/rime_schema_list.c
     utils/list.c
     utils/string.c
     utils/log.c
@@ -18,7 +18,7 @@ add_library(typio-core
 
 target_include_directories(typio-core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
@@ -38,7 +38,7 @@ install(TARGETS typio-core
 )
 
 # Install headers
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/typio/
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/typio/
     DESTINATION ${TYPIO_INSTALL_INCLUDEDIR}/typio
     FILES_MATCHING PATTERN "*.h"
 )

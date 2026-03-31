@@ -96,6 +96,18 @@ TEST(rejects_when_content_signature_or_palette_changes) {
     ASSERT_EQ(typio_candidate_popup_render_state_matches(&cached, &current, 1), false);
 }
 
+TEST(static_match_ignores_preedit_and_mode_changes) {
+    TypioCandidatePopupRenderState cached = make_state();
+    TypioCandidatePopupRenderState current = make_state();
+
+    cached.mode_label = "Rime CN";
+    current.preedit_text = "nih";
+    current.mode_label = "Rime EN";
+
+    ASSERT_EQ(typio_candidate_popup_render_state_matches_static(&cached, &current, 1), true);
+    ASSERT_EQ(typio_candidate_popup_render_state_matches(&cached, &current, 1), false);
+}
+
 int main(void) {
     printf("Running popup render state tests:\n");
     run_test_matches_when_layout_inputs_are_identical();
@@ -103,6 +115,7 @@ int main(void) {
     run_test_rejects_when_config_reload_changes_layout_inputs();
     run_test_rejects_when_scale_or_preedit_changes();
     run_test_rejects_when_content_signature_or_palette_changes();
+    run_test_static_match_ignores_preedit_and_mode_changes();
     printf("\nPassed %d/%d tests\n", tests_passed, tests_run);
     return 0;
 }

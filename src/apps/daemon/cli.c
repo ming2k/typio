@@ -1,4 +1,4 @@
-#include "server_cli.h"
+#include "cli.h"
 
 #include "typio/typio.h"
 
@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-void typio_server_options_init(TypioServerOptions *options) {
+void typio_daemon_options_init(TypioDaemonOptions *options) {
     if (!options) {
         return;
     }
@@ -14,12 +14,12 @@ void typio_server_options_init(TypioServerOptions *options) {
     memset(options, 0, sizeof(*options));
 }
 
-void typio_server_print_version(void) {
+void typio_daemon_print_version(void) {
     printf("%s\n", typio_build_display_string());
     printf("An extensible input method framework supporting multiple engines\n");
 }
 
-void typio_server_print_help(const char *prog) {
+void typio_daemon_print_help(const char *prog) {
     printf("Usage: %s [OPTIONS]\n\n", prog);
     printf("Options:\n");
     printf("  -c, --config DIR    Configuration directory\n");
@@ -32,7 +32,7 @@ void typio_server_print_help(const char *prog) {
     printf("  --version           Show version information\n");
 }
 
-int typio_server_parse_args(TypioServerOptions *options, int argc, char *argv[]) {
+int typio_daemon_parse_args(TypioDaemonOptions *options, int argc, char *argv[]) {
     static struct option long_options[] = {
         {"config", required_argument, 0, 'c'},
         {"data", required_argument, 0, 'd'},
@@ -72,13 +72,13 @@ int typio_server_parse_args(TypioServerOptions *options, int argc, char *argv[])
                 options->verbose = true;
                 break;
             case 'h':
-                typio_server_print_help(argv[0]);
+                typio_daemon_print_help(argv[0]);
                 return 0;
             case 'V':
-                typio_server_print_version();
+                typio_daemon_print_version();
                 return 0;
             default:
-                typio_server_print_help(argv[0]);
+                typio_daemon_print_help(argv[0]);
                 return 1;
         }
     }

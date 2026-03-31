@@ -1,6 +1,6 @@
 # Core API Reference
 
-This file summarizes the stable public surface under `src/lib/typio/*.h`.
+This file summarizes the stable public surface under `src/core/include/typio/*.h`.
 
 ## `TypioInstance`
 

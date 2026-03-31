@@ -110,7 +110,7 @@ If Typio was built with `-DBUILD_CONTROL_PANEL=ON`, the build tree also
 contains:
 
 ```bash
-./build/src/control/typio-control
+./build/src/apps/control/typio-control
 ```
 
 The control panel reads Typio state from `org.typio.InputMethod1` and can:
@@ -161,7 +161,7 @@ That functionality is expected to come from external engines.
 In the default build, Typio loads the `rime` plugin for Chinese input. Typical local testing from the build tree looks like this:
 
 ```bash
-./build/src/server/typio --engine-dir ./build/engines --engine rime --verbose
+./build/src/apps/daemon/typio --engine-dir ./build/engines --engine rime --verbose
 ```
 
 On Wayland, Typio renders Rime candidates through a dedicated input-method

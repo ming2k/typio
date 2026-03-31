@@ -51,3 +51,16 @@ that meaning.
 - `rime` engine: default `librime`-backed plugin
 
 External engines can also be loaded from the engine directory as shared objects.
+
+## Source Tree
+
+The source tree is organized by stable product boundary:
+
+- `src/core/`: shared library code
+  Public headers live under `src/core/include/typio/`, runtime implementation
+  lives under `src/core/runtime/`, and internal support code lives under
+  `src/core/utils/`.
+- `src/apps/`: executable programs
+  `src/apps/daemon/` builds `typio`, `src/apps/cli/` builds `typio-client`,
+  and `src/apps/control/` builds `typio-control`.
+- `src/engines/`: built-in and plugin engine implementations

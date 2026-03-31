@@ -48,10 +48,23 @@ When `BUILD_RIME_ENGINE=ON`, the build also includes:
 During development, run directly from the build tree without installing:
 
 ```bash
-./build/src/server/typio --engine basic --verbose
+./build/src/apps/daemon/typio --engine basic --verbose
 ```
 
 `BUILD_RPATH` is configured so that all shared libraries are found automatically.
+
+Common build-tree outputs:
+
+- `./build/src/apps/daemon/typio`
+- `./build/src/apps/cli/typio-client`
+- `./build/src/apps/control/typio-control` when `BUILD_CONTROL_PANEL=ON`
+- `./build/engines/*.so` for plugin engines
+
+The source tree mirrors this split:
+
+- `src/core/` for shared library code
+- `src/apps/` for executable entrypoints
+- `src/engines/` for engine implementations
 
 ## Install
 
@@ -127,7 +140,7 @@ cmake --build build
 Run from build tree with the built-in engine:
 
 ```bash
-./build/src/server/typio --engine basic --verbose
+./build/src/apps/daemon/typio --engine basic --verbose
 ```
 
 ## Distro Packages

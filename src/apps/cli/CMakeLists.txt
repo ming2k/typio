@@ -1,7 +1,7 @@
 add_executable(typio-client main.c)
 
 target_include_directories(typio-client PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/src/core/include
     ${DBUS_INCLUDE_DIRS}
 )
 

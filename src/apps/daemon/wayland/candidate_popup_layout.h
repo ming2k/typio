@@ -30,12 +30,15 @@ typedef struct TypioCandidatePopupRenderConfig {
 
 typedef struct TypioCandidatePopupLine {
     char *text;
+    PangoLayout *layout;
     int text_width;
     int text_height;
     int width;
     int height;
     int x;
     int y;
+    int text_x;
+    int text_y;
 } TypioCandidatePopupLine;
 
 typedef struct TypioCandidatePopupCache {
@@ -44,11 +47,18 @@ typedef struct TypioCandidatePopupCache {
     int selected;
     uint64_t content_signature;
     char *preedit_text;
+    PangoLayout *preedit_layout;
     int preedit_width;
     int preedit_height;
+    int preedit_x;
+    int preedit_y;
     char *mode_label;
+    PangoLayout *mode_label_layout;
     int mode_label_width;
     int mode_label_height;
+    int mode_label_x;
+    int mode_label_y;
+    int mode_label_divider_y;
     int width;
     int height;
     TypioCandidatePopupRenderConfig config;
@@ -70,14 +80,30 @@ typedef struct TypioCandidatePopupConfigCache {
 
 void typio_candidate_popup_layout_cache_invalidate(TypioCandidatePopupCache *cache);
 
+void typio_candidate_popup_layout_cache_update_aux(TypioCandidatePopupCache *cache,
+                                         char *preedit_text,
+                                         PangoLayout *preedit_layout,
+                                         int preedit_width, int preedit_height,
+                                         int preedit_x, int preedit_y,
+                                         char *mode_label,
+                                         PangoLayout *mode_label_layout,
+                                         int mode_label_width, int mode_label_height,
+                                         int mode_label_x, int mode_label_y,
+                                         int mode_label_divider_y);
+
 void typio_candidate_popup_layout_cache_store(TypioCandidatePopupCache *cache,
                                     TypioCandidatePopupLine *lines, size_t line_count,
                                     int selected,
                                     uint64_t content_signature,
                                     char *preedit_text,
+                                    PangoLayout *preedit_layout,
                                     int preedit_width, int preedit_height,
+                                    int preedit_x, int preedit_y,
                                     char *mode_label,
+                                    PangoLayout *mode_label_layout,
                                     int mode_label_width, int mode_label_height,
+                                    int mode_label_x, int mode_label_y,
+                                    int mode_label_divider_y,
                                     int width, int height,
                                     const TypioCandidatePopupRenderConfig *config,
                                     const TypioCandidatePopupPalette *palette);
@@ -103,12 +129,38 @@ bool typio_candidate_popup_layout_compute(const TypioCandidateList *candidates,
                                 TypioCandidatePopupFontCache *font_cache,
                                 TypioCandidatePopupLine **out_lines,
                                 size_t *out_line_count,
+                                PangoLayout **out_preedit_layout,
                                 int *out_preedit_width,
                                 int *out_preedit_height,
+                                int *out_preedit_x,
+                                int *out_preedit_y,
+                                PangoLayout **out_mode_label_layout,
                                 int *out_mode_label_width,
                                 int *out_mode_label_height,
+                                int *out_mode_label_x,
+                                int *out_mode_label_y,
+                                int *out_mode_label_divider_y,
                                 int *out_width,
                                 int *out_height);
+
+bool typio_candidate_popup_layout_measure_aux(const TypioCandidatePopupCache *cache,
+                                    const char *preedit_text_in,
+                                    const char *mode_label_in,
+                                    const TypioCandidatePopupRenderConfig *config,
+                                    TypioCandidatePopupFontCache *font_cache,
+                                    PangoLayout **out_preedit_layout,
+                                    int *out_preedit_width,
+                                    int *out_preedit_height,
+                                    int *out_preedit_x,
+                                    int *out_preedit_y,
+                                    PangoLayout **out_mode_label_layout,
+                                    int *out_mode_label_width,
+                                    int *out_mode_label_height,
+                                    int *out_mode_label_x,
+                                    int *out_mode_label_y,
+                                    int *out_mode_label_divider_y,
+                                    int *out_width,
+                                    int *out_height);
 
 PangoFontDescription *typio_candidate_popup_font_get(TypioCandidatePopupFontCache *fc,
                                            const char *font_desc,

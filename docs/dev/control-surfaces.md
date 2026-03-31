@@ -17,7 +17,7 @@ edits is defined in [State Management](state-management.md).
 
 Control surfaces have two jobs:
 
-- present runtime state coming from `typio-server`
+- present runtime state coming from the `typio` daemon
 - let the user edit persistent configuration safely
 
 They must not become a second source of truth for runtime or config state.
@@ -123,6 +123,13 @@ lists are always consistent regardless of which surface the user is
 looking at.  Neither surface should implement its own schema file parsing.
 In `typio-control`, schema option refresh should flow through the selector
 binding layer instead of direct one-off widget code.
+
+Implementation locations:
+
+- `src/apps/control/` for the GTK control panel
+- `src/apps/daemon/tray/` for the tray control surface
+- `src/core/include/typio/` and `src/core/runtime/` for shared config and
+  schema helpers consumed by those surfaces
 
 ## Tray Menu Rules
 

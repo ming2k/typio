@@ -16,13 +16,11 @@ static bool popup_scaled_dimension(int logical, int scale, int *physical) {
     return true;
 }
 
-bool typio_candidate_popup_render_state_matches(const TypioCandidatePopupRenderState *cached,
-                                      const TypioCandidatePopupRenderState *current,
-                                      int scale) {
+bool typio_candidate_popup_render_state_matches_static(const TypioCandidatePopupRenderState *cached,
+                                             const TypioCandidatePopupRenderState *current,
+                                             int scale) {
     int buffer_w;
     int buffer_h;
-    const char *old_pre;
-    const char *new_pre;
 
     if (!cached || !current || !cached->cache_valid ||
         cached->line_count != current->line_count) {
@@ -43,6 +41,19 @@ bool typio_candidate_popup_render_state_matches(const TypioCandidatePopupRenderS
 
     if (!popup_scaled_dimension(cached->width, scale, &buffer_w) ||
         !popup_scaled_dimension(cached->height, scale, &buffer_h)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool typio_candidate_popup_render_state_matches(const TypioCandidatePopupRenderState *cached,
+                                      const TypioCandidatePopupRenderState *current,
+                                      int scale) {
+    const char *old_pre;
+    const char *new_pre;
+
+    if (!typio_candidate_popup_render_state_matches_static(cached, current, scale)) {
         return false;
     }
 

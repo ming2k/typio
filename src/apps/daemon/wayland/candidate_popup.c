@@ -1,6 +1,11 @@
 /**
  * @file candidate_popup.c
  * @brief Wayland input-popup coordinator
+ *
+ * Coordinates three render paths for the candidate popup:
+ * - selection-only: selected row changed, cached geometry unchanged
+ * - aux-only: preedit/mode label changed, selected row unchanged, geometry unchanged
+ * - full render: any content or geometry change, or any fast-path precondition failure
  */
 
 #include "wl_frontend_internal.h"
@@ -8,6 +13,7 @@
 #include "candidate_popup_buffer.h"
 #include "candidate_popup_layout.h"
 #include "candidate_popup_paint.h"
+#include "candidate_popup_render_state.h"
 #include "candidate_popup_state.h"
 #include "candidate_popup_theme.h"
 #include "preedit_format.h"
@@ -46,6 +52,7 @@ struct TypioWlCandidatePopup {
     TypioCandidatePopupFontCache font_cache;
     TypioCandidatePopupThemeCache theme_cache;
     TypioCandidatePopupConfigCache config_cache;
+    TypioCandidatePopupBuffer *last_committed;
 };
 
 bool typio_wl_candidate_popup_update(TypioWlTextUiBackend *backend, TypioInputContext *ctx);
@@ -241,11 +248,17 @@ static const TypioCandidatePopupRenderConfig *popup_get_render_config(TypioWlCan
 }
 
 static void popup_free_layout_result(TypioCandidatePopupLine *lines, size_t line_count,
-                                     char *preedit_text) {
+                                     char *preedit_text,
+                                     PangoLayout *preedit_layout,
+                                     char *mode_label,
+                                     PangoLayout *mode_label_layout) {
     TypioCandidatePopupCache transient_cache = {
         .lines = lines,
         .line_count = line_count,
         .preedit_text = preedit_text,
+        .preedit_layout = preedit_layout,
+        .mode_label = mode_label,
+        .mode_label_layout = mode_label_layout,
     };
 
     typio_candidate_popup_layout_cache_invalidate(&transient_cache);
@@ -289,10 +302,17 @@ static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preed
     TypioCandidatePopupPaintTarget target;
     char *preedit_text = nullptr;
     char *mode_label = nullptr;
+    PangoLayout *preedit_layout = nullptr;
+    PangoLayout *mode_label_layout = nullptr;
     int preedit_width = 0;
     int preedit_height = 0;
+    int preedit_x = 0;
+    int preedit_y = 0;
     int mode_label_width = 0;
     int mode_label_height = 0;
+    int mode_label_x = 0;
+    int mode_label_y = 0;
+    int mode_label_divider_y = -1;
     int width = 0;
     int height = 0;
     int scale;
@@ -300,6 +320,10 @@ static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preed
     TypioCandidatePopupLine *lines = nullptr;
     uint64_t render_start_ms;
     uint64_t render_end_ms;
+    TypioCandidatePopupRenderState cached_state;
+    TypioCandidatePopupRenderState current_state;
+    bool full_match;
+    bool static_match;
 
     if (!popup || !popup->surface || !candidates || candidates->count == 0) {
         return false;
@@ -329,23 +353,80 @@ static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preed
         .buffer_count = TYPIO_CANDIDATE_POPUP_BUFFER_COUNT,
     };
 
-    if (popup->cache.valid &&
-        typio_candidate_popup_layout_cache_matches(&popup->cache, candidates, preedit_text,
-                                         mode_label, scale, render_config, palette) &&
-        popup->cache.selected != candidates->selected) {
-        bool ok = typio_candidate_popup_paint_and_commit(&target, &popup->font_cache,
-                                               popup->cache.lines,
-                                               popup->cache.line_count,
-                                               candidates->selected,
-                                               popup->cache.preedit_text,
-                                               popup->cache.mode_label,
-                                               popup->cache.width,
-                                               popup->cache.height,
-                                               scale,
-                                               render_config,
-                                               palette);
+    cached_state = (TypioCandidatePopupRenderState){
+        .cache_valid = popup->cache.valid,
+        .line_count = popup->cache.line_count,
+        .content_signature = popup->cache.content_signature,
+        .palette_token = popup->cache.palette,
+        .theme_mode = popup->cache.config.theme_mode,
+        .layout_mode = popup->cache.config.layout_mode,
+        .font_size = popup->cache.config.font_size,
+        .font_desc = popup->cache.config.font_desc,
+        .page_font_desc = popup->cache.config.page_font_desc,
+        .width = popup->cache.width,
+        .height = popup->cache.height,
+        .preedit_text = popup->cache.preedit_text,
+        .mode_label = popup->cache.mode_label,
+    };
+    current_state = (TypioCandidatePopupRenderState){
+        .cache_valid = true,
+        .line_count = candidates->count,
+        .content_signature = candidates->content_signature,
+        .palette_token = palette,
+        .theme_mode = render_config->theme_mode,
+        .layout_mode = render_config->layout_mode,
+        .font_size = render_config->font_size,
+        .font_desc = render_config->font_desc,
+        .page_font_desc = render_config->page_font_desc,
+        .width = popup->cache.width,
+        .height = popup->cache.height,
+        .preedit_text = preedit_text,
+        .mode_label = mode_label,
+    };
+    full_match = typio_candidate_popup_render_state_matches(&cached_state, &current_state, scale);
+    static_match = typio_candidate_popup_render_state_matches_static(&cached_state, &current_state,
+                                                                     scale);
+
+    if (full_match && popup->cache.selected != candidates->selected) {
+        bool ok = false;
+        TypioCandidatePopupBuffer *used_buffer = nullptr;
+
+        if (popup->last_committed) {
+            ok = typio_candidate_popup_paint_selection_update(&target,
+                                                   popup->cache.lines,
+                                                   popup->cache.line_count,
+                                                   popup->cache.selected,
+                                                   candidates->selected,
+                                                   popup->cache.width,
+                                                   popup->cache.height,
+                                                   scale,
+                                                   palette,
+                                                   popup->last_committed,
+                                                   &used_buffer);
+        }
+
+        if (!ok) {
+            ok = typio_candidate_popup_paint_and_commit(&target,
+                                                   popup->cache.lines,
+                                                   popup->cache.line_count,
+                                                   candidates->selected,
+                                                   popup->cache.preedit_layout,
+                                                   popup->cache.preedit_x,
+                                                   popup->cache.preedit_y,
+                                                   popup->cache.mode_label_layout,
+                                                   popup->cache.mode_label_x,
+                                                   popup->cache.mode_label_y,
+                                                   popup->cache.mode_label_divider_y,
+                                                   popup->cache.width,
+                                                   popup->cache.height,
+                                                   scale,
+                                                   palette,
+                                                   &used_buffer);
+        }
+
         if (ok) {
             popup->cache.selected = candidates->selected;
+            popup->last_committed = used_buffer;
             popup->visible = true;
         }
 
@@ -366,27 +447,140 @@ static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preed
         return ok;
     }
 
+    if (static_match && popup->cache.selected == candidates->selected) {
+        bool aux_changed = strcmp(popup->cache.preedit_text ? popup->cache.preedit_text : "",
+                                  preedit_text ? preedit_text : "") != 0 ||
+                           strcmp(popup->cache.mode_label ? popup->cache.mode_label : "",
+                                  mode_label ? mode_label : "") != 0;
+        if (aux_changed) {
+            bool ok = false;
+            TypioCandidatePopupBuffer *used_buffer = nullptr;
+
+            if (!typio_candidate_popup_layout_measure_aux(&popup->cache,
+                                                preedit_text, mode_label,
+                                                render_config,
+                                                &popup->font_cache,
+                                                &preedit_layout,
+                                                &preedit_width, &preedit_height,
+                                                &preedit_x, &preedit_y,
+                                                &mode_label_layout,
+                                                &mode_label_width, &mode_label_height,
+                                                &mode_label_x, &mode_label_y,
+                                                &mode_label_divider_y,
+                                                &width, &height)) {
+                free(preedit_text);
+                free(mode_label);
+                return false;
+            }
+
+            if (width == popup->cache.width && height == popup->cache.height &&
+                popup->last_committed) {
+                ok = typio_candidate_popup_paint_aux_update(&target,
+                                                  popup->cache.width,
+                                                  popup->cache.height,
+                                                  scale,
+                                                  palette,
+                                                  popup->last_committed,
+                                                  popup->cache.preedit_layout,
+                                                  popup->cache.preedit_x,
+                                                  popup->cache.preedit_y,
+                                                  popup->cache.preedit_width,
+                                                  popup->cache.preedit_height,
+                                                  preedit_layout,
+                                                  preedit_x,
+                                                  preedit_y,
+                                                  preedit_width,
+                                                  preedit_height,
+                                                  popup->cache.mode_label_layout,
+                                                  popup->cache.mode_label_x,
+                                                  popup->cache.mode_label_y,
+                                                  popup->cache.mode_label_width,
+                                                  popup->cache.mode_label_height,
+                                                  popup->cache.mode_label_divider_y,
+                                                  mode_label_layout,
+                                                  mode_label_x,
+                                                  mode_label_y,
+                                                  mode_label_width,
+                                                  mode_label_height,
+                                                  mode_label_divider_y,
+                                                  &used_buffer);
+            }
+
+            if (ok) {
+                popup->last_committed = used_buffer;
+                popup->visible = true;
+                typio_candidate_popup_layout_cache_update_aux(&popup->cache,
+                                                     preedit_text,
+                                                     preedit_layout,
+                                                     preedit_width, preedit_height,
+                                                     preedit_x, preedit_y,
+                                                     mode_label,
+                                                     mode_label_layout,
+                                                     mode_label_width, mode_label_height,
+                                                     mode_label_x, mode_label_y,
+                                                     mode_label_divider_y);
+                render_end_ms = typio_wl_monotonic_ms();
+                if ((render_end_ms - render_start_ms) >= TYPIO_CANDIDATE_POPUP_SLOW_RENDER_MS) {
+                    typio_log_debug(
+                        "Popup slow render: total=%" PRIu64 "ms fast_path=aux candidates=%zu selected=%d width=%d height=%d scale=%d signature=%" PRIu64,
+                        render_end_ms - render_start_ms,
+                        candidates->count,
+                        candidates->selected,
+                        popup->cache.width,
+                        popup->cache.height,
+                        scale,
+                        candidates->content_signature);
+                }
+                return true;
+            }
+
+            if (preedit_layout) {
+                g_object_unref(preedit_layout);
+                preedit_layout = nullptr;
+            }
+            if (mode_label_layout) {
+                g_object_unref(mode_label_layout);
+                mode_label_layout = nullptr;
+            }
+        }
+    }
+
     if (!typio_candidate_popup_layout_compute(candidates, preedit_text, mode_label,
                                     render_config,
                                     &popup->font_cache, &lines, &line_count,
+                                    &preedit_layout,
                                     &preedit_width, &preedit_height,
+                                    &preedit_x, &preedit_y,
+                                    &mode_label_layout,
                                     &mode_label_width, &mode_label_height,
+                                    &mode_label_x, &mode_label_y,
+                                    &mode_label_divider_y,
                                     &width, &height)) {
         free(preedit_text);
         free(mode_label);
         return false;
     }
 
-    if (!typio_candidate_popup_paint_and_commit(&target, &popup->font_cache,
-                                      lines, line_count,
-                                      candidates->selected,
-                                      preedit_text,
-                                      mode_label,
-                                      width, height, scale,
-                                      render_config, palette)) {
-        popup_free_layout_result(lines, line_count, preedit_text);
-        free(mode_label);
-        return false;
+    {
+        TypioCandidatePopupBuffer *used_buffer = nullptr;
+        if (!typio_candidate_popup_paint_and_commit(&target,
+                                          lines, line_count,
+                                          candidates->selected,
+                                          preedit_layout,
+                                          preedit_x,
+                                          preedit_y,
+                                          mode_label_layout,
+                                          mode_label_x,
+                                          mode_label_y,
+                                          mode_label_divider_y,
+                                          width, height, scale,
+                                          palette,
+                                          &used_buffer)) {
+            popup_free_layout_result(lines, line_count, preedit_text,
+                                     preedit_layout, mode_label, mode_label_layout);
+            return false;
+        }
+        popup->last_committed = used_buffer;
     }
 
     popup->visible = true;
@@ -394,9 +588,14 @@ static bool popup_render(TypioWlCandidatePopup *popup, const TypioPreedit *preed
                                    candidates->selected,
                                    candidates->content_signature,
                                    preedit_text,
+                                   preedit_layout,
                                    preedit_width, preedit_height,
+                                   preedit_x, preedit_y,
                                    mode_label,
+                                   mode_label_layout,
                                    mode_label_width, mode_label_height,
+                                   mode_label_x, mode_label_y,
+                                   mode_label_divider_y,
                                    width, height,
                                    render_config, palette);
 
@@ -448,6 +647,7 @@ static void popup_hide_surface(TypioWlCandidatePopup *popup) {
     wl_surface_attach(popup->surface, nullptr, 0, 0);
     wl_surface_commit(popup->surface);
     popup->visible = false;
+    popup->last_committed = nullptr;
     typio_candidate_popup_layout_cache_invalidate(&popup->cache);
 }
 
@@ -522,6 +722,7 @@ void typio_wl_candidate_popup_destroy(TypioWlCandidatePopup *popup) {
     }
 
     popup_hide_surface(popup);
+    popup->last_committed = nullptr;
     typio_candidate_popup_layout_cache_invalidate(&popup->cache);
     for (size_t i = 0; i < TYPIO_CANDIDATE_POPUP_BUFFER_COUNT; ++i) {
         typio_candidate_popup_buffer_reset(&popup->buffers[i]);
@@ -558,6 +759,7 @@ void typio_wl_candidate_popup_invalidate_config(TypioWlTextUiBackend *backend) {
         memset(&popup->theme_cache, 0, sizeof(popup->theme_cache));
     }
     if (!state.render_cache_valid) {
+        popup->last_committed = nullptr;
         typio_candidate_popup_layout_cache_invalidate(&popup->cache);
     }
 }

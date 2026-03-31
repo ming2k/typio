@@ -13,7 +13,7 @@ Both `typio-client` and `typio-control` are built on this interface.
 | Interface | `org.typio.InputMethod1`     |
 
 The service is registered when `typio` starts with `ENABLE_STATUS_BUS=ON`
-(the default). The constants live in `src/lib/typio/dbus_protocol.h`.
+(the default). The constants live in `src/core/include/typio/dbus_protocol.h`.
 
 ## Properties
 
@@ -147,9 +147,9 @@ typio-client version            # show server version
 
 ## Implementation Notes
 
-- The server-side handler lives in `src/server/status/status.c`.
-- Protocol constants are in `src/lib/typio/dbus_protocol.h`.
-- `typio-client` source is in `src/client/main.c` — a pure D-Bus client
+- The server-side handler lives in `src/apps/daemon/status/status.c`.
+- Protocol constants are in `src/core/include/typio/dbus_protocol.h`.
+- `typio-client` source is in `src/apps/cli/main.c` — a pure D-Bus client
   with no dependency on `typio-core`.
 - `typio-control` (GTK4) uses the same D-Bus interface via GDBusProxy.
 - The status bus integration test is in `tests/test_status_bus.c`.

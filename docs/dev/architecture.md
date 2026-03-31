@@ -47,11 +47,28 @@ Typio runs on the following protocol layers:
   Popup scaling follows `wl_surface.enter/leave` plus per-output
   `wl_output.scale` so the shm buffer matches integer HiDPI outputs.
 
+## Source Tree
+
+The source tree is organized by stable product boundary first:
+
+- `src/core/`
+  Shared library code. `include/typio/` holds the public C headers,
+  `runtime/` holds the core implementation, and `utils/` holds internal
+  support code used by the runtime.
+- `src/apps/`
+  Executable programs. `daemon/` is the Wayland IME host, `cli/` is the
+  D-Bus command-line control surface, and `control/` is the GTK control panel.
+- `src/engines/`
+  Built-in and pluggable input-engine implementations.
+
+This keeps top-level `src/` directories on one axis: reusable core,
+user-facing applications, and engine implementations.
+
 ## Main Components
 
 ### `typio-core`
 
-Located under `src/lib/`.
+Located under `src/core/`.
 
 Responsibilities:
 
@@ -62,9 +79,19 @@ Responsibilities:
 - key and voice event structures
 - shared utility code
 
+Internal split:
+
+- `src/core/include/typio/`
+  Installed public headers and cross-component protocol constants
+- `src/core/runtime/`
+  Core implementation units that build `typio-core`
+- `src/core/utils/`
+  Internal support helpers used by the core, daemon, engines, and selected
+  tests
+
 ### `typio`
 
-Located under `src/server/`.
+Located under `src/apps/daemon/`.
 
 Responsibilities:
 
@@ -88,7 +115,8 @@ Within the Wayland daemon, responsibilities are intentionally split by layer:
   implementation.
 - `candidate_popup.c`
   Implements the current Wayland-native popup backend over
-  `zwp_input_popup_surface_v2`.
+  `zwp_input_popup_surface_v2`, including render-path selection between
+  selection-only, auxiliary-text-only, and full repaint flows.
 - `wl_event_loop.c`
   Owns the polling loop, Wayland dispatch, watchdog staging, and aux-fd
   integration such as tray, status bus, voice, repeat, and config watch.
@@ -106,13 +134,24 @@ runtime-state authority, and control-surface binding rules live in:
 
 ### `typio-client`
 
-Located under `src/client/`.
+Located under `src/apps/cli/`.
 
 Responsibilities:
 
 - provide a CLI for querying and controlling a running Typio daemon
 - communicate exclusively over the `org.typio.InputMethod1` D-Bus interface
 - no dependency on `typio-core`; pure D-Bus client
+
+### `typio-control`
+
+Located under `src/apps/control/`.
+
+Responsibilities:
+
+- provide a GTK control panel for runtime state and persistent configuration
+- consume the same D-Bus surface as `typio-client`
+- reuse `typio-core` config and schema helpers where shared parsing logic is
+  preferable to duplicating it in UI code
 
 See [D-Bus Interface Reference](../reference/dbus-interface.md) for the full
 protocol specification.
@@ -239,6 +278,26 @@ The important architectural rule is that `wl_input_method.c` depends on the
 text-UI backend abstraction, not on a concrete popup implementation. Timing
 details for synchronous candidate refresh and related hot-path constraints are
 documented in [Timing Model](timing-model.md).
+
+The popup renderer currently uses three paint paths:
+
+1. `selection-only`
+   Chosen when candidate content, popup geometry, theme, and auxiliary text are
+   unchanged and only the selected index moved. The renderer repaints only the
+   old and new candidate rows.
+2. `aux-only`
+   Chosen when candidate content and static render inputs are unchanged, the
+   selected index is unchanged, and only `preedit` and/or `mode_label` changed.
+   This path is allowed only when remeasuring the auxiliary text keeps the same
+   popup width and height; otherwise it falls back to a full render.
+3. `full render`
+   Used for any content, geometry, scale, theme, font, or mixed-state change
+   that cannot be safely handled by the narrower paths.
+
+The safety rule is strict: partial repaint paths may reuse the last committed
+buffer, but they must not change popup geometry or buffer-pool ownership
+semantics. If any fast-path precondition is not met, the implementation must
+fall back to full layout and repaint.
 
 ## Keyboard Safety Model
 
