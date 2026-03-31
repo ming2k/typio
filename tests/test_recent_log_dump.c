@@ -78,12 +78,15 @@ TEST(dumps_recent_logs_to_requested_file) {
 TEST(configured_dump_writes_latest_and_archive) {
     char dir[] = "/tmp/typio-recent-dir-XXXXXX";
     char latest[1024];
+    char archive_dir[1024];
     DIR *dp;
     struct dirent *entry;
     bool saw_archive = false;
 
     ASSERT(mkdtemp(dir) != NULL);
-    ASSERT(snprintf(latest, sizeof(latest), "%s/typio-recent.log", dir) < (int)sizeof(latest));
+    ASSERT(snprintf(latest, sizeof(latest), "%s/logs/latest.log", dir) < (int)sizeof(latest));
+    ASSERT(snprintf(archive_dir, sizeof(archive_dir), "%s/logs/archive", dir) <
+           (int)sizeof(archive_dir));
 
     typio_log_set_level(TYPIO_LOG_DEBUG);
     typio_log_set_recent_dump_path(latest);
@@ -91,15 +94,15 @@ TEST(configured_dump_writes_latest_and_archive) {
 
     ASSERT(typio_log_dump_recent_to_configured_path("unit test"));
     ASSERT(access(latest, F_OK) == 0);
+    ASSERT(access(archive_dir, F_OK) == 0);
 
-    dp = opendir(dir);
+    dp = opendir(archive_dir);
     ASSERT(dp != NULL);
     while ((entry = readdir(dp)) != NULL) {
-        if (strcmp(entry->d_name, "typio-recent.log") == 0) {
+        if (entry->d_name[0] == '.') {
             continue;
         }
-        if (strstr(entry->d_name, "typio-recent-") == entry->d_name &&
-            strstr(entry->d_name, ".log") != NULL) {
+        if (strstr(entry->d_name, "unit-test.log") != NULL) {
             saw_archive = true;
             break;
         }
@@ -109,7 +112,7 @@ TEST(configured_dump_writes_latest_and_archive) {
     ASSERT(saw_archive);
 
     unlink(latest);
-    dp = opendir(dir);
+    dp = opendir(archive_dir);
     ASSERT(dp != NULL);
     while ((entry = readdir(dp)) != NULL) {
         char archive_path[1024];
@@ -117,11 +120,15 @@ TEST(configured_dump_writes_latest_and_archive) {
         if (entry->d_name[0] == '.') {
             continue;
         }
-        ASSERT(snprintf(archive_path, sizeof(archive_path), "%s/%s", dir, entry->d_name) <
+        ASSERT(snprintf(archive_path, sizeof(archive_path), "%s/%s", archive_dir, entry->d_name) <
                (int)sizeof(archive_path));
         unlink(archive_path);
     }
     closedir(dp);
+    rmdir(archive_dir);
+    ASSERT(snprintf(archive_dir, sizeof(archive_dir), "%s/logs", dir) <
+           (int)sizeof(archive_dir));
+    rmdir(archive_dir);
     rmdir(dir);
     typio_log_set_recent_dump_path(NULL);
 }

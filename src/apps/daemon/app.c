@@ -389,7 +389,7 @@ static void typio_daemon_configure_recent_log_dump(TypioDaemonApp *app) {
     }
 
     if (snprintf(app->recent_log_dump_path, sizeof(app->recent_log_dump_path),
-                 "%s/%s", state_dir, "typio-recent.log") >=
+                 "%s/%s", state_dir, "logs/latest.log") >=
         (int)sizeof(app->recent_log_dump_path)) {
         app->recent_log_dump_path[0] = '\0';
         return;

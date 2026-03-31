@@ -121,9 +121,15 @@ frontend health snapshot.
 Read the last fault snapshot from the recent-log dump:
 
 ```bash
-find ~/.local/state -name 'typio-recent*.log' 2>/dev/null
-rg -n "Virtual keyboard|fail-safe|keymap timeout|Keyboard grab|Wayland text UI slow|Popup slow render|Rime sync slow" ~/.local/state/typio/typio-recent*.log
+find ~/.local/state/typio/logs -type f -name '*.log' 2>/dev/null
+rg -n "Virtual keyboard|fail-safe|keymap timeout|Keyboard grab|Wayland text UI slow|Popup slow render|Rime sync slow" ~/.local/state/typio/logs/latest.log ~/.local/state/typio/logs/archive/*.log
 ```
+
+Current builds keep the newest snapshot at `~/.local/state/typio/logs/latest.log`
+and archive older snapshots under `~/.local/state/typio/logs/archive/`.
+Archive filenames use `YYYY-MM-DD_HH-MM-SS_reason.log` so the dump time and
+trigger are visible at a glance. The archive directory is pruned
+automatically to keep only the most recent snapshots.
 
 Read the live Wayland runtime state:
 
