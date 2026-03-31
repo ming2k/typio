@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-04-01
+
+### Changed
+
+- **Recent log snapshot layout**: moved Typio's persisted recent dumps under
+  `~/.local/state/typio/logs/`, with a fixed `latest.log` entrypoint and
+  timestamped archives kept in `logs/archive/`.
+- **Recent log archive naming**: archive filenames now use a more readable
+  `YYYY-MM-DD_HH-MM-SS_reason.log` format and keep only the newest retained
+  snapshots instead of accumulating indefinitely.
+- **Wayland key-routing model**: internal routing now expresses a final
+  `action` (`consume` or `forward`) separately from `reason`, replacing the
+  older route-class abstraction and making trace output easier to interpret.
+- **Per-key tracking naming**: renamed tracking-only states to explicit
+  `TYPIO_KEY_TRACK_*` names so lifecycle ownership is no longer conflated with
+  routing decisions.
+
+### Fixed
+
+- **Stale non-routable keyboard grabs**: added recovery when the input-method
+  lifecycle completes without a usable routed state, reducing cases where
+  Typio kept a grab active while ordinary key events were rejected.
+- **Guard-reject freeze recovery**: repeated routing-guard rejections now log
+  an explicit recovery reason, dump a recent snapshot, and stop the frontend
+  instead of staying stuck with an unusable keyboard path.
+
 ## [2.5.0] - 2026-03-31
 
 ### Added
