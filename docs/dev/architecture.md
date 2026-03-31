@@ -117,6 +117,16 @@ Within the Wayland daemon, responsibilities are intentionally split by layer:
   Implements the current Wayland-native popup backend over
   `zwp_input_popup_surface_v2`, including render-path selection between
   selection-only, auxiliary-text-only, and full repaint flows.
+- `key_route.c`
+  Owns key-routing decisions. The current model separates final action
+  (`consume` or `forward`) from routing reason (for example reserved Typio
+  shortcut, application shortcut, engine handled, or engine unhandled).
+  This is intentionally separate from per-key tracking state such as
+  `TRACK_FORWARDED` or `TRACK_APP_SHORTCUT`, which exists to keep later release cleanup
+  symmetric.
+- `wl_keyboard.c`
+  Owns keyboard-grab event handling, XKB updates, and the highest-priority
+  emergency-exit fast path before normal routing.
 - `wl_event_loop.c`
   Owns the polling loop, Wayland dispatch, watchdog staging, and aux-fd
   integration such as tray, status bus, voice, repeat, and config watch.

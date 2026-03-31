@@ -26,6 +26,15 @@ static bool key_route_is_shift_keysym(uint32_t keysym) {
     return keysym == XKB_KEY_Shift_L || keysym == XKB_KEY_Shift_R;
 }
 
+static TypioWlKeyDecision key_route_decision(TypioWlKeyAction action,
+                                             TypioWlKeyReason reason) {
+    TypioWlKeyDecision decision = {
+        .action = action,
+        .reason = reason,
+    };
+    return decision;
+}
+
 static void key_route_trace(TypioWlKeyboard *keyboard,
                             const char *stage,
                             uint32_t key,
@@ -63,6 +72,27 @@ static void key_route_trace(TypioWlKeyboard *keyboard,
                    detail ? detail : "-");
 }
 
+static void key_route_trace_decision(TypioWlKeyboard *keyboard,
+                                     const char *stage,
+                                     uint32_t key,
+                                     uint32_t keysym,
+                                     uint32_t modifiers,
+                                     uint32_t unicode,
+                                     TypioKeyTrackState state,
+                                     TypioWlKeyDecision decision,
+                                     const char *extra) {
+    char detail[192];
+
+    snprintf(detail, sizeof(detail),
+             "action=%s reason=%s%s%s",
+             typio_wl_key_action_name(decision.action),
+             typio_wl_key_reason_name(decision.reason),
+             extra && *extra ? " " : "",
+             extra && *extra ? extra : "");
+    key_route_trace(keyboard, stage, key, keysym, modifiers, unicode,
+                    state, detail);
+}
+
 static bool key_route_is_app_shortcut(uint32_t keysym, uint32_t modifiers) {
     if ((modifiers & (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) == 0)
         return false;
@@ -82,13 +112,51 @@ static bool key_route_is_app_shortcut(uint32_t keysym, uint32_t modifiers) {
     }
 }
 
-const char *typio_wl_key_route_class_name(TypioWlKeyRouteClass route_class) {
-    switch (route_class) {
-    case TYPIO_WL_KEY_ROUTE_TYPIO_RESERVED:
+const char *typio_wl_key_action_name(TypioWlKeyAction action) {
+    switch (action) {
+    case TYPIO_WL_KEY_ACTION_FORWARD:
+        return "forward";
+    case TYPIO_WL_KEY_ACTION_CONSUME:
+    default:
+        return "consume";
+    }
+}
+
+const char *typio_wl_key_reason_name(TypioWlKeyReason reason) {
+    switch (reason) {
+    case TYPIO_WL_KEY_REASON_TYPIO_RESERVED:
         return "typio_reserved";
-    case TYPIO_WL_KEY_ROUTE_APPLICATION_SHORTCUT:
+    case TYPIO_WL_KEY_REASON_APPLICATION_SHORTCUT:
         return "application_shortcut";
-    case TYPIO_WL_KEY_ROUTE_NONE:
+    case TYPIO_WL_KEY_REASON_ENGINE_HANDLED:
+        return "engine_handled";
+    case TYPIO_WL_KEY_REASON_ENGINE_UNHANDLED:
+        return "engine_unhandled";
+    case TYPIO_WL_KEY_REASON_MODIFIER_PASSTHROUGH:
+        return "modifier_passthrough";
+    case TYPIO_WL_KEY_REASON_CANDIDATE_NAVIGATION:
+        return "candidate_navigation";
+    case TYPIO_WL_KEY_REASON_STARTUP_SUPPRESSED:
+        return "startup_suppressed";
+    case TYPIO_WL_KEY_REASON_RELEASED_PENDING:
+        return "released_pending";
+    case TYPIO_WL_KEY_REASON_LATCHED_APP_SHORTCUT:
+        return "latched_app_shortcut";
+    case TYPIO_WL_KEY_REASON_LATCHED_FORWARDED:
+        return "latched_forwarded";
+    case TYPIO_WL_KEY_REASON_STARTUP_STALE_CLEANUP:
+        return "startup_stale_cleanup";
+    case TYPIO_WL_KEY_REASON_FORWARDED_RELEASE:
+        return "forwarded_release";
+    case TYPIO_WL_KEY_REASON_ORPHAN_RELEASE_CLEANUP:
+        return "orphan_release_cleanup";
+    case TYPIO_WL_KEY_REASON_ORPHAN_RELEASE_CONSUMED:
+        return "orphan_release_consumed";
+    case TYPIO_WL_KEY_REASON_VOICE_PTT:
+        return "voice_ptt";
+    case TYPIO_WL_KEY_REASON_VOICE_PTT_UNAVAILABLE:
+        return "voice_ptt_unavailable";
+    case TYPIO_WL_KEY_REASON_NONE:
     default:
         return "none";
     }
@@ -136,18 +204,30 @@ TypioWlReservedAction typio_wl_key_route_reserved_action(
     return TYPIO_WL_RESERVED_ACTION_NONE;
 }
 
-TypioWlKeyRouteClass typio_wl_key_route_classify_shortcut(
+static TypioWlKeyDecision key_route_shortcut_decision(
     const TypioShortcutConfig *shortcuts,
     uint32_t keysym,
-    uint32_t modifiers) {
-    if (typio_wl_key_route_reserved_action(shortcuts, keysym, modifiers) !=
-        TYPIO_WL_RESERVED_ACTION_NONE)
-        return TYPIO_WL_KEY_ROUTE_TYPIO_RESERVED;
+    uint32_t modifiers,
+    TypioWlReservedAction *reserved_action_out) {
+    TypioWlReservedAction reserved_action =
+        typio_wl_key_route_reserved_action(shortcuts, keysym, modifiers);
 
-    if (key_route_is_app_shortcut(keysym, modifiers))
-        return TYPIO_WL_KEY_ROUTE_APPLICATION_SHORTCUT;
+    if (reserved_action_out) {
+        *reserved_action_out = reserved_action;
+    }
 
-    return TYPIO_WL_KEY_ROUTE_NONE;
+    if (reserved_action != TYPIO_WL_RESERVED_ACTION_NONE) {
+        return key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                  TYPIO_WL_KEY_REASON_TYPIO_RESERVED);
+    }
+
+    if (key_route_is_app_shortcut(keysym, modifiers)) {
+        return key_route_decision(TYPIO_WL_KEY_ACTION_FORWARD,
+                                  TYPIO_WL_KEY_REASON_APPLICATION_SHORTCUT);
+    }
+
+    return key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                              TYPIO_WL_KEY_REASON_NONE);
 }
 
 void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
@@ -160,30 +240,38 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
     TypioWlFrontend *frontend = keyboard->frontend;
     TypioKeyTrackState kstate = key_get_state(frontend, key);
     TypioWlStartupSuppressReason suppress_reason;
-    TypioWlKeyRouteClass route_class;
     TypioWlReservedAction reserved_action;
+    TypioWlKeyDecision decision;
 
-    if (kstate == TYPIO_KEY_RELEASED_PENDING) {
-        key_route_trace(keyboard, "press-ignore", key, keysym, modifiers, unicode,
-                        kstate, "released pending");
+    if (kstate == TYPIO_KEY_TRACK_RELEASED_PENDING) {
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                      TYPIO_WL_KEY_REASON_RELEASED_PENDING);
+        key_route_trace_decision(keyboard, "press-ignore", key, keysym,
+                                 modifiers, unicode, kstate, decision, nullptr);
         typio_log(TYPIO_LOG_DEBUG,
                   "Suppressing press for force-released key: keycode=%u", key);
         return;
     }
 
-    if (kstate == TYPIO_KEY_SUPPRESSED_STARTUP) {
-        key_route_trace(keyboard, "press-ignore", key, keysym, modifiers, unicode,
-                        kstate, "startup guarded repeat");
+    if (kstate == TYPIO_KEY_TRACK_SUPPRESSED_STARTUP) {
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                      TYPIO_WL_KEY_REASON_STARTUP_SUPPRESSED);
+        key_route_trace_decision(keyboard, "press-ignore", key, keysym,
+                                 modifiers, unicode, kstate, decision,
+                                 "repeat");
         typio_log(TYPIO_LOG_DEBUG,
                   "Suppressing repeat of startup-guarded key: keycode=%u", key);
         return;
     }
 
-    if (kstate == TYPIO_KEY_APP_SHORTCUT) {
+    if (kstate == TYPIO_KEY_TRACK_APP_SHORTCUT) {
         if ((keyboard->physical_modifiers &
              (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0) {
-            key_route_trace(keyboard, "press-forward", key, keysym, modifiers, unicode,
-                            kstate, "latched app shortcut");
+            decision = key_route_decision(TYPIO_WL_KEY_ACTION_FORWARD,
+                                          TYPIO_WL_KEY_REASON_LATCHED_APP_SHORTCUT);
+            key_route_trace_decision(keyboard, "press-forward", key, keysym,
+                                     modifiers, unicode, kstate, decision,
+                                     nullptr);
             typio_wl_vk_forward_key(keyboard, time, key, WL_KEYBOARD_KEY_STATE_PRESSED, unicode);
         }
         typio_log(TYPIO_LOG_DEBUG,
@@ -191,9 +279,11 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         return;
     }
 
-    if (kstate == TYPIO_KEY_FORWARDED) {
-        key_route_trace(keyboard, "press-forward", key, keysym, modifiers, unicode,
-                        kstate, "latched forwarded route");
+    if (kstate == TYPIO_KEY_TRACK_FORWARDED) {
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_FORWARD,
+                                      TYPIO_WL_KEY_REASON_LATCHED_FORWARDED);
+        key_route_trace_decision(keyboard, "press-forward", key, keysym,
+                                 modifiers, unicode, kstate, decision, nullptr);
         typio_wl_vk_forward_key(keyboard, time, key, WL_KEYBOARD_KEY_STATE_PRESSED, unicode);
         typio_log(TYPIO_LOG_DEBUG,
                   "Maintaining latched forwarded route: keycode=%u", key);
@@ -216,27 +306,31 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
     }
 
     if (suppress_reason == TYPIO_WL_STARTUP_SUPPRESS_STALE_KEY) {
-        key_set_state(frontend, key, TYPIO_KEY_SUPPRESSED_STARTUP);
+        key_set_state(frontend, key, TYPIO_KEY_TRACK_SUPPRESSED_STARTUP);
         keyboard->startup_suppressed_count++;
-        key_route_trace(keyboard, "press-suppress", key, keysym, modifiers, unicode,
-                        TYPIO_KEY_SUPPRESSED_STARTUP, "startup stale");
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                      TYPIO_WL_KEY_REASON_STARTUP_SUPPRESSED);
+        key_route_trace_decision(keyboard, "press-suppress", key, keysym,
+                                 modifiers, unicode,
+                                 TYPIO_KEY_TRACK_SUPPRESSED_STARTUP, decision,
+                                 "stale");
         typio_log(TYPIO_LOG_DEBUG,
                   "Suppressing startup key press: keycode=%u keysym=0x%x reason=stale",
                   key, keysym);
         return;
     }
 
-    route_class = typio_wl_key_route_classify_shortcut(&frontend->shortcuts,
-                                                       keysym, modifiers);
-    reserved_action = typio_wl_key_route_reserved_action(&frontend->shortcuts,
-                                                         keysym, modifiers);
+    decision = key_route_shortcut_decision(&frontend->shortcuts,
+                                           keysym, modifiers,
+                                           &reserved_action);
 
-    if (route_class != TYPIO_WL_KEY_ROUTE_NONE) {
-        key_route_trace(keyboard, "press-classify", key, keysym, modifiers,
-                        unicode, kstate,
-                        route_class == TYPIO_WL_KEY_ROUTE_TYPIO_RESERVED
-                            ? typio_wl_reserved_action_name(reserved_action)
-                            : typio_wl_key_route_class_name(route_class));
+    if (decision.reason != TYPIO_WL_KEY_REASON_NONE) {
+        key_route_trace_decision(
+            keyboard, "press-classify", key, keysym, modifiers,
+            unicode, kstate, decision,
+            decision.reason == TYPIO_WL_KEY_REASON_TYPIO_RESERVED
+                ? typio_wl_reserved_action_name(reserved_action)
+                : nullptr);
     }
 
     if (reserved_action == TYPIO_WL_RESERVED_ACTION_EMERGENCY_EXIT) {
@@ -244,8 +338,11 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
                   "Emergency exit shortcut triggered: keycode=%u keysym=0x%x mods=0x%x",
                   key, keysym, modifiers);
         typio_log_dump_recent_to_configured_path("emergency exit shortcut");
-        key_route_trace(keyboard, "press-stop", key, keysym, modifiers, unicode,
-                        TYPIO_KEY_IDLE, "emergency exit shortcut");
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                      TYPIO_WL_KEY_REASON_TYPIO_RESERVED);
+        key_route_trace_decision(keyboard, "press-stop", key, keysym, modifiers,
+                                 unicode, TYPIO_KEY_TRACK_IDLE, decision,
+                                 "emergency_exit");
         typio_wl_keyboard_release_grab(keyboard);
         typio_wl_frontend_stop(frontend);
         return;
@@ -262,11 +359,14 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         (modifiers & ptt->modifiers) == ptt->modifiers) {
         if (typio_voice_service_is_available(frontend->voice)) {
             typio_voice_service_start(frontend->voice);
-            key_set_state(frontend, key, TYPIO_KEY_VOICE_PTT);
+            key_set_state(frontend, key, TYPIO_KEY_TRACK_VOICE_PTT);
             typio_wl_set_preedit(frontend, "[Recording...]", 0, 0);
             typio_wl_commit(frontend);
-            key_route_trace(keyboard, "press-ptt", key, keysym, modifiers, unicode,
-                            TYPIO_KEY_VOICE_PTT, "voice ptt start");
+            decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                          TYPIO_WL_KEY_REASON_VOICE_PTT);
+            key_route_trace_decision(keyboard, "press-ptt", key, keysym,
+                                     modifiers, unicode, TYPIO_KEY_TRACK_VOICE_PTT,
+                                     decision, "start");
             typio_log(TYPIO_LOG_DEBUG, "Voice PTT started: keycode=%u", key);
         } else {
             const char *reason =
@@ -274,12 +374,15 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
             char hint[160];
             snprintf(hint, sizeof(hint), "[Voice unavailable: %s]",
                      reason ? reason : "unknown");
-            key_set_state(frontend, key, TYPIO_KEY_VOICE_PTT_UNAVAIL);
+            key_set_state(frontend, key, TYPIO_KEY_TRACK_VOICE_PTT_UNAVAIL);
             typio_wl_set_preedit(frontend, hint, 0, 0);
             typio_wl_commit(frontend);
-            key_route_trace(keyboard, "press-ptt-unavail", key, keysym,
-                            modifiers, unicode, TYPIO_KEY_VOICE_PTT_UNAVAIL,
-                            "voice not available");
+            decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                          TYPIO_WL_KEY_REASON_VOICE_PTT_UNAVAILABLE);
+            key_route_trace_decision(keyboard, "press-ptt-unavail", key, keysym,
+                                     modifiers, unicode,
+                                     TYPIO_KEY_TRACK_VOICE_PTT_UNAVAIL,
+                                     decision, "not_available");
             typio_log(TYPIO_LOG_WARNING,
                       "Voice PTT pressed but unavailable: %s",
                       reason ? reason : "unknown");
@@ -288,11 +391,12 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
     }
 #endif
 
-    if (route_class == TYPIO_WL_KEY_ROUTE_APPLICATION_SHORTCUT) {
+    if (decision.reason == TYPIO_WL_KEY_REASON_APPLICATION_SHORTCUT) {
         typio_wl_vk_forward_key(keyboard, time, key, WL_KEYBOARD_KEY_STATE_PRESSED, unicode);
-        key_set_state(frontend, key, TYPIO_KEY_APP_SHORTCUT);
-        key_route_trace(keyboard, "press-forward", key, keysym, modifiers, unicode,
-                        TYPIO_KEY_APP_SHORTCUT, "classified app shortcut");
+        key_set_state(frontend, key, TYPIO_KEY_TRACK_APP_SHORTCUT);
+        key_route_trace_decision(keyboard, "press-forward", key, keysym,
+                                 modifiers, unicode, TYPIO_KEY_TRACK_APP_SHORTCUT,
+                                 decision, nullptr);
         typio_log(TYPIO_LOG_DEBUG,
                   "Bypassing engine for application shortcut: keycode=%u keysym=0x%x mods=0x%x",
                   key, keysym, modifiers);
@@ -328,20 +432,30 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
 
         if (!handled &&
             typio_wl_candidate_guard_should_consume(session->ctx, keysym)) {
-            key_route_trace(keyboard, "press-engine", key, keysym, modifiers, unicode,
-                            TYPIO_KEY_IDLE, "reserved for candidates");
+            decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                          TYPIO_WL_KEY_REASON_CANDIDATE_NAVIGATION);
+            key_route_trace_decision(keyboard, "press-engine", key, keysym,
+                                     modifiers, unicode, TYPIO_KEY_TRACK_IDLE,
+                                     decision, nullptr);
             typio_log(TYPIO_LOG_DEBUG,
                       "Reserved navigation key for candidate UI");
         } else if (!handled || is_modifier) {
             typio_wl_vk_forward_key(keyboard, time, key, WL_KEYBOARD_KEY_STATE_PRESSED, unicode);
-            key_set_state(frontend, key, TYPIO_KEY_FORWARDED);
-            key_route_trace(keyboard, "press-forward", key, keysym, modifiers, unicode,
-                            TYPIO_KEY_FORWARDED,
-                            is_modifier ? "modifier passthrough" : "engine not handled");
+            key_set_state(frontend, key, TYPIO_KEY_TRACK_FORWARDED);
+            decision = key_route_decision(
+                TYPIO_WL_KEY_ACTION_FORWARD,
+                is_modifier ? TYPIO_WL_KEY_REASON_MODIFIER_PASSTHROUGH
+                            : TYPIO_WL_KEY_REASON_ENGINE_UNHANDLED);
+            key_route_trace_decision(keyboard, "press-forward", key, keysym,
+                                     modifiers, unicode, TYPIO_KEY_TRACK_FORWARDED,
+                                     decision, nullptr);
             typio_log(TYPIO_LOG_DEBUG, "Key forwarded to application");
         } else {
-            key_route_trace(keyboard, "press-engine", key, keysym, modifiers, unicode,
-                            TYPIO_KEY_IDLE, "engine handled");
+            decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                          TYPIO_WL_KEY_REASON_ENGINE_HANDLED);
+            key_route_trace_decision(keyboard, "press-engine", key, keysym,
+                                     modifiers, unicode, TYPIO_KEY_TRACK_IDLE,
+                                     decision, nullptr);
             typio_log(TYPIO_LOG_DEBUG, "Key handled by input method");
         }
     }
@@ -356,23 +470,28 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                                         uint32_t time) {
     TypioWlFrontend *frontend = keyboard->frontend;
     TypioKeyTrackState kstate = key_get_state(frontend, key);
+    TypioWlKeyDecision decision;
 
     if (keyboard->repeating && keyboard->repeat_key == key)
         keyboard->repeat_timer_fd >= 0 ? (void)0 : (void)0;
 
     switch (kstate) {
-    case TYPIO_KEY_RELEASED_PENDING:
-        key_route_trace(keyboard, "release-consume", key, keysym, modifiers, unicode,
-                        kstate, "released pending");
+    case TYPIO_KEY_TRACK_RELEASED_PENDING:
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                      TYPIO_WL_KEY_REASON_RELEASED_PENDING);
+        key_route_trace_decision(keyboard, "release-consume", key, keysym,
+                                 modifiers, unicode, kstate, decision, nullptr);
         key_clear_tracking(frontend, key);
         typio_log(TYPIO_LOG_DEBUG,
                   "Consumed physical release for force-released key: keycode=%u",
                   key);
         return;
 
-    case TYPIO_KEY_SUPPRESSED_STARTUP:
-        key_route_trace(keyboard, "release-forward", key, keysym, modifiers, unicode,
-                        kstate, "startup stale cleanup");
+    case TYPIO_KEY_TRACK_SUPPRESSED_STARTUP:
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_FORWARD,
+                                      TYPIO_WL_KEY_REASON_STARTUP_STALE_CLEANUP);
+        key_route_trace_decision(keyboard, "release-forward", key, keysym,
+                                 modifiers, unicode, kstate, decision, nullptr);
         key_clear_tracking(frontend, key);
         if (keyboard->startup_suppressed_count > 0)
             keyboard->startup_suppressed_count--;
@@ -386,19 +505,24 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                   "Forwarding release for startup key: keycode=%u", key);
         return;
 
-    case TYPIO_KEY_APP_SHORTCUT:
-        key_route_trace(keyboard, "release-forward", key, keysym, modifiers, unicode,
-                        kstate, "app shortcut release");
+    case TYPIO_KEY_TRACK_APP_SHORTCUT:
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_FORWARD,
+                                      TYPIO_WL_KEY_REASON_APPLICATION_SHORTCUT);
+        key_route_trace_decision(keyboard, "release-forward", key, keysym,
+                                 modifiers, unicode, kstate, decision,
+                                 "release");
         key_clear_tracking(frontend, key);
         typio_wl_vk_forward_key(keyboard, time, key, WL_KEYBOARD_KEY_STATE_RELEASED, unicode);
         typio_log(TYPIO_LOG_DEBUG,
                   "Forwarded application shortcut release: keycode=%u", key);
         return;
 
-    case TYPIO_KEY_VOICE_PTT:
+    case TYPIO_KEY_TRACK_VOICE_PTT:
 #ifdef HAVE_VOICE
-        key_route_trace(keyboard, "release-ptt", key, keysym, modifiers, unicode,
-                        kstate, "voice ptt stop");
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                      TYPIO_WL_KEY_REASON_VOICE_PTT);
+        key_route_trace_decision(keyboard, "release-ptt", key, keysym,
+                                 modifiers, unicode, kstate, decision, "stop");
         typio_voice_service_stop(frontend->voice);
         typio_wl_set_preedit(frontend, "[Processing...]", 0, 0);
         typio_wl_commit(frontend);
@@ -406,16 +530,22 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
         typio_log(TYPIO_LOG_DEBUG, "Voice PTT released: keycode=%u", key);
         return;
 #else
-        key_route_trace(keyboard, "release-consume", key, keysym, modifiers, unicode,
-                        kstate, "voice ptt unsupported build");
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                      TYPIO_WL_KEY_REASON_VOICE_PTT);
+        key_route_trace_decision(keyboard, "release-consume", key, keysym,
+                                 modifiers, unicode, kstate, decision,
+                                 "unsupported_build");
         key_clear_tracking(frontend, key);
         return;
 #endif
 
-    case TYPIO_KEY_VOICE_PTT_UNAVAIL:
+    case TYPIO_KEY_TRACK_VOICE_PTT_UNAVAIL:
 #ifdef HAVE_VOICE
-        key_route_trace(keyboard, "release-ptt-unavail", key, keysym,
-                        modifiers, unicode, kstate, "voice ptt unavail release");
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                      TYPIO_WL_KEY_REASON_VOICE_PTT_UNAVAILABLE);
+        key_route_trace_decision(keyboard, "release-ptt-unavail", key, keysym,
+                                 modifiers, unicode, kstate, decision,
+                                 "release");
         typio_wl_set_preedit(frontend, "", 0, 0);
         typio_wl_commit(frontend);
         key_clear_tracking(frontend, key);
@@ -423,19 +553,24 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                   "Voice PTT unavail released: keycode=%u", key);
         return;
 #else
-        key_route_trace(keyboard, "release-consume", key, keysym, modifiers, unicode,
-                        kstate, "voice unavailable state unsupported build");
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                      TYPIO_WL_KEY_REASON_VOICE_PTT_UNAVAILABLE);
+        key_route_trace_decision(keyboard, "release-consume", key, keysym,
+                                 modifiers, unicode, kstate, decision,
+                                 "unsupported_build");
         key_clear_tracking(frontend, key);
         return;
 #endif
 
-    case TYPIO_KEY_FORWARDED:
-        key_route_trace(keyboard, "release-forward", key, keysym, modifiers, unicode,
-                        kstate, "forwarded release");
+    case TYPIO_KEY_TRACK_FORWARDED:
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_FORWARD,
+                                      TYPIO_WL_KEY_REASON_FORWARDED_RELEASE);
+        key_route_trace_decision(keyboard, "release-forward", key, keysym,
+                                 modifiers, unicode, kstate, decision, nullptr);
         key_clear_tracking(frontend, key);
         break;
 
-    case TYPIO_KEY_IDLE:
+    case TYPIO_KEY_TRACK_IDLE:
         if (!key_owned_by_active_generation(frontend, key)) {
             TypioKeyEvent release_event = {
                 .type      = TYPIO_EVENT_KEY_RELEASE,
@@ -457,9 +592,12 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                      keyboard->saw_blocking_modifier));
 
             if (should_cleanup_stale_release) {
-                key_route_trace(keyboard, "release-forward", key, keysym,
-                                modifiers, unicode, kstate,
-                                "orphan cleanup release");
+                decision = key_route_decision(
+                    TYPIO_WL_KEY_ACTION_FORWARD,
+                    TYPIO_WL_KEY_REASON_ORPHAN_RELEASE_CLEANUP);
+                key_route_trace_decision(keyboard, "release-forward", key, keysym,
+                                         modifiers, unicode, kstate, decision,
+                                         nullptr);
                 typio_wl_vk_forward_key(keyboard, time, key,
                                         WL_KEYBOARD_KEY_STATE_RELEASED,
                                         unicode);
@@ -470,9 +608,12 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                 return;
             }
 
-            key_route_trace(keyboard, "release-orphan", key, keysym,
-                            modifiers, unicode, kstate,
-                            "press never reached Typio in this generation");
+            decision = key_route_decision(
+                TYPIO_WL_KEY_ACTION_CONSUME,
+                TYPIO_WL_KEY_REASON_ORPHAN_RELEASE_CONSUMED);
+            key_route_trace_decision(keyboard, "release-orphan", key, keysym,
+                                     modifiers, unicode, kstate, decision,
+                                     "press_never_reached_typio");
             typio_log(TYPIO_LOG_DEBUG,
                       "Consumed orphan release: keycode=%u generation=%u active_generation=%u",
                       key, key_get_generation(frontend, key),
@@ -481,8 +622,11 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
             return;
         }
 
-        key_route_trace(keyboard, "release-engine", key, keysym, modifiers, unicode,
-                        kstate, "idle release");
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                      TYPIO_WL_KEY_REASON_ENGINE_HANDLED);
+        key_route_trace_decision(keyboard, "release-engine", key, keysym,
+                                 modifiers, unicode, kstate, decision,
+                                 "idle_release");
         if (keyboard->suppress_stale_keys &&
             keyboard->startup_suppressed_count == 0) {
             keyboard->suppress_stale_keys = false;
@@ -516,9 +660,12 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
             }
             if (!handled &&
                 typio_wl_candidate_guard_should_consume(session->ctx, keysym)) {
-                key_route_trace(keyboard, "release-engine", key, keysym,
-                                modifiers, unicode, kstate,
-                                "reserved for candidates");
+                decision = key_route_decision(
+                    TYPIO_WL_KEY_ACTION_CONSUME,
+                    TYPIO_WL_KEY_REASON_CANDIDATE_NAVIGATION);
+                key_route_trace_decision(keyboard, "release-engine", key, keysym,
+                                         modifiers, unicode, kstate, decision,
+                                         nullptr);
             }
         }
         key_clear_tracking(frontend, key);
@@ -552,8 +699,11 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
         }
         if (!handled &&
             typio_wl_candidate_guard_should_consume(session->ctx, keysym)) {
-            key_route_trace(keyboard, "release-engine", key, keysym, modifiers, unicode,
-                            TYPIO_KEY_IDLE, "reserved for candidates");
+            decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
+                                          TYPIO_WL_KEY_REASON_CANDIDATE_NAVIGATION);
+            key_route_trace_decision(keyboard, "release-engine", key, keysym,
+                                     modifiers, unicode, TYPIO_KEY_TRACK_IDLE,
+                                     decision, nullptr);
             key_clear_tracking(frontend, key);
             return;
         }

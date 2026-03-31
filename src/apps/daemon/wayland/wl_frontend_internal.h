@@ -71,16 +71,20 @@ typedef enum TypioWlLoopStage {
 /**
  * @brief Per-key tracking state.
  *
- * Each key can be in exactly one state.  Transitions:
+ * This state machine records what happened to a key after routing decided
+ * whether to consume or forward it. It is not itself the routing decision
+ * model; action/reason routing decisions live in key_route.*.
  *
- *   IDLE ──press──▶ FORWARDED          (forwarded to app)
- *   IDLE ──press──▶ APP_SHORTCUT       (application shortcut bypasses engine)
- *   IDLE ──press──▶ SUPPRESSED_STARTUP (held key from previous grab)
- *   APP_SHORTCUT ─physical release──▶ IDLE
- *   FORWARDED ─force release──▶ RELEASED_PENDING
- *   FORWARDED ─physical release──▶ IDLE
- *   RELEASED_PENDING ─physical release──▶ IDLE  (consumed)
- *   SUPPRESSED_STARTUP ─physical release──▶ IDLE
+ * Each key can be in exactly one tracking state. Transitions:
+ *
+ *   IDLE ──press──▶ TRACK_FORWARDED          (forwarded to app)
+ *   IDLE ──press──▶ TRACK_APP_SHORTCUT       (application shortcut bypasses engine)
+ *   IDLE ──press──▶ TRACK_SUPPRESSED_STARTUP (held key from previous grab)
+ *   TRACK_APP_SHORTCUT ─physical release──▶ IDLE
+ *   TRACK_FORWARDED ─force release──▶ TRACK_RELEASED_PENDING
+ *   TRACK_FORWARDED ─physical release──▶ IDLE
+ *   TRACK_RELEASED_PENDING ─physical release──▶ IDLE  (consumed)
+ *   TRACK_SUPPRESSED_STARTUP ─physical release──▶ IDLE
  */
 
 /**

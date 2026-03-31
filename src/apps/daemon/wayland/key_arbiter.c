@@ -81,17 +81,17 @@ static void arbiter_release_orphaned_keys(TypioKeyArbiter *arbiter,
         if (ev->is_press)
             continue;
 
-        /* Only release keys that are in FORWARDED state — those were
+        /* Only release keys that are in the forwarded tracking state — those
          * sent to the app before we started buffering. */
         if (ev->key >= TYPIO_WL_MAX_TRACKED_KEYS)
             continue;
-        if (frontend->key_states[ev->key] != TYPIO_KEY_FORWARDED)
+        if (frontend->key_states[ev->key] != TYPIO_KEY_TRACK_FORWARDED)
             continue;
 
         typio_wl_vk_forward_key(keyboard, ev->time, ev->key,
                                 WL_KEYBOARD_KEY_STATE_RELEASED,
                                 ev->unicode);
-        frontend->key_states[ev->key] = TYPIO_KEY_IDLE;
+        frontend->key_states[ev->key] = TYPIO_KEY_TRACK_IDLE;
         frontend->key_generations[ev->key] = 0;
     }
 }

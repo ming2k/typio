@@ -24,7 +24,7 @@ static TypioKeyTrackState keyboard_repeat_key_state(TypioWlFrontend *frontend,
                                                     uint32_t key) {
     return key < TYPIO_WL_MAX_TRACKED_KEYS
         ? frontend->key_states[key]
-        : TYPIO_KEY_IDLE;
+        : TYPIO_KEY_TRACK_IDLE;
 }
 
 static bool keyboard_repeat_should_run(uint32_t modifiers) {
@@ -153,7 +153,7 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
     uint32_t repeat_unicode = xkb_state_key_get_utf32(keyboard->xkb_state,
                                                       xkb_keycode);
 
-    if (repeat_state == TYPIO_KEY_APP_SHORTCUT) {
+    if (repeat_state == TYPIO_KEY_TRACK_APP_SHORTCUT) {
         if ((keyboard->physical_modifiers &
              (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) == 0) {
             keyboard_repeat_trace(keyboard, "repeat-stop", keyboard->repeat_key,
@@ -183,7 +183,7 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
         return;
     }
 
-    if (repeat_state == TYPIO_KEY_FORWARDED) {
+    if (repeat_state == TYPIO_KEY_TRACK_FORWARDED) {
         keyboard_repeat_trace(keyboard, "repeat-forward", keyboard->repeat_key,
                               repeat_keysym,
                               keyboard->physical_modifiers |
@@ -236,14 +236,14 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
             }
             keyboard_repeat_trace(keyboard, "repeat-forward", keyboard->repeat_key,
                                   event.keysym, event.modifiers, event.unicode,
-                                  TYPIO_KEY_FORWARDED,
+                                  TYPIO_KEY_TRACK_FORWARDED,
                                   "engine not handled repeat");
             typio_wl_vk_forward_key(keyboard, keyboard->repeat_time,
                                     keyboard->repeat_key,
                                     WL_KEYBOARD_KEY_STATE_PRESSED,
                                     event.unicode);
             if (keyboard->repeat_key < TYPIO_WL_MAX_TRACKED_KEYS)
-                keyboard->frontend->key_states[keyboard->repeat_key] = TYPIO_KEY_FORWARDED;
+                keyboard->frontend->key_states[keyboard->repeat_key] = TYPIO_KEY_TRACK_FORWARDED;
         }
     }
 }

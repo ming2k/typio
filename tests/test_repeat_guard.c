@@ -63,15 +63,15 @@ TEST(ignores_shift_only_transitions) {
 
 TEST(blocks_repeat_for_suppressed_or_pending_states) {
     ASSERT(!typio_wl_repeat_should_run_for_state(
-        TYPIO_KEY_SUPPRESSED_STARTUP));
+        TYPIO_KEY_TRACK_SUPPRESSED_STARTUP));
     ASSERT(!typio_wl_repeat_should_run_for_state(
-        TYPIO_KEY_RELEASED_PENDING));
+        TYPIO_KEY_TRACK_RELEASED_PENDING));
 }
 
 TEST(allows_repeat_for_normal_owned_routes) {
-    ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_IDLE));
-    ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_FORWARDED));
-    ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_APP_SHORTCUT));
+    ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_TRACK_IDLE));
+    ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_TRACK_FORWARDED));
+    ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_TRACK_APP_SHORTCUT));
 }
 
 int main(void) {

@@ -62,26 +62,28 @@ current grab only if Typio observed its press in the current generation.
 
 States:
 
-- `TYPIO_KEY_IDLE`: no outstanding forwarded or suppressed state
-- `TYPIO_KEY_FORWARDED`: press was forwarded to the application
-- `TYPIO_KEY_APP_SHORTCUT`: non-modifier shortcut key intentionally bypassed the engine and was forwarded directly to the application
-- `TYPIO_KEY_RELEASED_PENDING`: Typio already sent a synthetic release and must consume the physical one
-- `TYPIO_KEY_SUPPRESSED_STARTUP`: stale held key from a previous grab
-- `TYPIO_KEY_SUPPRESSED_ENTER`: a new Enter press blocked by the startup Enter guard
+- `TYPIO_KEY_TRACK_IDLE`: no outstanding tracked ownership
+- `TYPIO_KEY_TRACK_FORWARDED`: press was forwarded to the application
+- `TYPIO_KEY_TRACK_APP_SHORTCUT`: non-modifier shortcut key bypassed the engine and was forwarded directly to the application
+- `TYPIO_KEY_TRACK_RELEASED_PENDING`: Typio already sent a synthetic release and must consume the physical one
+- `TYPIO_KEY_TRACK_SUPPRESSED_STARTUP`: stale held key from a previous grab
+- `TYPIO_KEY_TRACK_VOICE_PTT`: voice push-to-talk is actively held by Typio
+- `TYPIO_KEY_TRACK_VOICE_PTT_UNAVAIL`: voice push-to-talk binding was pressed, but voice is unavailable
 
 Maintenance rules:
 
-- only `TYPIO_KEY_FORWARDED` may produce forwarded releases during normal key-up
-- `TYPIO_KEY_APP_SHORTCUT` must forward both press and release without involving the engine
-- `TYPIO_KEY_RELEASED_PENDING` must be cleared by the matching physical release or by activation reset
-- `TYPIO_KEY_SUPPRESSED_STARTUP` may forward only a cleanup release
-- `TYPIO_KEY_SUPPRESSED_ENTER` must consume its release locally and must not forward it
+- only `TYPIO_KEY_TRACK_FORWARDED` may produce forwarded releases during normal key-up
+- `TYPIO_KEY_TRACK_APP_SHORTCUT` must forward both press and release without involving the engine
+- `TYPIO_KEY_TRACK_RELEASED_PENDING` must be cleared by the matching physical release or by activation reset
+- `TYPIO_KEY_TRACK_SUPPRESSED_STARTUP` may forward only a cleanup release
+- voice tracking states are internal consume paths and must not leak VK events
 - do not synthesize releases for forwarded non-modifier keys just because Ctrl, Alt, or Super changed
 - a release for a key whose press never reached Typio in the current generation
   is an orphan release and must be consumed locally, not sent to the engine or app
 
-Do not merge `SUPPRESSED_STARTUP` and `SUPPRESSED_ENTER` back into one state.
-They have different ownership and release semantics.
+Do not overload tracking state names with routing semantics. Final routing
+decisions now live in `TypioWlKeyDecision { action, reason }`; tracking states
+only record press/release ownership across lifecycle boundaries.
 
 ## Startup Guard Rules
 

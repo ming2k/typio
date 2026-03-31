@@ -233,7 +233,7 @@ void typio_wl_vk_forward_key(struct TypioWlKeyboard *keyboard,
 
     typio_wl_vk_mark_forward_progress(frontend);
     if (key < TYPIO_WL_MAX_TRACKED_KEYS &&
-        frontend->key_states[key] == TYPIO_KEY_RELEASED_PENDING) {
+        frontend->key_states[key] == TYPIO_KEY_TRACK_RELEASED_PENDING) {
         reason = "synthetic_release";
     }
     typio_wl_key_debug_format(unicode, unicode_desc, sizeof(unicode_desc));
@@ -302,8 +302,8 @@ void typio_wl_vk_release_forwarded_keys(TypioWlFrontend *frontend,
     use_generic_name = key_state_name == nullptr;
 
     for (size_t key = 0; key < TYPIO_WL_MAX_TRACKED_KEYS; key++) {
-        if (frontend->key_states[key] != TYPIO_KEY_FORWARDED &&
-            frontend->key_states[key] != TYPIO_KEY_APP_SHORTCUT)
+        if (frontend->key_states[key] != TYPIO_KEY_TRACK_FORWARDED &&
+            frontend->key_states[key] != TYPIO_KEY_TRACK_APP_SHORTCUT)
             continue;
 
         typio_wl_trace(frontend,

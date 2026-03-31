@@ -9,7 +9,7 @@
 #include "wl_frontend_internal.h"
 
 static inline TypioKeyTrackState key_get_state(TypioWlFrontend *fe, uint32_t key) {
-    return (key < TYPIO_WL_MAX_TRACKED_KEYS) ? fe->key_states[key] : TYPIO_KEY_IDLE;
+    return (key < TYPIO_WL_MAX_TRACKED_KEYS) ? fe->key_states[key] : TYPIO_KEY_TRACK_IDLE;
 }
 
 static inline void key_set_state(TypioWlFrontend *fe, uint32_t key,
@@ -36,7 +36,7 @@ static inline void key_claim_current_generation(TypioWlFrontend *fe, uint32_t ke
 }
 
 static inline void key_clear_tracking(TypioWlFrontend *fe, uint32_t key) {
-    key_set_state(fe, key, TYPIO_KEY_IDLE);
+    key_set_state(fe, key, TYPIO_KEY_TRACK_IDLE);
     key_set_generation(fe, key, 0);
 }
 

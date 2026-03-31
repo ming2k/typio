@@ -22,8 +22,8 @@ bool typio_wl_repeat_should_cancel_on_modifier_transition(
 
 bool typio_wl_repeat_should_run_for_state(TypioKeyTrackState state) {
     switch (state) {
-    case TYPIO_KEY_SUPPRESSED_STARTUP:
-    case TYPIO_KEY_RELEASED_PENDING:
+    case TYPIO_KEY_TRACK_SUPPRESSED_STARTUP:
+    case TYPIO_KEY_TRACK_RELEASED_PENDING:
         return false;
     default:
         return true;

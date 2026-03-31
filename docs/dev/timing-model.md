@@ -152,8 +152,17 @@ Application shortcuts are decided in the Wayland frontend.
 
 Rules:
 
+- routing decisions should be expressed as two independent dimensions:
+  final `action` (`consume` or `forward`) and `reason`
+- per-key tracking state such as `TRACK_FORWARDED` or `TRACK_APP_SHORTCUT` is lifecycle
+  history used for symmetric release handling, not the routing-decision model
 - non-modifier keys with Ctrl, Alt, or Super bypass the engine
 - the matching release must also bypass the engine
+- Typio-reserved shortcuts such as emergency exit or voice PTT are consumed
+  internally and must not be treated as virtual-keyboard forwarding cases
+- emergency exit is a highest-priority reserved decision on key press; its
+  side effects are to dump recent logs, release the keyboard grab, and stop
+  the frontend, not to forward any key through the virtual keyboard path
 - engines should not each implement their own shortcut bypass policy
 - `Ctrl+Shift` and similar modifier-only shortcuts are not Typio-owned input
   behavior and should remain transparent to the application/compositor path
