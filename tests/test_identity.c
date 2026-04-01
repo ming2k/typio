@@ -104,11 +104,57 @@ TEST(remember_active_engine_writes_identity_mapping) {
     typio_instance_free(instance);
 }
 
+TEST(remember_active_mode_writes_identity_mapping) {
+    char state_dir[] = "/tmp/typio-identity-memory-XXXXXX";
+    char *state_path;
+    char *encoded_key;
+    char *mode_engine_key;
+    char *mode_id_key;
+    TypioInstanceConfig config = {};
+    TypioInstance *instance;
+    TypioWlFrontend frontend = {};
+    TypioConfig *saved;
+
+    ASSERT(mkdtemp(state_dir) != NULL);
+    config.state_dir = state_dir;
+    instance = typio_instance_new_with_config(&config);
+    ASSERT(instance != NULL);
+
+    frontend.instance = instance;
+    frontend.current_identity.provider_name = typio_strdup("niri");
+    frontend.current_identity.app_id = typio_strdup("org.example.Editor");
+    frontend.current_identity.stable_key = typio_strdup("niri:org.example.Editor");
+
+    typio_wl_frontend_remember_active_mode(&frontend, "rime", "ascii");
+
+    state_path = typio_path_join(state_dir, "identity-engine-state.toml");
+    ASSERT(state_path != NULL);
+    saved = typio_config_load_file(state_path);
+    ASSERT(saved != NULL);
+
+    encoded_key = hex_encode("niri:org.example.Editor");
+    mode_engine_key = typio_strjoin3("identities.", encoded_key, ".mode_engine");
+    mode_id_key = typio_strjoin3("identities.", encoded_key, ".mode_id");
+    ASSERT(mode_engine_key != NULL);
+    ASSERT(mode_id_key != NULL);
+    ASSERT(strcmp(typio_config_get_string(saved, mode_engine_key, ""), "rime") == 0);
+    ASSERT(strcmp(typio_config_get_string(saved, mode_id_key, ""), "ascii") == 0);
+
+    free(state_path);
+    free(encoded_key);
+    free(mode_engine_key);
+    free(mode_id_key);
+    typio_config_free(saved);
+    typio_wl_identity_clear(&frontend.current_identity);
+    typio_instance_free(instance);
+}
+
 int main(void) {
     printf("Running identity tests:\n");
 
     run_test_parses_niri_focused_window_app_id();
     run_test_remember_active_engine_writes_identity_mapping();
+    run_test_remember_active_mode_writes_identity_mapping();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

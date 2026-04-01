@@ -81,6 +81,16 @@ typedef struct TypioEngineOps {
      * precedence.
      */
     const TypioEngineMode *(*get_mode)(TypioEngine *engine, TypioInputContext *ctx);
+
+    /**
+     * @brief Restore an engine-specific mode by @c mode_id (optional).
+     *
+     * The provided @c mode_id should come from a previously reported
+     * TypioEngineMode::mode_id value for the same engine.
+     */
+    TypioResult (*set_mode)(TypioEngine *engine,
+                            TypioInputContext *ctx,
+                            const char *mode_id);
 } TypioEngineOps;
 
 /**

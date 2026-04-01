@@ -305,6 +305,23 @@ TEST(basic_engine_settings_expose_printable_key_mode) {
     cleanup_control(&control);
 }
 
+TEST(keyboard_page_exposes_per_app_preferences_toggle) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    GtkWidget *engines_page;
+    GtkWidget *field;
+
+    setup_control(&control, root);
+
+    engines_page = control_build_engines_page(&control);
+    ASSERT_NOT_NULL(engines_page);
+    field = find_widget_by_name(engines_page, "field-keyboard-per-app-preferences");
+    ASSERT_NOT_NULL(field);
+    ASSERT(GTK_IS_SWITCH(field));
+
+    cleanup_control(&control);
+}
+
 TEST(keyboard_engine_binding_selects_engine_ids) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
@@ -374,6 +391,37 @@ TEST(basic_printable_key_mode_changes_update_buffer_immediately) {
     rendered = buffer_text(control.config_buffer);
     ASSERT(rendered != NULL);
     ASSERT(strstr(rendered, "printable_key_mode = \"commit\"") != NULL);
+    g_free(rendered);
+
+    cleanup_control(&control);
+}
+
+TEST(keyboard_per_app_preferences_changes_update_buffer_immediately) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    GtkWidget *engines_page;
+    GtkSwitch *toggle;
+    char *rendered;
+
+    setup_control(&control, root);
+    write_buffer(control.config_buffer,
+                 "default_engine = \"basic\"\n"
+                 "[keyboard]\n"
+                 "per_app_preferences = true\n");
+    control_sync_form_from_buffer(&control);
+
+    engines_page = control_build_engines_page(&control);
+    ASSERT_NOT_NULL(engines_page);
+    toggle = GTK_SWITCH(find_widget_by_name(engines_page,
+                                            "field-keyboard-per-app-preferences"));
+    ASSERT_NOT_NULL(toggle);
+
+    gtk_switch_set_active(toggle, FALSE);
+    on_display_switch_changed(G_OBJECT(toggle), NULL, &control);
+
+    rendered = buffer_text(control.config_buffer);
+    ASSERT(rendered != NULL);
+    ASSERT(strstr(rendered, "per_app_preferences = false") != NULL);
     g_free(rendered);
 
     cleanup_control(&control);
@@ -835,9 +883,11 @@ int main(void) {
     run_test_state_bindings_are_configured();
     run_test_engine_settings_use_separate_window();
     run_test_basic_engine_settings_expose_printable_key_mode();
+    run_test_keyboard_page_exposes_per_app_preferences_toggle();
     run_test_keyboard_engine_binding_selects_engine_ids();
     run_test_form_changes_update_buffer_immediately();
     run_test_basic_printable_key_mode_changes_update_buffer_immediately();
+    run_test_keyboard_per_app_preferences_changes_update_buffer_immediately();
     run_test_voice_model_selection_follows_staged_config();
     run_test_voice_backend_loads_selected_value_from_config();
     run_test_voice_backend_options_come_from_available_engines_not_ordered_engines();

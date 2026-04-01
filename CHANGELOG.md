@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-04-01
+
+### Added
+
+- **Per-application keyboard preferences**: Typio can now remember and restore
+  both the active keyboard engine and the engine-specific mode for each
+  focused-application identity, with runtime support for restoring Rime and
+  Mozc sub-modes.
+- **Keyboard preference toggle in control panel**: added a `Per-app
+  preferences` switch to the `Keyboard engines` page so per-application engine
+  and mode restore can be enabled or disabled without editing config files.
+- **Basic engine printable-key routing setting**: the built-in `basic` engine
+  now exposes a `Printable keys` control that hot-switches between forwarding
+  real key events and committing text directly.
+
+### Changed
+
+- **Basic engine passthrough routing**: printable keys routed through `basic`
+  now use an explicit passthrough tracking path, keeping symmetric
+  press/release forwarding without changing external engine routing semantics.
+- **Identity state storage**: focused-application state now stores structured
+  `engine`, `mode_engine`, and `mode_id` entries while still reading older
+  engine-only mappings for compatibility.
+
+### Fixed
+
+- **Rime Shift mode toggle regression**: restored the release path so forwarded
+  modifier keys still reach engine release handling, allowing `Shift` to toggle
+  Rime mode again.
+- **Control panel engine-order filtering**: stale non-keyboard entries such as
+  debug-only engines are now filtered out of the `Keyboard engines` ordering UI.
+- **Control widget warning cleanup**: removed the `-Wsign-conversion` warning in
+  control-panel slug generation.
+
 ## [2.5.2] - 2026-04-01
 
 ### Changed

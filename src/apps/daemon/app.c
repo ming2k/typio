@@ -205,6 +205,20 @@ static void typio_daemon_on_mode_change(TypioInstance *instance,
                                         const TypioEngineMode *mode,
                                         void *user_data) {
     TypioDaemonApp *app = user_data;
+    TypioEngineManager *manager;
+    TypioEngine *active;
+
+    if (app && app->instance) {
+        manager = typio_instance_get_engine_manager(app->instance);
+        active = manager ? typio_engine_manager_get_active(manager) : nullptr;
+#ifdef HAVE_WAYLAND
+        if (app->wl_frontend && active && mode && mode->mode_id && mode->mode_id[0]) {
+            typio_wl_frontend_remember_active_mode(app->wl_frontend,
+                                                   typio_engine_get_name(active),
+                                                   mode->mode_id);
+        }
+#endif
+    }
 
     (void) instance;
 

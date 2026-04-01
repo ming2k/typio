@@ -1070,6 +1070,70 @@ static const TypioEngineMode *mozc_get_mode(TypioEngine *engine,
     return mozc_mode_for_composition(session->mode);
 }
 
+static bool mozc_parse_mode_id(const char *mode_id,
+                               mozc::commands::CompositionMode *mode) {
+    if (!mode_id || !mode) {
+        return false;
+    }
+
+    if (strcmp(mode_id, "hiragana") == 0) {
+        *mode = mozc::commands::HIRAGANA;
+    } else if (strcmp(mode_id, "katakana") == 0) {
+        *mode = mozc::commands::FULL_KATAKANA;
+    } else if (strcmp(mode_id, "half_katakana") == 0) {
+        *mode = mozc::commands::HALF_KATAKANA;
+    } else if (strcmp(mode_id, "direct") == 0) {
+        *mode = mozc::commands::DIRECT;
+    } else if (strcmp(mode_id, "half_ascii") == 0) {
+        *mode = mozc::commands::HALF_ASCII;
+    } else if (strcmp(mode_id, "full_ascii") == 0) {
+        *mode = mozc::commands::FULL_ASCII;
+    } else {
+        return false;
+    }
+
+    return true;
+}
+
+static TypioResult mozc_set_mode(TypioEngine *engine,
+                                 TypioInputContext *ctx,
+                                 const char *mode_id) {
+    TypioMozcSession *session;
+    mozc::commands::CompositionMode mode;
+    mozc::commands::SessionCommand command;
+    mozc::commands::Output output;
+
+    if (!engine || !ctx || !mode_id || !*mode_id) {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!mozc_parse_mode_id(mode_id, &mode)) {
+        return TYPIO_ERROR_NOT_FOUND;
+    }
+
+    session = mozc_get_session(engine, ctx, false);
+    if (!session || !session->state || session->session_id == 0) {
+        return TYPIO_ERROR_NOT_INITIALIZED;
+    }
+
+    command.set_type(mozc::commands::SessionCommand::SWITCH_COMPOSITION_MODE);
+    command.set_composition_mode(mode);
+    if (!mozc_send_command(session->state, session->session_id, command, &output)) {
+        return TYPIO_ERROR;
+    }
+
+    mozc_update_session_mode(session, output);
+    mozc_sync_output(output, ctx, session);
+    if (engine->instance) {
+        const TypioEngineMode *current_mode = mozc_mode_for_composition(session->mode);
+        if (current_mode) {
+            typio_instance_notify_mode(engine->instance, current_mode);
+        }
+    }
+
+    return TYPIO_OK;
+}
+
 /* -- engine definition ---------------------------------------------------- */
 
 static const TypioEngineInfo mozc_engine_info = {
@@ -1098,6 +1162,7 @@ static const TypioEngineOps mozc_engine_ops = {
     .process_key = mozc_process_key,
     .reload_config = mozc_reload_config,
     .get_mode = mozc_get_mode,
+    .set_mode = mozc_set_mode,
 };
 #pragma GCC diagnostic pop
 /* clang-format on */

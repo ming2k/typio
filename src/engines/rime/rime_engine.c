@@ -908,6 +908,35 @@ static const TypioEngineMode *typio_rime_get_mode(TypioEngine *engine,
     return typio_rime_mode_for_ascii(session->ascii_mode);
 }
 
+static TypioResult typio_rime_set_mode(TypioEngine *engine,
+                                       TypioInputContext *ctx,
+                                       const char *mode_id) {
+    TypioRimeSession *session;
+    Bool ascii_mode;
+
+    if (!engine || !ctx || !mode_id || !*mode_id) {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    session = typio_rime_get_session(engine, ctx, true);
+    if (!session || !session->state || !session->state->api ||
+        !session->state->api->set_option) {
+        return TYPIO_ERROR_NOT_INITIALIZED;
+    }
+
+    if (strcmp(mode_id, "ascii") == 0) {
+        ascii_mode = True;
+    } else if (strcmp(mode_id, "chinese") == 0) {
+        ascii_mode = False;
+    } else {
+        return TYPIO_ERROR_NOT_FOUND;
+    }
+
+    session->state->api->set_option(session->session_id, "ascii_mode", ascii_mode);
+    typio_rime_notify_mode(engine, session, ascii_mode ? true : false);
+    return TYPIO_OK;
+}
+
 static const TypioEngineInfo typio_rime_engine_info = {
     .name = "rime",
     .display_name = "Rime",
@@ -931,6 +960,7 @@ static const TypioEngineOps typio_rime_engine_ops = {
     .process_key = typio_rime_process_key,
     .reload_config = typio_rime_reload_config,
     .get_mode = typio_rime_get_mode,
+    .set_mode = typio_rime_set_mode,
 };
 
 const TypioEngineInfo *typio_engine_get_info(void) {

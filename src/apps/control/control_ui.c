@@ -212,6 +212,7 @@ static GtkWidget *build_basic_config(TypioControl *control) {
 
 static GtkWidget *build_keyboard_section(TypioControl *control) {
     GtkWidget *box = control_create_panel_box_named("keyboard-section", 14);
+    GtkWidget *list = control_create_preferences_list_named("keyboard-preferences-list");
     GtkWidget *order_box;
     GtkWidget *order_editor;
     GtkWidget *order_mode_box;
@@ -226,6 +227,13 @@ static GtkWidget *build_keyboard_section(TypioControl *control) {
                    control_create_section_header_named("keyboard-header",
                                                        "Keyboard engines",
                                                        "Keyboard input is the primary engine category. Exactly one keyboard engine is active at a time, and it owns composition, candidates, and commit behavior."));
+
+    gtk_list_box_append(GTK_LIST_BOX(list),
+                        control_create_preference_row_named("keyboard-per-app-preferences-row",
+                                                            "Per-app preferences",
+                                                            "Remember and restore the keyboard engine together with its mode for each application identity.",
+                                                            create_bound_widget(control, "keyboard.per_app_preferences")));
+    gtk_box_append(GTK_BOX(box), list);
 
     control->engine_model = gtk_string_list_new(nullptr);
     control->engine_id_model = g_ptr_array_new_with_free_func(g_free);

@@ -27,6 +27,13 @@ static const TypioConfigField schema_fields[] = {
         .def.s = "",
         .runtime_property = TYPIO_STATUS_PROP_ACTIVE_KEYBOARD_ENGINE,
     },
+    {
+        .key = "keyboard.per_app_preferences",
+        .type = TYPIO_FIELD_BOOL,
+        .def.b = true,
+        .ui_label = "Per-app preferences",
+        .ui_section = "keyboard",
+    },
 
     /* --- Display (candidate popup) --- */
     {

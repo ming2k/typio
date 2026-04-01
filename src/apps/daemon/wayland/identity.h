@@ -35,6 +35,9 @@ void typio_wl_frontend_clear_identity(TypioWlFrontend *frontend);
 void typio_wl_frontend_restore_identity_engine(TypioWlFrontend *frontend);
 void typio_wl_frontend_remember_active_engine(TypioWlFrontend *frontend,
                                               const char *engine_name);
+void typio_wl_frontend_remember_active_mode(TypioWlFrontend *frontend,
+                                            const char *engine_name,
+                                            const char *mode_id);
 
 #ifdef __cplusplus
 }

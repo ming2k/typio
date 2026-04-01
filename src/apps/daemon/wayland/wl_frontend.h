@@ -86,6 +86,9 @@ void typio_wl_frontend_set_tray(TypioWlFrontend *frontend, void *tray);
 void typio_wl_frontend_set_status_bus(TypioWlFrontend *frontend, void *status_bus);
 void typio_wl_frontend_remember_active_engine(TypioWlFrontend *frontend,
                                               const char *engine_name);
+void typio_wl_frontend_remember_active_mode(TypioWlFrontend *frontend,
+                                            const char *engine_name,
+                                            const char *mode_id);
 
 #ifdef __cplusplus
 }

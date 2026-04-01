@@ -3,6 +3,10 @@
 default_engine = "basic"
 # default_voice_engine = "whisper"
 
+[keyboard]
+# Remember and restore the keyboard engine and engine mode per application.
+# per_app_preferences = true
+
 [display]
 popup_theme = "auto"
 candidate_layout = "horizontal"

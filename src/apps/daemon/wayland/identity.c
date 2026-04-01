@@ -87,31 +87,72 @@ static char *identity_config_key(const TypioWlIdentity *identity) {
     return key;
 }
 
+static char *identity_config_subkey(const TypioWlIdentity *identity,
+                                    const char *suffix) {
+    char *base;
+    char *key;
+
+    if (!suffix || !*suffix) {
+        return nullptr;
+    }
+
+    base = identity_config_key(identity);
+    if (!base) {
+        return nullptr;
+    }
+
+    key = typio_strjoin3(base, suffix, "");
+    free(base);
+    return key;
+}
+
+static bool identity_preferences_enabled(TypioInstance *instance) {
+    TypioConfig *config;
+
+    if (!instance) {
+        return false;
+    }
+
+    config = typio_instance_get_config(instance);
+    if (!config) {
+        return true;
+    }
+
+    return typio_config_get_bool(config, "keyboard.per_app_preferences", true);
+}
+
 static char *identity_memory_load_engine(TypioInstance *instance,
                                          const TypioWlIdentity *identity) {
     TypioConfig *config;
     char *path;
     char *key;
+    char *legacy_key;
     const char *engine_name;
     char *copy = nullptr;
 
     path = identity_state_path(instance);
-    key = identity_config_key(identity);
-    if (!path || !key) {
+    key = identity_config_subkey(identity, ".engine");
+    legacy_key = identity_config_key(identity);
+    if (!path || !key || !legacy_key) {
         free(path);
         free(key);
+        free(legacy_key);
         return nullptr;
     }
 
     config = typio_config_load_file(path);
     if (config) {
         engine_name = typio_config_get_string(config, key, NULL);
+        if (!engine_name || !*engine_name) {
+            engine_name = typio_config_get_string(config, legacy_key, NULL);
+        }
         copy = engine_name && *engine_name ? typio_strdup(engine_name) : nullptr;
         typio_config_free(config);
     }
 
     free(path);
     free(key);
+    free(legacy_key);
     return copy;
 }
 
@@ -121,15 +162,25 @@ static void identity_memory_store_engine(TypioInstance *instance,
     TypioConfig *config;
     char *path;
     char *key;
+    char *legacy_key;
+    char *mode_engine_key;
+    char *mode_id_key;
+    const char *stored_mode_engine;
 
     if (!instance || !identity || !engine_name || !*engine_name)
         return;
 
     path = identity_state_path(instance);
-    key = identity_config_key(identity);
-    if (!path || !key) {
+    key = identity_config_subkey(identity, ".engine");
+    legacy_key = identity_config_key(identity);
+    mode_engine_key = identity_config_subkey(identity, ".mode_engine");
+    mode_id_key = identity_config_subkey(identity, ".mode_id");
+    if (!path || !key || !legacy_key || !mode_engine_key || !mode_id_key) {
         free(path);
         free(key);
+        free(legacy_key);
+        free(mode_engine_key);
+        free(mode_id_key);
         return;
     }
 
@@ -139,14 +190,173 @@ static void identity_memory_store_engine(TypioInstance *instance,
     if (!config) {
         free(path);
         free(key);
+        free(legacy_key);
+        free(mode_engine_key);
+        free(mode_id_key);
         return;
     }
 
+    stored_mode_engine = typio_config_get_string(config, mode_engine_key, NULL);
     typio_config_set_string(config, key, engine_name);
+    typio_config_set_string(config, legacy_key, engine_name);
+    if (stored_mode_engine && *stored_mode_engine &&
+        !typio_str_equals(stored_mode_engine, engine_name)) {
+        typio_config_remove(config, mode_engine_key);
+        typio_config_remove(config, mode_id_key);
+    }
     typio_config_save_file(config, path);
     typio_config_free(config);
     free(path);
     free(key);
+    free(legacy_key);
+    free(mode_engine_key);
+    free(mode_id_key);
+}
+
+static bool identity_memory_load_mode(TypioInstance *instance,
+                                      const TypioWlIdentity *identity,
+                                      char **engine_name_out,
+                                      char **mode_id_out) {
+    TypioConfig *config;
+    char *path;
+    char *engine_key;
+    char *mode_key;
+    const char *engine_name;
+    const char *mode_id;
+    bool loaded = false;
+
+    if (engine_name_out) {
+        *engine_name_out = nullptr;
+    }
+    if (mode_id_out) {
+        *mode_id_out = nullptr;
+    }
+
+    path = identity_state_path(instance);
+    engine_key = identity_config_subkey(identity, ".mode_engine");
+    mode_key = identity_config_subkey(identity, ".mode_id");
+    if (!path || !engine_key || !mode_key) {
+        free(path);
+        free(engine_key);
+        free(mode_key);
+        return false;
+    }
+
+    config = typio_config_load_file(path);
+    if (config) {
+        engine_name = typio_config_get_string(config, engine_key, NULL);
+        mode_id = typio_config_get_string(config, mode_key, NULL);
+        if (engine_name && *engine_name && mode_id && *mode_id) {
+            if (engine_name_out) {
+                *engine_name_out = typio_strdup(engine_name);
+            }
+            if (mode_id_out) {
+                *mode_id_out = typio_strdup(mode_id);
+            }
+            loaded = true;
+        }
+        typio_config_free(config);
+    }
+
+    free(path);
+    free(engine_key);
+    free(mode_key);
+    return loaded;
+}
+
+static void identity_memory_store_mode(TypioInstance *instance,
+                                       const TypioWlIdentity *identity,
+                                       const char *engine_name,
+                                       const char *mode_id) {
+    TypioConfig *config;
+    char *path;
+    char *engine_key;
+    char *mode_key;
+
+    if (!instance || !identity || !engine_name || !*engine_name ||
+        !mode_id || !*mode_id) {
+        return;
+    }
+
+    path = identity_state_path(instance);
+    engine_key = identity_config_subkey(identity, ".mode_engine");
+    mode_key = identity_config_subkey(identity, ".mode_id");
+    if (!path || !engine_key || !mode_key) {
+        free(path);
+        free(engine_key);
+        free(mode_key);
+        return;
+    }
+
+    config = typio_config_load_file(path);
+    if (!config) {
+        config = typio_config_new();
+    }
+    if (!config) {
+        free(path);
+        free(engine_key);
+        free(mode_key);
+        return;
+    }
+
+    typio_config_set_string(config, engine_key, engine_name);
+    typio_config_set_string(config, mode_key, mode_id);
+    typio_config_save_file(config, path);
+    typio_config_free(config);
+    free(path);
+    free(engine_key);
+    free(mode_key);
+}
+
+static void identity_restore_mode(TypioWlFrontend *frontend) {
+    TypioEngineManager *manager;
+    TypioEngine *active;
+    TypioInputContext *ctx;
+    char *engine_name = nullptr;
+    char *mode_id = nullptr;
+    const TypioEngineMode *current_mode;
+
+    if (!frontend || !frontend->instance || !frontend->session ||
+        !frontend->session->ctx || !frontend->current_identity.stable_key) {
+        return;
+    }
+
+    if (!identity_memory_load_mode(frontend->instance,
+                                   &frontend->current_identity,
+                                   &engine_name,
+                                   &mode_id)) {
+        free(engine_name);
+        free(mode_id);
+        return;
+    }
+
+    manager = typio_instance_get_engine_manager(frontend->instance);
+    active = manager ? typio_engine_manager_get_active(manager) : nullptr;
+    ctx = frontend->session->ctx;
+    if (!active || !typio_str_equals(typio_engine_get_name(active), engine_name) ||
+        !active->ops || !active->ops->set_mode) {
+        free(engine_name);
+        free(mode_id);
+        return;
+    }
+
+    current_mode = active->ops->get_mode ? active->ops->get_mode(active, ctx) : nullptr;
+    if (current_mode && current_mode->mode_id &&
+        typio_str_equals(current_mode->mode_id, mode_id)) {
+        free(engine_name);
+        free(mode_id);
+        return;
+    }
+
+    if (active->ops->set_mode(active, ctx, mode_id) == TYPIO_OK) {
+        typio_log(TYPIO_LOG_INFO,
+                  "Restored keyboard mode %s for %s",
+                  mode_id,
+                  frontend->current_identity.stable_key);
+    }
+
+    free(engine_name);
+    free(mode_id);
 }
 
 static char *json_find_string_value(const char *json, const char *field_name) {
@@ -435,13 +645,15 @@ void typio_wl_frontend_restore_identity_engine(TypioWlFrontend *frontend) {
     TypioEngine *active;
     char *engine_name;
 
-    if (!frontend || !frontend->instance || !frontend->current_identity.stable_key)
+    if (!frontend || !frontend->instance || !frontend->current_identity.stable_key ||
+        !identity_preferences_enabled(frontend->instance))
         return;
 
     engine_name = identity_memory_load_engine(frontend->instance,
                                               &frontend->current_identity);
     if (!engine_name || !*engine_name) {
         free(engine_name);
+        identity_restore_mode(frontend);
         return;
     }
 
@@ -449,6 +661,7 @@ void typio_wl_frontend_restore_identity_engine(TypioWlFrontend *frontend) {
     active = manager ? typio_engine_manager_get_active(manager) : nullptr;
     if (active && typio_str_equals(typio_engine_get_name(active), engine_name)) {
         free(engine_name);
+        identity_restore_mode(frontend);
         return;
     }
 
@@ -460,12 +673,14 @@ void typio_wl_frontend_restore_identity_engine(TypioWlFrontend *frontend) {
     }
 
     free(engine_name);
+    identity_restore_mode(frontend);
 }
 
 void typio_wl_frontend_remember_active_engine(TypioWlFrontend *frontend,
                                               const char *engine_name) {
     if (!frontend || !frontend->instance || !engine_name || !*engine_name ||
-        !frontend->current_identity.stable_key) {
+        !frontend->current_identity.stable_key ||
+        !identity_preferences_enabled(frontend->instance)) {
         return;
     }
 
@@ -474,6 +689,26 @@ void typio_wl_frontend_remember_active_engine(TypioWlFrontend *frontend,
                                  engine_name);
     typio_log(TYPIO_LOG_INFO,
               "Remembered keyboard engine %s for %s",
+              engine_name,
+              frontend->current_identity.stable_key);
+}
+
+void typio_wl_frontend_remember_active_mode(TypioWlFrontend *frontend,
+                                            const char *engine_name,
+                                            const char *mode_id) {
+    if (!frontend || !frontend->instance || !engine_name || !*engine_name ||
+        !mode_id || !*mode_id || !frontend->current_identity.stable_key ||
+        !identity_preferences_enabled(frontend->instance)) {
+        return;
+    }
+
+    identity_memory_store_mode(frontend->instance,
+                               &frontend->current_identity,
+                               engine_name,
+                               mode_id);
+    typio_log(TYPIO_LOG_INFO,
+              "Remembered keyboard mode %s (%s) for %s",
+              mode_id,
               engine_name,
               frontend->current_identity.stable_key);
 }

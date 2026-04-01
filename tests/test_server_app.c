@@ -297,4 +297,7 @@ void typio_wl_frontend_set_status_bus([[maybe_unused]] TypioWlFrontend *frontend
                                       [[maybe_unused]] void *status_bus) {}
 void typio_wl_frontend_remember_active_engine([[maybe_unused]] TypioWlFrontend *frontend,
                                               [[maybe_unused]] const char *engine_name) {}
+void typio_wl_frontend_remember_active_mode([[maybe_unused]] TypioWlFrontend *frontend,
+                                            [[maybe_unused]] const char *engine_name,
+                                            [[maybe_unused]] const char *mode_id) {}
 #endif

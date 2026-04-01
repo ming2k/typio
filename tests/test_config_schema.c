@@ -64,6 +64,16 @@ TEST(schema_find_basic_route_mode) {
     ASSERT_NULL(f->runtime_property);
 }
 
+TEST(schema_find_keyboard_per_app_preferences) {
+    const TypioConfigField *f = typio_config_schema_find("keyboard.per_app_preferences");
+    ASSERT_NOT_NULL(f);
+    ASSERT_EQ(f->type, TYPIO_FIELD_BOOL);
+    ASSERT(f->def.b);
+    ASSERT_STR_EQ(f->ui_label, "Per-app preferences");
+    ASSERT_STR_EQ(f->ui_section, "keyboard");
+    ASSERT_NULL(f->runtime_property);
+}
+
 TEST(schema_find_missing) {
     const TypioConfigField *f = typio_config_schema_find("nonexistent.key");
     ASSERT_NULL(f);
@@ -99,6 +109,7 @@ TEST(apply_defaults_empty_config) {
     ASSERT_STR_EQ(typio_config_get_string(config, "display.candidate_layout", ""), "horizontal");
     ASSERT_STR_EQ(typio_config_get_string(config, "engines.basic.printable_key_mode", ""),
                   "forward");
+    ASSERT(typio_config_get_bool(config, "keyboard.per_app_preferences", false));
     ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.switch_engine", ""), "Ctrl+Shift");
     ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.emergency_exit", ""), "Ctrl+Shift+Escape");
     ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.voice_ptt", ""), "Super+v");
@@ -184,6 +195,7 @@ int main(void) {
 
     run_test_schema_find_existing();
     run_test_schema_find_basic_route_mode();
+    run_test_schema_find_keyboard_per_app_preferences();
     run_test_schema_find_missing();
     run_test_schema_find_null();
     run_test_runtime_property_lookup();
