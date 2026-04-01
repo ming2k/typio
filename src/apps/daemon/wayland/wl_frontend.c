@@ -192,6 +192,8 @@ static void frontend_fill_runtime_state(void *user_data,
     state->keyboard_grab_active = frontend->keyboard && frontend->keyboard->grab;
     state->virtual_keyboard_has_keymap = frontend->virtual_keyboard_has_keymap;
     state->watchdog_armed = atomic_load(&frontend->watchdog_armed);
+    state->active_key_generation = frontend->active_key_generation;
+    state->virtual_keyboard_keymap_generation = frontend->virtual_keyboard_keymap_generation;
     state->virtual_keyboard_drop_count =
         frontend->virtual_keyboard_drop_count > UINT32_MAX
             ? UINT32_MAX

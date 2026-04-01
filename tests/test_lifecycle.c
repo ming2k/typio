@@ -82,6 +82,13 @@ TEST(defers_activate_only_for_already_focused_session) {
     ASSERT(!typio_wl_lifecycle_should_defer_activate(false));
 }
 
+TEST(cleans_up_deactivation_only_at_done_boundary) {
+    ASSERT(typio_wl_lifecycle_should_cleanup_on_done(true, false));
+    ASSERT(!typio_wl_lifecycle_should_cleanup_on_done(true, true));
+    ASSERT(!typio_wl_lifecycle_should_cleanup_on_done(false, false));
+    ASSERT(!typio_wl_lifecycle_should_cleanup_on_done(false, true));
+}
+
 TEST(commits_reactivation_only_for_active_to_active_done_boundary) {
     ASSERT(typio_wl_lifecycle_should_commit_reactivation(true, true, true));
     ASSERT(!typio_wl_lifecycle_should_commit_reactivation(false, true, true));
@@ -98,6 +105,7 @@ int main(void) {
     run_test_only_active_phase_allows_key_events();
     run_test_activating_and_active_phases_allow_modifier_events();
     run_test_defers_activate_only_for_already_focused_session();
+    run_test_cleans_up_deactivation_only_at_done_boundary();
     run_test_commits_reactivation_only_for_active_to_active_done_boundary();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);

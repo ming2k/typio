@@ -326,7 +326,7 @@ TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend) {
                                                     keyboard);
 
     typio_wl_trace(frontend, "grab", "action=create status=ok");
-    typio_log(TYPIO_LOG_INFO, "Keyboard grab created");
+    typio_log(TYPIO_LOG_DEBUG, "Keyboard grab created");
     typio_wl_frontend_emit_runtime_state_changed(frontend);
     return keyboard;
 }

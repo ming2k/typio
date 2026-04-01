@@ -22,6 +22,8 @@ typedef struct TypioStatusRuntimeState {
     bool keyboard_grab_active;
     bool virtual_keyboard_has_keymap;
     bool watchdog_armed;
+    uint32_t active_key_generation;
+    uint32_t virtual_keyboard_keymap_generation;
     uint32_t virtual_keyboard_drop_count;
     uint32_t virtual_keyboard_state_age_ms;
     uint32_t virtual_keyboard_keymap_age_ms;

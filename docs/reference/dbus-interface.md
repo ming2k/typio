@@ -81,6 +81,8 @@ whenever the engine's mode changes.
 | `keyboard_grab_active` | `b` | Whether keyboard is grabbed |
 | `virtual_keyboard_has_keymap` | `b` | Keymap loaded |
 | `watchdog_armed` | `b` | Watchdog status |
+| `active_key_generation` | `u` | Current keyboard-grab generation |
+| `virtual_keyboard_keymap_generation` | `u` | Generation that most recently delivered a keymap |
 | `virtual_keyboard_drop_count` | `u` | Dropped key count |
 | `virtual_keyboard_state_age_ms` | `u` | State age in ms |
 | `virtual_keyboard_keymap_age_ms` | `u` | Keymap age in ms |

@@ -156,6 +156,9 @@ The most useful `RuntimeState` fields for troubleshooting are:
 - `virtual_keyboard_state`: `ready`, `needs_keymap`, `broken`, or `absent`
 - `virtual_keyboard_has_keymap`: whether a compositor keymap has reached the
   virtual keyboard path
+- `active_key_generation`: the current keyboard-grab generation
+- `virtual_keyboard_keymap_generation`: which generation most recently reached
+  the virtual keyboard keymap path
 - `virtual_keyboard_drop_count`: how many forwarded events were dropped because
   vk was not ready
 - `virtual_keyboard_state_age_ms`: how long the current vk state has been held

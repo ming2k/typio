@@ -135,6 +135,36 @@ Within the Wayland daemon, responsibilities are intentionally split by layer:
 - `wl_frontend.c`
   Owns frontend construction, registry/global binding, and teardown glue.
 
+Observability ownership follows the same boundary split:
+
+- `wl_input_method.c`
+  Owns lifecycle-edge logs for `activate`, `deactivate`, `done`, focus-in, and
+  focus-out decisions.
+- `lifecycle.c`
+  Owns hard-reset boundary logs and the reason a keyboard generation is torn
+  down.
+- `vk_bridge.*`
+  Owns virtual-keyboard health logs: state transitions, keymap wait/timeout,
+  drop escalation, and fail-safe stop reasons.
+- `wl_keyboard.c`
+  Owns per-event keyboard and modifier sequencing traces, but these should stay
+  in `debug` unless an invariant is violated.
+- `wl_event_loop.c`
+  Owns watchdog, poll/dispatch, and display-connection failure logs.
+- D-Bus status export
+  Owns `RuntimeState` publication only. It mirrors frontend truth for live
+  inspection and must not invent or reinterpret event history.
+
+Design rules for logging:
+
+- one boundary owner should emit the primary `info` summary for a state change
+- helper layers may add `debug` detail, but should not duplicate the same
+  high-level event at `info`
+- repeated high-frequency paths should prefer `debug` traces plus aggregated
+  `warning` summaries over per-event `info` spam
+- `RuntimeState` is the authoritative live snapshot, while logs are the ordered
+  event history used to explain how the frontend reached that snapshot
+
 This document only defines the structural split. Detailed timing rules,
 runtime-state authority, and control-surface binding rules live in:
 

@@ -12,11 +12,85 @@
 #include "utils/log.h"
 
 #include <inttypes.h>
+#include <string.h>
 #include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
 
 #define TYPIO_WL_VK_NEEDS_KEYMAP_DROP_LIMIT 32
 #define TYPIO_WL_VK_KEYMAP_TIMEOUT_MS 1500
+#define TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_WINDOW_MS 30000
+#define TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_THRESHOLD 3
+#define TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_INTERVAL 5
+
+static bool typio_wl_vk_has_current_generation_keymap(TypioWlFrontend *frontend) {
+    return frontend && frontend->active_key_generation != 0 &&
+           frontend->virtual_keyboard_keymap_generation ==
+               frontend->active_key_generation;
+}
+
+static bool typio_wl_vk_reason_is_keymap_cancel(const char *reason) {
+    return reason &&
+           (strcmp(reason, "keyboard grab cleared before keymap") == 0 ||
+            strcmp(reason, "keymap wait cancelled") == 0);
+}
+
+static TypioLogLevel typio_wl_vk_state_log_level(TypioWlVirtualKeyboardState state,
+                                                 const char *reason) {
+    if (state == TYPIO_WL_VK_STATE_BROKEN) {
+        return TYPIO_LOG_ERROR;
+    }
+    if (state == TYPIO_WL_VK_STATE_ABSENT) {
+        return TYPIO_LOG_WARNING;
+    }
+    if (state == TYPIO_WL_VK_STATE_READY &&
+        typio_wl_vk_reason_is_keymap_cancel(reason)) {
+        return TYPIO_LOG_DEBUG;
+    }
+    return TYPIO_LOG_INFO;
+}
+
+static void typio_wl_vk_record_keymap_cancel(TypioWlFrontend *frontend,
+                                             const char *reason) {
+    uint64_t now_ms;
+    uint64_t count;
+    uint64_t window_ms;
+
+    if (!frontend || !typio_wl_vk_reason_is_keymap_cancel(reason)) {
+        return;
+    }
+
+    now_ms = typio_wl_monotonic_ms();
+    if (frontend->virtual_keyboard_keymap_cancel_window_start_ms == 0 ||
+        now_ms - frontend->virtual_keyboard_keymap_cancel_window_start_ms >
+            TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_WINDOW_MS) {
+        frontend->virtual_keyboard_keymap_cancel_window_start_ms = now_ms;
+        frontend->virtual_keyboard_keymap_cancel_count = 0;
+    }
+
+    frontend->virtual_keyboard_keymap_cancel_count++;
+    count = frontend->virtual_keyboard_keymap_cancel_count;
+    window_ms = now_ms - frontend->virtual_keyboard_keymap_cancel_window_start_ms;
+
+    typio_log(TYPIO_LOG_DEBUG,
+              "Virtual keyboard keymap wait cancelled: reason=%s count=%" PRIu64
+              " window_ms=%" PRIu64,
+              reason, count, window_ms);
+
+    if (count < TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_THRESHOLD) {
+        return;
+    }
+    if (count != TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_THRESHOLD &&
+        ((count - TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_THRESHOLD) %
+         TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_INTERVAL) != 0) {
+        return;
+    }
+
+    typio_log(TYPIO_LOG_WARNING,
+              "Repeated virtual keyboard keymap cancellations before readiness: "
+              "count=%" PRIu64 " window_ms=%" PRIu64 " state=%s",
+              count, window_ms,
+              typio_wl_vk_state_name(frontend->virtual_keyboard_state));
+}
 
 static void typio_wl_vk_mark_forward_progress(TypioWlFrontend *frontend) {
     if (!frontend) {
@@ -64,7 +138,9 @@ void typio_wl_vk_set_state(TypioWlFrontend *frontend,
     previous = frontend->virtual_keyboard_state;
     frontend->virtual_keyboard_state = state;
     frontend->virtual_keyboard_state_since_ms = now_ms;
-    frontend->virtual_keyboard_has_keymap = state == TYPIO_WL_VK_STATE_READY;
+    frontend->virtual_keyboard_has_keymap =
+        state == TYPIO_WL_VK_STATE_READY &&
+        typio_wl_vk_has_current_generation_keymap(frontend);
     if (state == TYPIO_WL_VK_STATE_READY || state == TYPIO_WL_VK_STATE_BROKEN ||
         state == TYPIO_WL_VK_STATE_ABSENT) {
         frontend->virtual_keyboard_keymap_deadline_ms = 0;
@@ -81,11 +157,7 @@ void typio_wl_vk_set_state(TypioWlFrontend *frontend,
                    reason ? reason : "no reason",
                    frontend->virtual_keyboard_drop_count);
 
-    level = TYPIO_LOG_INFO;
-    if (state == TYPIO_WL_VK_STATE_ABSENT)
-        level = TYPIO_LOG_WARNING;
-    else if (state == TYPIO_WL_VK_STATE_BROKEN)
-        level = TYPIO_LOG_ERROR;
+    level = typio_wl_vk_state_log_level(state, reason);
 
     typio_log(level,
               "Virtual keyboard state changed: %s -> %s (%s, dropped=%" PRIu64 ")",
@@ -123,7 +195,9 @@ void typio_wl_vk_cancel_keymap_wait(TypioWlFrontend *frontend,
         return;
     }
 
-    if (frontend->virtual_keyboard_last_keymap_ms != 0) {
+    typio_wl_vk_record_keymap_cancel(frontend, reason);
+
+    if (typio_wl_vk_has_current_generation_keymap(frontend)) {
         typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_READY,
                               reason ? reason : "keymap wait cancelled");
         return;
@@ -165,7 +239,7 @@ bool typio_wl_vk_is_ready(TypioWlFrontend *frontend,
 
     if (frontend->virtual_keyboard &&
         frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_NEEDS_KEYMAP &&
-        frontend->virtual_keyboard_has_keymap) {
+        typio_wl_vk_has_current_generation_keymap(frontend)) {
         typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_READY,
                               "keymap available");
     }
@@ -368,6 +442,7 @@ void typio_wl_vk_forward_keymap(TypioWlFrontend *frontend,
 
     zwp_virtual_keyboard_v1_keymap(frontend->virtual_keyboard, format, vk_fd, size);
     frontend->virtual_keyboard_last_keymap_ms = typio_wl_monotonic_ms();
+    frontend->virtual_keyboard_keymap_generation = frontend->active_key_generation;
     typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_READY,
                           "received compositor keymap");
     typio_wl_trace(frontend,

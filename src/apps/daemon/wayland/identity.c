@@ -424,7 +424,7 @@ void typio_wl_frontend_refresh_identity(TypioWlFrontend *frontend) {
     }
 
     frontend->current_identity = identity;
-    typio_log(TYPIO_LOG_INFO,
+    typio_log(TYPIO_LOG_DEBUG,
               "Focused app identity: provider=%s app_id=%s",
               frontend->current_identity.provider_name,
               frontend->current_identity.app_id);

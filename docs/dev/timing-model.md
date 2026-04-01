@@ -83,6 +83,28 @@ The status D-Bus surface exports this state, but does not own it. Runtime
 state reported through `RuntimeState` is a read-only snapshot of frontend
 truth, not an independent source of truth.
 
+## Observability Contract
+
+Logs and `RuntimeState` serve different purposes and must stay explicitly
+layered:
+
+- `RuntimeState` is the authoritative live snapshot for current frontend truth
+- logs are the ordered event history that explains how the frontend reached
+  that truth
+- trace topics are a `debug` surface, not a second state model
+
+Responsibility split:
+
+- lifecycle-edge summaries belong to `wl_input_method.c`
+- hard-reset boundary and teardown-cause logs belong to `lifecycle.c`
+- virtual-keyboard health and fail-safe logs belong to `vk_bridge.*`
+- per-key sequencing and modifier-path traces belong to `wl_keyboard.c`
+- watchdog and dispatch-path logs belong to `wl_event_loop.c`
+
+Do not duplicate one transition across multiple layers at the same log level.
+If a helper needs to explain why a boundary owner made a decision, prefer
+`debug` detail in the helper and one `info` summary at the boundary owner.
+
 ## Virtual Keyboard State Machine
 
 The Wayland frontend treats virtual-keyboard health as an explicit state
@@ -210,6 +232,8 @@ The highest-value fields for timing diagnosis are:
 - `keyboard_grab_active`
 - `virtual_keyboard_state`
 - `virtual_keyboard_has_keymap`
+- `active_key_generation`
+- `virtual_keyboard_keymap_generation`
 - `virtual_keyboard_drop_count`
 - `virtual_keyboard_state_age_ms`
 - `virtual_keyboard_keymap_deadline_remaining_ms`
@@ -227,6 +251,50 @@ like:
 If instead you see `keyboard_grab_active=true` with
 `virtual_keyboard_state=needs_keymap`, treat that as a primary clue that the
 grab-to-keymap-to-vk chain did not close properly.
+
+## Log Level Policy
+
+Typio's runtime logging should be intentionally stratified:
+
+- `debug`
+  Per-event sequencing, repeated grab/keymap churn details, `done` decision
+  inputs, key-routing internals, and trace-topic output intended for focused
+  debugging sessions.
+- `info`
+  Low-frequency, user-relevant state boundaries: successful focus changes,
+  grab creation/destruction summaries, virtual-keyboard generation transitions,
+  recovery to `ready`, and other durable state changes that are useful even
+  without `--verbose`.
+- `warning`
+  Recoverable anomalies or degraded-but-running states: repeated grab rebuilds,
+  repeated keymap cancellation before readiness, growing drop counts, unusual
+  lifecycle transitions, or fallback paths that may explain user-visible
+  glitches.
+- `error`
+  Fail-safe entry, timeout-triggered shutdown, broken invariants, display or
+  protocol failures that stop forwarding, and any condition that leaves the
+  frontend unable to continue normal service.
+
+Operational rules:
+
+- a high-frequency path should not emit one `info` line per event just because
+  the event is meaningful during debugging
+- repeated anomalies should prefer one aggregated `warning` summary plus
+  `debug` detail rather than a flood of repeated `info`
+- `info` should answer "what durable boundary did the frontend just cross?"
+- `debug` should answer "why did that boundary happen and in what sequence?"
+- if an event would only be actionable when correlated with nearby state or
+  generation detail, it belongs in `debug`
+
+Applied to the virtual-keyboard chain:
+
+- `ready -> needs_keymap` and final recovery to `ready` are good `info`
+  boundaries
+- each intermediate reactivation cause, `done` decision input, or repeated
+  `keyboard grab cleared before keymap` instance is `debug`
+- once repeated cancellation becomes an anomaly pattern, emit a summarized
+  `warning`
+- entering fail-safe stop remains `error`
 
 ## Trace Capture
 

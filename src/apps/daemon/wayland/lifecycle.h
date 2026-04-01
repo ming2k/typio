@@ -29,6 +29,8 @@ bool typio_wl_lifecycle_phase_allows_key_events(TypioWlLifecyclePhase phase);
 bool typio_wl_lifecycle_phase_allows_modifier_events(
     TypioWlLifecyclePhase phase);
 bool typio_wl_lifecycle_should_defer_activate(bool session_focused);
+bool typio_wl_lifecycle_should_cleanup_on_done(bool was_active,
+                                               bool now_active);
 bool typio_wl_lifecycle_should_commit_reactivation(bool pending_reactivation,
                                                    bool was_active,
                                                    bool now_active);

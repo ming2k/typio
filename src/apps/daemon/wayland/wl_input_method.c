@@ -322,7 +322,10 @@ static void im_handle_deactivate(void *data, [[maybe_unused]] struct zwp_input_m
     trace_session_state(frontend, "deactivate_begin");
     set_pending_reactivation(frontend, false);
     typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_DEACTIVATING, "deactivate event");
-    typio_wl_lifecycle_hard_reset_keyboard(frontend, "deactivate event");
+    typio_wl_trace(frontend,
+                   "lifecycle",
+                   "action=defer_hard_reset reason=deactivate event phase=%s",
+                   typio_wl_lifecycle_phase_name(frontend->lifecycle_phase));
 
     if (frontend->session) {
         frontend->session->pending.active = false;
@@ -392,6 +395,8 @@ static void im_handle_done(void *data, [[maybe_unused]] struct zwp_input_method_
     trace_session_state(frontend, "done_begin");
     bool was_active = session_is_focused(frontend);
     bool now_active = frontend->session->pending.active;
+    bool needs_cleanup = typio_wl_lifecycle_should_cleanup_on_done(was_active,
+                                                                   now_active);
     needs_reactivation = typio_wl_lifecycle_should_commit_reactivation(
         frontend->pending_reactivation, was_active, now_active);
 
@@ -463,7 +468,7 @@ static void im_handle_done(void *data, [[maybe_unused]] struct zwp_input_method_
                                      "reactivation complete");
         set_pending_reactivation(frontend, false);
         trace_session_state(frontend, "done_reactivation_complete");
-    } else if (!now_active && was_active) {
+    } else if (needs_cleanup) {
         typio_log(TYPIO_LOG_INFO, "Input context unfocused");
         typio_wl_text_ui_reset_tracking(&frontend->popup_update_pending,
                                         &frontend->session->last_preedit_text,

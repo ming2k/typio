@@ -362,6 +362,10 @@ static dbus_bool_t append_runtime_state_dict(DBusMessageIter *iter,
                                            state.virtual_keyboard_has_keymap ? TRUE : FALSE) &&
          typio_dbus_append_dict_entry_bool(&dict, "watchdog_armed",
                                            state.watchdog_armed ? TRUE : FALSE) &&
+         typio_dbus_append_dict_entry_uint32(&dict, "active_key_generation",
+                                             state.active_key_generation) &&
+         typio_dbus_append_dict_entry_uint32(&dict, "virtual_keyboard_keymap_generation",
+                                             state.virtual_keyboard_keymap_generation) &&
          typio_dbus_append_dict_entry_uint32(&dict, "virtual_keyboard_drop_count",
                                              state.virtual_keyboard_drop_count) &&
          typio_dbus_append_dict_entry_uint32(&dict, "virtual_keyboard_state_age_ms",

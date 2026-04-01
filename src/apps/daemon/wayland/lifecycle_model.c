@@ -53,6 +53,11 @@ bool typio_wl_lifecycle_should_defer_activate(bool session_focused) {
     return session_focused;
 }
 
+bool typio_wl_lifecycle_should_cleanup_on_done(bool was_active,
+                                               bool now_active) {
+    return was_active && !now_active;
+}
+
 bool typio_wl_lifecycle_should_commit_reactivation(bool pending_reactivation,
                                                    bool was_active,
                                                    bool now_active) {

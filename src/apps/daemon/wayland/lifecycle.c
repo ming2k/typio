@@ -42,6 +42,7 @@ void typio_wl_lifecycle_hard_reset_keyboard(TypioWlFrontend *frontend,
                                             const char *reason) {
     bool own_current_generation;
     bool carry_vk_modifiers = false;
+    bool had_keyboard;
 
     if (!frontend)
         return;
@@ -52,6 +53,14 @@ void typio_wl_lifecycle_hard_reset_keyboard(TypioWlFrontend *frontend,
                    reason ? reason : "no reason");
 
     own_current_generation = frontend->active_generation_owned_keys;
+    had_keyboard = frontend->keyboard != nullptr;
+    typio_log(TYPIO_LOG_DEBUG,
+              "Hard reset keyboard boundary: reason=%s phase=%s own_generation=%s "
+              "keyboard=%s",
+              reason ? reason : "no reason",
+              typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
+              own_current_generation ? "yes" : "no",
+              had_keyboard ? "yes" : "no");
 
     if (typio_wl_boundary_bridge_should_reset_carried_modifiers(
             frontend->lifecycle_phase,

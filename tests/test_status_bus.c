@@ -53,6 +53,8 @@ typedef struct TestRuntimeStateFixture {
     const char *backend;
     const char *phase;
     const char *vk_state;
+    uint32_t active_key_generation;
+    uint32_t keymap_generation;
 } TestRuntimeStateFixture;
 
 static void sleep_briefly(void) {
@@ -244,6 +246,44 @@ static bool dict_contains_string(DBusMessageIter *dict,
     return false;
 }
 
+static bool dict_contains_uint32(DBusMessageIter *dict,
+                                   const char *key,
+                                   uint32_t expected) {
+    DBusMessageIter entry;
+
+    while (dbus_message_iter_get_arg_type(dict) == DBUS_TYPE_DICT_ENTRY) {
+        DBusMessageIter kv;
+        DBusMessageIter variant;
+        const char *entry_key = nullptr;
+        dbus_uint32_t entry_val = 0;
+
+        dbus_message_iter_recurse(dict, &entry);
+        kv = entry;
+        if (dbus_message_iter_get_arg_type(&kv) != DBUS_TYPE_STRING) {
+            dbus_message_iter_next(dict);
+            continue;
+        }
+
+        dbus_message_iter_get_basic(&kv, &entry_key);
+        dbus_message_iter_next(&kv);
+        if (dbus_message_iter_get_arg_type(&kv) != DBUS_TYPE_VARIANT) {
+            dbus_message_iter_next(dict);
+            continue;
+        }
+
+        dbus_message_iter_recurse(&kv, &variant);
+        if (strcmp(entry_key, key) == 0 &&
+            dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_UINT32) {
+            dbus_message_iter_get_basic(&variant, &entry_val);
+            return entry_val == expected;
+        }
+
+        dbus_message_iter_next(dict);
+    }
+
+    return false;
+}
+
 static bool dict_contains_string_dict_entry(DBusMessageIter *dict,
                                             const char *key,
                                             const char *entry_key,
@@ -407,6 +447,42 @@ static bool reply_contains_string_dict_entry(DBusMessage *reply,
     return dict_contains_string_dict_entry(&dict, key, entry_key, expected);
 }
 
+static bool reply_contains_uint32_dict_entry(DBusMessage *reply,
+                                             const char *key,
+                                             const char *entry_key,
+                                             uint32_t expected) {
+    DBusMessageIter iter;
+    DBusMessageIter dict;
+    DBusMessageIter entry;
+
+    ASSERT(dbus_message_iter_init(reply, &iter));
+    ASSERT(dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_ARRAY);
+    dbus_message_iter_recurse(&iter, &dict);
+
+    while (dbus_message_iter_get_arg_type(&dict) == DBUS_TYPE_DICT_ENTRY) {
+        DBusMessageIter kv;
+        DBusMessageIter variant;
+        DBusMessageIter state_dict;
+        const char *outer_key = nullptr;
+
+        dbus_message_iter_recurse(&dict, &entry);
+        kv = entry;
+        dbus_message_iter_get_basic(&kv, &outer_key);
+        dbus_message_iter_next(&kv);
+        dbus_message_iter_recurse(&kv, &variant);
+
+        if (strcmp(outer_key, key) == 0 &&
+            dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_ARRAY) {
+            dbus_message_iter_recurse(&variant, &state_dict);
+            return dict_contains_uint32(&state_dict, entry_key, expected);
+        }
+
+        dbus_message_iter_next(&dict);
+    }
+
+    return false;
+}
+
 static TypioResult mock_init(TypioEngine *engine, [[maybe_unused]] TypioInstance *instance) {
     engine->active = true;
     return TYPIO_OK;
@@ -461,6 +537,8 @@ static void mock_runtime_state_callback(void *user_data,
     state->keyboard_grab_active = true;
     state->virtual_keyboard_has_keymap = true;
     state->watchdog_armed = true;
+    state->active_key_generation = fixture->active_key_generation;
+    state->virtual_keyboard_keymap_generation = fixture->keymap_generation;
     state->virtual_keyboard_drop_count = 7;
     state->virtual_keyboard_state_age_ms = 42;
     state->virtual_keyboard_keymap_age_ms = 5;
@@ -515,6 +593,8 @@ TEST(exports_basic_engine_state_and_emits_change_signal) {
         .backend = "wayland",
         .phase = "active",
         .vk_state = "ready",
+        .active_key_generation = 11,
+        .keymap_generation = 11,
     };
 
     bus_proc = start_test_bus();
@@ -560,6 +640,10 @@ TEST(exports_basic_engine_state_and_emits_change_signal) {
                                             "lifecycle_phase", "active"));
     ASSERT(reply_contains_string_dict_entry(reply, TYPIO_STATUS_PROP_RUNTIME_STATE,
                                             "virtual_keyboard_state", "ready"));
+    ASSERT(reply_contains_uint32_dict_entry(reply, TYPIO_STATUS_PROP_RUNTIME_STATE,
+                                            "active_key_generation", 11));
+    ASSERT(reply_contains_uint32_dict_entry(reply, TYPIO_STATUS_PROP_RUNTIME_STATE,
+                                            "virtual_keyboard_keymap_generation", 11));
     dbus_message_unref(reply);
 
     reply = call_status_method(client, bus, TYPIO_STATUS_METHOD_ACTIVATE_ENGINE, "basic");

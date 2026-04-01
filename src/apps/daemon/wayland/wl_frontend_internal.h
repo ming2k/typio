@@ -193,7 +193,10 @@ struct TypioWlFrontend {
     struct zwp_virtual_keyboard_v1 *virtual_keyboard;
     TypioWlVirtualKeyboardState virtual_keyboard_state;
     bool virtual_keyboard_has_keymap;
+    uint32_t virtual_keyboard_keymap_generation;
     uint64_t virtual_keyboard_drop_count;
+    uint64_t virtual_keyboard_keymap_cancel_count;
+    uint64_t virtual_keyboard_keymap_cancel_window_start_ms;
     uint64_t virtual_keyboard_state_since_ms;
     uint64_t virtual_keyboard_last_keymap_ms;
     uint64_t virtual_keyboard_last_forward_ms;

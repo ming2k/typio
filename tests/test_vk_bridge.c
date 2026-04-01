@@ -87,6 +87,7 @@ static void init_frontend(TypioWlFrontend *frontend, TypioWlKeyboard *keyboard) 
     keyboard->frontend = frontend;
     frontend->keyboard = keyboard;
     frontend->virtual_keyboard = (struct zwp_virtual_keyboard_v1 *)0x1;
+    frontend->active_key_generation = 1;
     frontend->running = true;
     frontend->virtual_keyboard_state = TYPIO_WL_VK_STATE_ABSENT;
 }
@@ -110,6 +111,7 @@ TEST(ready_state_clears_deadline_and_marks_keymap_present) {
 
     init_frontend(&frontend, &keyboard);
     frontend.virtual_keyboard_keymap_deadline_ms = 1234;
+    frontend.virtual_keyboard_keymap_generation = frontend.active_key_generation;
 
     typio_wl_vk_set_state(&frontend, TYPIO_WL_VK_STATE_READY, "test");
 
@@ -155,12 +157,31 @@ TEST(cancelling_keymap_wait_restores_ready_state_after_grab_teardown) {
     init_frontend(&frontend, &keyboard);
     frontend.virtual_keyboard_state = TYPIO_WL_VK_STATE_NEEDS_KEYMAP;
     frontend.virtual_keyboard_keymap_deadline_ms = 1234;
+    frontend.virtual_keyboard_keymap_generation = frontend.active_key_generation;
     frontend.virtual_keyboard_last_keymap_ms = 42;
 
     typio_wl_vk_cancel_keymap_wait(&frontend, "test");
 
     ASSERT(frontend.virtual_keyboard_state == TYPIO_WL_VK_STATE_READY);
     ASSERT(frontend.virtual_keyboard_has_keymap);
+    ASSERT(frontend.virtual_keyboard_keymap_deadline_ms == 0);
+}
+
+TEST(cancelling_keymap_wait_does_not_restore_stale_generation_keymap) {
+    TypioWlFrontend frontend;
+    TypioWlKeyboard keyboard;
+
+    init_frontend(&frontend, &keyboard);
+    frontend.active_key_generation = 2;
+    frontend.virtual_keyboard_state = TYPIO_WL_VK_STATE_NEEDS_KEYMAP;
+    frontend.virtual_keyboard_keymap_deadline_ms = 1234;
+    frontend.virtual_keyboard_keymap_generation = 1;
+    frontend.virtual_keyboard_last_keymap_ms = 42;
+
+    typio_wl_vk_cancel_keymap_wait(&frontend, "test");
+
+    ASSERT(frontend.virtual_keyboard_state == TYPIO_WL_VK_STATE_NEEDS_KEYMAP);
+    ASSERT(!frontend.virtual_keyboard_has_keymap);
     ASSERT(frontend.virtual_keyboard_keymap_deadline_ms == 0);
 }
 
@@ -188,6 +209,7 @@ int main(void) {
     run_test_broken_state_triggers_fail_safe();
     run_test_keymap_timeout_triggers_fail_safe();
     run_test_cancelling_keymap_wait_restores_ready_state_after_grab_teardown();
+    run_test_cancelling_keymap_wait_does_not_restore_stale_generation_keymap();
     run_test_keymap_timeout_without_active_grab_is_ignored();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
