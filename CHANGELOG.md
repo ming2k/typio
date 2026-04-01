@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-04-01
+
+### Fixed
+
+- **Virtual-keyboard keymap fd leak**: close the duplicated compositor keymap
+  descriptor after forwarding it to the virtual keyboard, preventing gradual
+  file-descriptor exhaustion that could make candidate navigation sluggish
+  during long daemon runtimes.
+
 ## [2.6.0] - 2026-04-01
 
 ### Added
