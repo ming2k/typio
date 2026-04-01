@@ -83,6 +83,41 @@ icon directory when exporting `IconThemePath`, and still provides an
 `IconPixmap` fallback for tray hosts that do not resolve themed icons
 consistently.
 
+## Candidate Navigation Becomes Sluggish After Extended Runtime
+
+**Symptom:** Normal typing remains smooth, but scrolling through the candidate
+list with arrow keys or page keys becomes visibly delayed or appears to skip
+frames. The problem only appears after the daemon has been running for several
+hours and worsens over time.
+
+**Root cause (fixed in current builds):** Each time a Wayland keymap event was
+received from the compositor, the daemon duplicated the file descriptor and sent
+the copy to the virtual keyboard, but never closed the duplicate. Every
+application focus switch leaks one file descriptor. The Linux per-process fd
+limit is 1024 by default; as the table fills up, calls that need a new fd (such
+as `mkstemp` inside the Wayland SHM buffer allocator) start failing. Failed
+buffer allocation causes candidate popup frames to be silently dropped during
+navigation.
+
+**Diagnosis:** While the daemon is running, count the leaked entries:
+
+```bash
+ls -la /proc/$(pidof typio)/fd | grep '/run/user/.*deleted' | wc -l
+```
+
+A healthy process shows zero or a very small number. Hundreds of entries confirm
+the leak.
+
+**Fix:** Restart the daemon to clear the accumulated file descriptors immediately:
+
+```bash
+typio-client stop
+typio &
+```
+
+The underlying leak is patched in the current source. Rebuilding and
+reinstalling eliminates it permanently.
+
 ## Debug Logging
 
 ```bash

@@ -442,6 +442,7 @@ void typio_wl_vk_forward_keymap(TypioWlFrontend *frontend,
     }
 
     zwp_virtual_keyboard_v1_keymap(frontend->virtual_keyboard, format, vk_fd, size);
+    close(vk_fd);
     frontend->virtual_keyboard_last_keymap_ms = typio_wl_monotonic_ms();
     frontend->virtual_keyboard_keymap_generation = frontend->active_key_generation;
     typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_READY,
