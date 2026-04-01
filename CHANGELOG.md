@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.2] - 2026-04-01
+
+### Changed
+
+- **Wayland observability layering**: clarified log-level ownership across the
+  lifecycle, virtual-keyboard, keyboard, and status-export paths, and exposed
+  keyboard-generation diagnostics through `RuntimeState`.
+
+### Fixed
+
+- **Virtual-keyboard keymap generation tracking**: vk readiness now requires a
+  keymap from the current keyboard-grab generation instead of reusing stale
+  readiness from an earlier grab.
+- **Deactivation teardown timing**: `deactivate` now defers keyboard cleanup to
+  the `done` boundary, preventing premature grab teardown while reactivation is
+  still settling.
+
 ## [2.5.1] - 2026-04-01
 
 ### Changed
