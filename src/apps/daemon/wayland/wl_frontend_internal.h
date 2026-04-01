@@ -78,11 +78,14 @@ typedef enum TypioWlLoopStage {
  * Each key can be in exactly one tracking state. Transitions:
  *
  *   IDLE ──press──▶ TRACK_FORWARDED          (forwarded to app)
+ *   IDLE ──press──▶ TRACK_BASIC_PASSTHROUGH  (basic printable text bypasses engine)
  *   IDLE ──press──▶ TRACK_APP_SHORTCUT       (application shortcut bypasses engine)
  *   IDLE ──press──▶ TRACK_SUPPRESSED_STARTUP (held key from previous grab)
  *   TRACK_APP_SHORTCUT ─physical release──▶ IDLE
  *   TRACK_FORWARDED ─force release──▶ TRACK_RELEASED_PENDING
  *   TRACK_FORWARDED ─physical release──▶ IDLE
+ *   TRACK_BASIC_PASSTHROUGH ─force release──▶ TRACK_RELEASED_PENDING
+ *   TRACK_BASIC_PASSTHROUGH ─physical release──▶ IDLE
  *   TRACK_RELEASED_PENDING ─physical release──▶ IDLE  (consumed)
  *   TRACK_SUPPRESSED_STARTUP ─physical release──▶ IDLE
  */

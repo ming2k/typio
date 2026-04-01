@@ -62,6 +62,29 @@ static char *buffer_text(GtkTextBuffer *buffer) {
     return gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
 }
 
+static GtkWidget *find_widget_by_name(GtkWidget *root, const char *name) {
+    GtkWidget *child;
+
+    if (!root || !name) {
+        return NULL;
+    }
+
+    if (strcmp(gtk_widget_get_name(root), name) == 0) {
+        return root;
+    }
+
+    for (child = gtk_widget_get_first_child(root);
+         child != NULL;
+         child = gtk_widget_get_next_sibling(child)) {
+        GtkWidget *match = find_widget_by_name(child, name);
+        if (match) {
+            return match;
+        }
+    }
+
+    return NULL;
+}
+
 static guint string_list_count(GtkStringList *model) {
     return model ? (guint)g_list_model_get_n_items(G_LIST_MODEL(model)) : 0;
 }
@@ -265,6 +288,23 @@ TEST(engine_settings_use_separate_window) {
     cleanup_control(&control);
 }
 
+TEST(basic_engine_settings_expose_printable_key_mode) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    GtkWidget *basic_page;
+    GtkWidget *field;
+
+    setup_control(&control, root);
+
+    basic_page = gtk_stack_get_child_by_name(control.engine_config_stack, "basic");
+    ASSERT_NOT_NULL(basic_page);
+    field = find_widget_by_name(basic_page, "field-engines-basic-printable-key-mode");
+    ASSERT_NOT_NULL(field);
+    ASSERT(GTK_IS_DROP_DOWN(field));
+
+    cleanup_control(&control);
+}
+
 TEST(keyboard_engine_binding_selects_engine_ids) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
@@ -303,6 +343,37 @@ TEST(form_changes_update_buffer_immediately) {
     rendered = buffer_text(control.config_buffer);
     ASSERT(rendered != NULL);
     ASSERT(strstr(rendered, "font_size = 13") != NULL);
+    g_free(rendered);
+
+    cleanup_control(&control);
+}
+
+TEST(basic_printable_key_mode_changes_update_buffer_immediately) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    GtkWidget *basic_page;
+    GtkDropDown *dropdown;
+    char *rendered;
+
+    setup_control(&control, root);
+    write_buffer(control.config_buffer,
+                 "default_engine = \"basic\"\n"
+                 "[engines.basic]\n"
+                 "printable_key_mode = \"forward\"\n");
+    control_sync_form_from_buffer(&control);
+
+    basic_page = gtk_stack_get_child_by_name(control.engine_config_stack, "basic");
+    ASSERT_NOT_NULL(basic_page);
+    dropdown = GTK_DROP_DOWN(find_widget_by_name(basic_page,
+                                                 "field-engines-basic-printable-key-mode"));
+    ASSERT_NOT_NULL(dropdown);
+
+    gtk_drop_down_set_selected(dropdown, 1);
+    on_display_dropdown_changed(G_OBJECT(dropdown), NULL, &control);
+
+    rendered = buffer_text(control.config_buffer);
+    ASSERT(rendered != NULL);
+    ASSERT(strstr(rendered, "printable_key_mode = \"commit\"") != NULL);
     g_free(rendered);
 
     cleanup_control(&control);
@@ -648,6 +719,29 @@ TEST(engine_order_roundtrips_and_preserves_default_engine) {
     cleanup_control(&control);
 }
 
+TEST(engine_order_filters_non_keyboard_entries_from_config) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+
+    setup_control(&control, root);
+    g_ptr_array_add(control.engine_id_model, g_strdup("basic"));
+    gtk_string_list_append(control.engine_model, "Basic");
+    g_ptr_array_add(control.engine_id_model, g_strdup("rime"));
+    gtk_string_list_append(control.engine_model, "Rime");
+
+    control.committed_config_text = g_strdup(
+        "default_engine = \"basic\"\n"
+        "engine_order = [\"basic\", \"mock-voice\", \"rime\"]\n");
+    write_buffer(control.config_buffer, control.committed_config_text);
+    control_sync_form_from_buffer(&control);
+
+    ASSERT(string_list_count(control.engine_order_model) == 2);
+    ASSERT_STR_EQ(gtk_string_list_get_string(control.engine_order_model, 0), "basic");
+    ASSERT_STR_EQ(gtk_string_list_get_string(control.engine_order_model, 1), "rime");
+
+    cleanup_control(&control);
+}
+
 TEST(engine_order_mode_actions_toggle_persistence) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
@@ -740,8 +834,10 @@ int main(void) {
     run_test_widget_debug_names_are_stable();
     run_test_state_bindings_are_configured();
     run_test_engine_settings_use_separate_window();
+    run_test_basic_engine_settings_expose_printable_key_mode();
     run_test_keyboard_engine_binding_selects_engine_ids();
     run_test_form_changes_update_buffer_immediately();
+    run_test_basic_printable_key_mode_changes_update_buffer_immediately();
     run_test_voice_model_selection_follows_staged_config();
     run_test_voice_backend_loads_selected_value_from_config();
     run_test_voice_backend_options_come_from_available_engines_not_ordered_engines();
@@ -754,6 +850,7 @@ int main(void) {
     run_test_unknown_dropdown_value_is_not_replaced_by_first_option();
     run_test_programmatic_state_binding_updates_do_not_stage_changes();
     run_test_engine_order_roundtrips_and_preserves_default_engine();
+    run_test_engine_order_filters_non_keyboard_entries_from_config();
     run_test_engine_order_mode_actions_toggle_persistence();
     run_test_unseeded_form_changes_do_not_dirty_buffer();
     run_test_unseeded_control_has_no_pending_change();

@@ -33,8 +33,9 @@ static int tests_passed = 0;
     } while(0)
 
 TEST(reset_clears_all_states) {
-    TypioKeyTrackState states[6] = {
+    TypioKeyTrackState states[7] = {
         TYPIO_KEY_TRACK_FORWARDED,
+        TYPIO_KEY_TRACK_BASIC_PASSTHROUGH,
         TYPIO_KEY_TRACK_APP_SHORTCUT,
         TYPIO_KEY_TRACK_RELEASED_PENDING,
         TYPIO_KEY_TRACK_SUPPRESSED_STARTUP,
@@ -42,9 +43,9 @@ TEST(reset_clears_all_states) {
         TYPIO_KEY_TRACK_IDLE,
     };
 
-    typio_wl_key_tracking_reset(states, 6);
+    typio_wl_key_tracking_reset(states, 7);
 
-    for (size_t i = 0; i < 6; ++i)
+    for (size_t i = 0; i < 7; ++i)
         ASSERT(states[i] == TYPIO_KEY_TRACK_IDLE);
 }
 
@@ -58,22 +59,24 @@ TEST(reset_clears_all_generations) {
 }
 
 TEST(mark_released_pending_only_changes_forwarded_keys) {
-    TypioKeyTrackState states[6] = {
+    TypioKeyTrackState states[7] = {
         TYPIO_KEY_TRACK_IDLE,
         TYPIO_KEY_TRACK_FORWARDED,
+        TYPIO_KEY_TRACK_BASIC_PASSTHROUGH,
         TYPIO_KEY_TRACK_APP_SHORTCUT,
         TYPIO_KEY_TRACK_SUPPRESSED_STARTUP,
         TYPIO_KEY_TRACK_FORWARDED,
         TYPIO_KEY_TRACK_IDLE,
     };
 
-    ASSERT(typio_wl_key_tracking_mark_released_pending(states, 6) == 3);
+    ASSERT(typio_wl_key_tracking_mark_released_pending(states, 7) == 4);
     ASSERT(states[0] == TYPIO_KEY_TRACK_IDLE);
     ASSERT(states[1] == TYPIO_KEY_TRACK_RELEASED_PENDING);
     ASSERT(states[2] == TYPIO_KEY_TRACK_RELEASED_PENDING);
-    ASSERT(states[3] == TYPIO_KEY_TRACK_SUPPRESSED_STARTUP);
-    ASSERT(states[4] == TYPIO_KEY_TRACK_RELEASED_PENDING);
-    ASSERT(states[5] == TYPIO_KEY_TRACK_IDLE);
+    ASSERT(states[3] == TYPIO_KEY_TRACK_RELEASED_PENDING);
+    ASSERT(states[4] == TYPIO_KEY_TRACK_SUPPRESSED_STARTUP);
+    ASSERT(states[5] == TYPIO_KEY_TRACK_RELEASED_PENDING);
+    ASSERT(states[6] == TYPIO_KEY_TRACK_IDLE);
 }
 
 TEST(ctrl_shortcut_invariant_keeps_forwarded_key_until_boundary_cleanup) {
@@ -95,15 +98,17 @@ TEST(ctrl_shortcut_invariant_keeps_forwarded_key_until_boundary_cleanup) {
 }
 
 TEST(app_shortcut_state_is_distinct_from_plain_forwarding) {
-    TypioKeyTrackState states[3] = {
+    TypioKeyTrackState states[4] = {
         TYPIO_KEY_TRACK_FORWARDED,
+        TYPIO_KEY_TRACK_BASIC_PASSTHROUGH,
         TYPIO_KEY_TRACK_APP_SHORTCUT,
         TYPIO_KEY_TRACK_IDLE,
     };
 
     ASSERT(states[0] == TYPIO_KEY_TRACK_FORWARDED);
-    ASSERT(states[1] == TYPIO_KEY_TRACK_APP_SHORTCUT);
-    ASSERT(states[2] == TYPIO_KEY_TRACK_IDLE);
+    ASSERT(states[1] == TYPIO_KEY_TRACK_BASIC_PASSTHROUGH);
+    ASSERT(states[2] == TYPIO_KEY_TRACK_APP_SHORTCUT);
+    ASSERT(states[3] == TYPIO_KEY_TRACK_IDLE);
 }
 
 int main(void) {

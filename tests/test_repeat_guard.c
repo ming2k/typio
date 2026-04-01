@@ -71,6 +71,7 @@ TEST(blocks_repeat_for_suppressed_or_pending_states) {
 TEST(allows_repeat_for_normal_owned_routes) {
     ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_TRACK_IDLE));
     ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_TRACK_FORWARDED));
+    ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_TRACK_BASIC_PASSTHROUGH));
     ASSERT(typio_wl_repeat_should_run_for_state(TYPIO_KEY_TRACK_APP_SHORTCUT));
 }
 

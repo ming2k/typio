@@ -183,7 +183,8 @@ void typio_wl_keyboard_dispatch_repeat(TypioWlKeyboard *keyboard) {
         return;
     }
 
-    if (repeat_state == TYPIO_KEY_TRACK_FORWARDED) {
+    if (repeat_state == TYPIO_KEY_TRACK_FORWARDED ||
+        repeat_state == TYPIO_KEY_TRACK_BASIC_PASSTHROUGH) {
         keyboard_repeat_trace(keyboard, "repeat-forward", keyboard->repeat_key,
                               repeat_keysym,
                               keyboard->physical_modifiers |

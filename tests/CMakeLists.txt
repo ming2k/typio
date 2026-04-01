@@ -300,6 +300,27 @@ add_dependencies(test_key_arbiter typio-daemon-protocols)
 target_link_libraries(test_key_arbiter PRIVATE typio-core)
 add_test(NAME test_key_arbiter COMMAND test_key_arbiter)
 
+add_executable(test_key_route
+    test_key_route.c
+    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland/key_route.c
+    ${CMAKE_SOURCE_DIR}/src/core/runtime/event.c
+)
+target_include_directories(test_key_route PRIVATE
+    ${CMAKE_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}/src/apps/daemon/wayland-protocols
+    ${TYPIO_TEST_CORE_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/src/apps/daemon
+    ${CMAKE_SOURCE_DIR}/src/apps/daemon/tray
+    ${CMAKE_SOURCE_DIR}/src/apps/daemon/voice
+    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland
+    ${DBUS_INCLUDE_DIRS}
+    ${WAYLAND_CLIENT_INCLUDE_DIRS}
+    ${XKBCOMMON_INCLUDE_DIRS}
+)
+add_dependencies(test_key_route typio-daemon-protocols)
+target_link_libraries(test_key_route PRIVATE ${XKBCOMMON_LIBRARIES})
+add_test(NAME test_key_route COMMAND test_key_route)
+
 add_executable(test_shortcut_chord
     test_shortcut_chord.c
     ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland/shortcut_chord.c

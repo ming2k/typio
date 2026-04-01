@@ -190,6 +190,26 @@ static GtkWidget *build_mozc_config(TypioControl *control) {
     return box;
 }
 
+static GtkWidget *build_basic_config(TypioControl *control) {
+    GtkWidget *box = control_create_panel_box_named("basic-config-section", 12);
+    GtkWidget *list = control_create_preferences_list_named("basic-config-list");
+
+    gtk_box_append(GTK_BOX(box),
+                   control_create_section_header_named("basic-config-header",
+                                                       "Basic",
+                                                       "Choose whether printable keys are forwarded as real key events or committed directly as text."));
+
+    gtk_list_box_append(GTK_LIST_BOX(list),
+                        control_create_preference_row_named(
+                            "basic-printable-key-mode-row",
+                            "Printable keys",
+                            "Forward preserves application key handling. Commit inserts text directly through Typio.",
+                            create_bound_widget(control, "engines.basic.printable_key_mode")));
+
+    gtk_box_append(GTK_BOX(box), list);
+    return box;
+}
+
 static GtkWidget *build_keyboard_section(TypioControl *control) {
     GtkWidget *box = control_create_panel_box_named("keyboard-section", 14);
     GtkWidget *order_box;
@@ -304,10 +324,7 @@ static GtkWidget *build_keyboard_section(TypioControl *control) {
                         control_create_empty_note_named("engine-config-empty-note",
                                                         "This engine has no configurable options."),
                         "empty");
-    gtk_stack_add_named(control->engine_config_stack,
-                        control_create_empty_note_named("engine-config-basic-note",
-                                                        "The built-in basic engine has no extra settings."),
-                        "basic");
+    gtk_stack_add_named(control->engine_config_stack, build_basic_config(control), "basic");
     gtk_stack_add_named(control->engine_config_stack, build_rime_config(control), "rime");
     gtk_stack_add_named(control->engine_config_stack, build_mozc_config(control), "mozc");
     gtk_stack_set_visible_child_name(control->engine_config_stack, "empty");

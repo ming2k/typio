@@ -714,15 +714,22 @@ void control_refresh_engine_order_editor(TypioControl *control) {
 void control_load_engine_order_from_config(TypioControl *control,
                                            const TypioConfig *config) {
     size_t order_count;
+    gboolean restrict_to_known_keyboards;
 
     if (!control || !control->engine_order_model) {
         return;
     }
 
     control_clear_string_list(control->engine_order_model);
+    restrict_to_known_keyboards =
+        control_string_array_count(control->engine_id_model) > 0;
     order_count = config ? typio_config_get_array_size(config, "engine_order") : 0;
     for (size_t i = 0; i < order_count; ++i) {
         const char *engine_name = typio_config_get_array_string(config, "engine_order", i);
+        if (restrict_to_known_keyboards &&
+            !control_string_array_contains(control->engine_id_model, engine_name)) {
+            continue;
+        }
         control_append_unique_string(control->engine_order_model, engine_name);
     }
 

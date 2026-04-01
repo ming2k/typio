@@ -34,7 +34,7 @@ typedef struct TypioConfigField {
 
     /* UI metadata (ignored by server-side code) */
     const char *ui_label;
-    const char *ui_section;     /* "display"|"notifications"|"rime"|"mozc"|"shortcuts"|"voice" */
+    const char *ui_section;     /* "display"|"notifications"|"basic"|"rime"|"mozc"|"shortcuts"|"voice" */
     int ui_min, ui_max, ui_step;
     const char *const *ui_options; /* NULL-terminated string array for dropdowns, or NULL */
     const char *runtime_property;  /* matching D-Bus runtime property, or NULL */

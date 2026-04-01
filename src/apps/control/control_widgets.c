@@ -53,9 +53,9 @@ static char *control_slugify(const char *text) {
     }
 
     slug = g_string_new(NULL);
-    for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
+    for (const char *p = text; *p; ++p) {
         if (g_ascii_isalnum(*p)) {
-            g_string_append_c(slug, (char)g_ascii_tolower(*p));
+            g_string_append_c(slug, g_ascii_tolower(*p));
             last_dash = FALSE;
         } else if (!last_dash && slug->len > 0) {
             g_string_append_c(slug, '-');

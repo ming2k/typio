@@ -8,6 +8,11 @@ popup_theme = "auto"
 candidate_layout = "horizontal"
 font_size = 11
 
+[engines.basic]
+# "forward" sends printable keys through virtual keyboard forwarding.
+# "commit" lets the built-in basic engine commit printable text directly.
+# printable_key_mode = "forward"
+
 [engines.rime]
 # shared_data_dir = "/usr/share/rime-data"
 # user_data_dir = "~/.local/share/typio/rime"

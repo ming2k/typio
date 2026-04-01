@@ -51,6 +51,19 @@ TEST(schema_find_existing) {
     ASSERT_NULL(f->runtime_property);
 }
 
+TEST(schema_find_basic_route_mode) {
+    const TypioConfigField *f = typio_config_schema_find("engines.basic.printable_key_mode");
+    ASSERT_NOT_NULL(f);
+    ASSERT_EQ(f->type, TYPIO_FIELD_STRING);
+    ASSERT_STR_EQ(f->def.s, "forward");
+    ASSERT_STR_EQ(f->ui_label, "Printable keys");
+    ASSERT_STR_EQ(f->ui_section, "basic");
+    ASSERT_NOT_NULL(f->ui_options);
+    ASSERT_STR_EQ(f->ui_options[0], "forward");
+    ASSERT_STR_EQ(f->ui_options[1], "commit");
+    ASSERT_NULL(f->runtime_property);
+}
+
 TEST(schema_find_missing) {
     const TypioConfigField *f = typio_config_schema_find("nonexistent.key");
     ASSERT_NULL(f);
@@ -84,6 +97,8 @@ TEST(apply_defaults_empty_config) {
     ASSERT_EQ(typio_config_get_int(config, "notifications.cooldown_ms", 0), 15000);
     ASSERT_STR_EQ(typio_config_get_string(config, "display.popup_theme", ""), "auto");
     ASSERT_STR_EQ(typio_config_get_string(config, "display.candidate_layout", ""), "horizontal");
+    ASSERT_STR_EQ(typio_config_get_string(config, "engines.basic.printable_key_mode", ""),
+                  "forward");
     ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.switch_engine", ""), "Ctrl+Shift");
     ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.emergency_exit", ""), "Ctrl+Shift+Escape");
     ASSERT_STR_EQ(typio_config_get_string(config, "shortcuts.voice_ptt", ""), "Super+v");
@@ -168,6 +183,7 @@ int main(void) {
     printf("Running config schema tests:\n");
 
     run_test_schema_find_existing();
+    run_test_schema_find_basic_route_mode();
     run_test_schema_find_missing();
     run_test_schema_find_null();
     run_test_runtime_property_lookup();

@@ -31,6 +31,7 @@ size_t typio_wl_key_tracking_mark_released_pending(TypioKeyTrackState *states,
 
     for (size_t i = 0; i < count; ++i) {
         if (states[i] != TYPIO_KEY_TRACK_FORWARDED &&
+            states[i] != TYPIO_KEY_TRACK_BASIC_PASSTHROUGH &&
             states[i] != TYPIO_KEY_TRACK_APP_SHORTCUT)
             continue;
 
@@ -47,6 +48,8 @@ const char *typio_wl_key_tracking_state_name(TypioKeyTrackState state) {
         return "idle";
     case TYPIO_KEY_TRACK_FORWARDED:
         return "forwarded";
+    case TYPIO_KEY_TRACK_BASIC_PASSTHROUGH:
+        return "basic_passthrough";
     case TYPIO_KEY_TRACK_APP_SHORTCUT:
         return "app_shortcut";
     case TYPIO_KEY_TRACK_RELEASED_PENDING:

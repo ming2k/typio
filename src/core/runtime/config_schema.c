@@ -15,6 +15,7 @@
 
 static const char *const popup_theme_options[] = {"auto", "light", "dark", NULL};
 static const char *const candidate_layout_options[] = {"horizontal", "vertical", NULL};
+static const char *const basic_printable_key_mode_options[] = {"forward", "commit", NULL};
 
 /* ---------- The Schema Table ---------- */
 
@@ -96,6 +97,16 @@ static const TypioConfigField schema_fields[] = {
         .ui_label = "Cooldown (ms)",
         .ui_section = "notifications",
         .ui_min = 0, .ui_max = 300000, .ui_step = 1000,
+    },
+
+    /* --- Basic engine --- */
+    {
+        .key = "engines.basic.printable_key_mode",
+        .type = TYPIO_FIELD_STRING,
+        .def.s = "forward",
+        .ui_label = "Printable keys",
+        .ui_section = "basic",
+        .ui_options = basic_printable_key_mode_options,
     },
 
     /* --- Rime engine --- */

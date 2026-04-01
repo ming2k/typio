@@ -377,6 +377,7 @@ void typio_wl_vk_release_forwarded_keys(TypioWlFrontend *frontend,
 
     for (size_t key = 0; key < TYPIO_WL_MAX_TRACKED_KEYS; key++) {
         if (frontend->key_states[key] != TYPIO_KEY_TRACK_FORWARDED &&
+            frontend->key_states[key] != TYPIO_KEY_TRACK_BASIC_PASSTHROUGH &&
             frontend->key_states[key] != TYPIO_KEY_TRACK_APP_SHORTCUT)
             continue;
 

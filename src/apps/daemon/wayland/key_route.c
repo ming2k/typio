@@ -16,14 +16,64 @@
 #include "vk_bridge.h"
 #include "wl_trace.h"
 #include "xkb_modifiers.h"
+#include "typio/instance.h"
+#include "typio/config.h"
 #include "typio/typio.h"
 #include "typio/engine_manager.h"
 #include "utils/log.h"
 
+#include <string.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 static bool key_route_is_shift_keysym(uint32_t keysym) {
     return keysym == XKB_KEY_Shift_L || keysym == XKB_KEY_Shift_R;
+}
+
+static bool key_route_is_printable_text_unicode(uint32_t unicode) {
+    return unicode >= 0x20 && unicode != 0x7F;
+}
+
+static bool key_route_should_forward_basic_text(TypioWlFrontend *frontend,
+                                                uint32_t modifiers,
+                                                uint32_t unicode) {
+    TypioEngineManager *manager;
+    TypioEngine *engine;
+    const char *engine_name;
+    TypioConfig *config;
+    const char *route_mode;
+
+    if (!frontend || !frontend->instance) {
+        return false;
+    }
+
+    if ((modifiers & (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0) {
+        return false;
+    }
+
+    if (!key_route_is_printable_text_unicode(unicode)) {
+        return false;
+    }
+
+    manager = typio_instance_get_engine_manager(frontend->instance);
+    if (!manager) {
+        return false;
+    }
+
+    engine = typio_engine_manager_get_active(manager);
+    if (!engine) {
+        return false;
+    }
+
+    engine_name = typio_engine_get_name(engine);
+    if (!engine_name || strcmp(engine_name, "basic") != 0) {
+        return false;
+    }
+
+    config = typio_instance_get_config(frontend->instance);
+    route_mode = typio_config_get_string(config,
+                                         "engines.basic.printable_key_mode",
+                                         "forward");
+    return route_mode && strcmp(route_mode, "commit") != 0;
 }
 
 static TypioWlKeyDecision key_route_decision(TypioWlKeyAction action,
@@ -128,6 +178,8 @@ const char *typio_wl_key_reason_name(TypioWlKeyReason reason) {
         return "typio_reserved";
     case TYPIO_WL_KEY_REASON_APPLICATION_SHORTCUT:
         return "application_shortcut";
+    case TYPIO_WL_KEY_REASON_BASIC_PASSTHROUGH:
+        return "basic_passthrough";
     case TYPIO_WL_KEY_REASON_ENGINE_HANDLED:
         return "engine_handled";
     case TYPIO_WL_KEY_REASON_ENGINE_UNHANDLED:
@@ -403,6 +455,22 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         return;
     }
 
+    if (key_route_should_forward_basic_text(frontend, modifiers, unicode)) {
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_FORWARD,
+                                      TYPIO_WL_KEY_REASON_BASIC_PASSTHROUGH);
+        typio_wl_vk_forward_key(keyboard, time, key,
+                                WL_KEYBOARD_KEY_STATE_PRESSED, unicode);
+        key_set_state(frontend, key, TYPIO_KEY_TRACK_BASIC_PASSTHROUGH);
+        key_route_trace_decision(keyboard, "press-forward", key, keysym,
+                                 modifiers, unicode,
+                                 TYPIO_KEY_TRACK_BASIC_PASSTHROUGH,
+                                 decision, "engine=basic");
+        typio_log(TYPIO_LOG_DEBUG,
+                  "Bypassing basic engine for printable text key: keycode=%u keysym=0x%x unicode=U+%04X",
+                  key, keysym, unicode);
+        return;
+    }
+
     {
         TypioKeyEvent event = {
             .type      = TYPIO_EVENT_KEY_PRESS,
@@ -569,6 +637,17 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                                  modifiers, unicode, kstate, decision, nullptr);
         key_clear_tracking(frontend, key);
         break;
+
+    case TYPIO_KEY_TRACK_BASIC_PASSTHROUGH:
+        decision = key_route_decision(TYPIO_WL_KEY_ACTION_FORWARD,
+                                      TYPIO_WL_KEY_REASON_FORWARDED_RELEASE);
+        key_route_trace_decision(keyboard, "release-forward", key, keysym,
+                                 modifiers, unicode, kstate, decision,
+                                 "engine=basic");
+        key_clear_tracking(frontend, key);
+        typio_wl_vk_forward_key(keyboard, time, key,
+                                WL_KEYBOARD_KEY_STATE_RELEASED, unicode);
+        return;
 
     case TYPIO_KEY_TRACK_IDLE:
         if (!key_owned_by_active_generation(frontend, key)) {
