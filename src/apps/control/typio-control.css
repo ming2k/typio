@@ -61,8 +61,21 @@ window.background.control-root {
 }
 
 .preferences row {
+  background: transparent;
   border-radius: 0;
   margin: 0;
+}
+
+.preferences row:hover,
+.preferences row:selected,
+.preferences row:active {
+  background: transparent;
+}
+
+.preferences row:hover .preference-row,
+.preferences row:selected .preference-row,
+.preferences row:active .preference-row {
+  background: transparent;
 }
 
 .preference-row {

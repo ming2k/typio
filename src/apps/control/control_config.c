@@ -482,7 +482,6 @@ static GtkWidget *control_build_engine_order_row(TypioControl *control,
     gtk_widget_add_css_class(activate, "engine-order-action-button");
     gtk_widget_set_valign(activate, GTK_ALIGN_CENTER);
     gtk_widget_set_halign(activate, GTK_ALIGN_END);
-    gtk_widget_set_tooltip_text(activate, "Set as active keyboard engine");
     gtk_widget_set_sensitive(activate, g_strcmp0(active_engine, engine_name) != 0);
     g_signal_connect(activate, "clicked", G_CALLBACK(on_engine_activate_clicked), control);
     g_object_set_data_full(G_OBJECT(edit), "typio-engine-name", g_strdup(engine_name), g_free);
@@ -491,7 +490,6 @@ static GtkWidget *control_build_engine_order_row(TypioControl *control,
     gtk_widget_add_css_class(edit, "engine-order-action-button");
     gtk_widget_set_valign(edit, GTK_ALIGN_CENTER);
     gtk_widget_set_halign(edit, GTK_ALIGN_END);
-    gtk_widget_set_tooltip_text(edit, "Show engine settings");
     g_signal_connect(edit, "clicked", G_CALLBACK(on_engine_settings_edit_clicked), control);
     g_object_set_data_full(G_OBJECT(remove), "typio-engine-name", g_strdup(engine_name), g_free);
     control_name_widget(remove, "engine-order-remove-button");
@@ -500,7 +498,6 @@ static GtkWidget *control_build_engine_order_row(TypioControl *control,
     gtk_widget_add_css_class(remove, "engine-order-remove-button");
     gtk_widget_set_valign(remove, GTK_ALIGN_CENTER);
     gtk_widget_set_halign(remove, GTK_ALIGN_END);
-    gtk_widget_set_tooltip_text(remove, "Remove from custom order");
     g_signal_connect(remove, "clicked", G_CALLBACK(on_engine_order_remove_clicked), control);
 
     gtk_box_append(GTK_BOX(text_box), title);
@@ -1393,6 +1390,7 @@ static void control_set_voice_backend_model(TypioControl *control,
 
 void control_refresh_from_proxy(TypioControl *control) {
     GVariant *active_engine;
+    GVariant *available_keyboard_engines;
     GVariant *available_engines;
     GVariant *ordered_engines;
     GVariant *engine_display_names;
@@ -1427,6 +1425,10 @@ void control_refresh_from_proxy(TypioControl *control) {
         control,
         TYPIO_STATUS_PROP_ACTIVE_KEYBOARD_ENGINE,
         TYPIO_STATUS_PROP_ACTIVE_ENGINE);
+    available_keyboard_engines = control_get_cached_property_with_fallback(
+        control,
+        TYPIO_STATUS_PROP_AVAILABLE_KEYBOARD_ENGINES,
+        TYPIO_STATUS_PROP_ORDERED_KEYBOARD_ENGINES);
     available_engines = control_get_cached_property_with_fallback(
         control,
         TYPIO_STATUS_PROP_AVAILABLE_VOICE_ENGINES,
@@ -1458,7 +1460,7 @@ void control_refresh_from_proxy(TypioControl *control) {
                 configured_voice ? configured_voice : "(unset)",
                 configured_schema ? configured_schema : "(unset)");
     }
-    control_set_engine_model(control, ordered_engines, engine_display_names);
+    control_set_engine_model(control, available_keyboard_engines, engine_display_names);
     control_state_binding_refresh_options(&control->rime_schema_state,
                                           parsed_config,
                                           configured_schema);
@@ -1478,6 +1480,9 @@ void control_refresh_from_proxy(TypioControl *control) {
 
     if (config_text) {
         g_variant_unref(config_text);
+    }
+    if (available_keyboard_engines) {
+        g_variant_unref(available_keyboard_engines);
     }
     if (available_engines) {
         g_variant_unref(available_engines);

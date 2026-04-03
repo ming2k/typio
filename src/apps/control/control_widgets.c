@@ -93,26 +93,31 @@ GtkWidget *control_create_section_header_named(const char *name,
                                                const char *description) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     GtkWidget *title_label = gtk_label_new(title);
-    GtkWidget *description_label = gtk_label_new(description);
+    GtkWidget *description_label = NULL;
     char *title_name = NULL;
     char *description_name = NULL;
 
     gtk_widget_add_css_class(box, "section");
     gtk_label_set_xalign(GTK_LABEL(title_label), 0.0f);
-    gtk_label_set_xalign(GTK_LABEL(description_label), 0.0f);
-    gtk_label_set_wrap(GTK_LABEL(description_label), TRUE);
     gtk_widget_add_css_class(title_label, "section-title");
-    gtk_widget_add_css_class(description_label, "section-description");
     control_name_widget(box, name);
     if (name && *name) {
         title_name = g_strdup_printf("%s-title", name);
-        description_name = g_strdup_printf("%s-description", name);
         control_name_widget(title_label, title_name);
-        control_name_widget(description_label, description_name);
     }
 
     gtk_box_append(GTK_BOX(box), title_label);
-    gtk_box_append(GTK_BOX(box), description_label);
+    if (description && *description) {
+        description_label = gtk_label_new(description);
+        gtk_label_set_xalign(GTK_LABEL(description_label), 0.0f);
+        gtk_label_set_wrap(GTK_LABEL(description_label), TRUE);
+        gtk_widget_add_css_class(description_label, "section-description");
+        if (name && *name) {
+            description_name = g_strdup_printf("%s-description", name);
+            control_name_widget(description_label, description_name);
+        }
+        gtk_box_append(GTK_BOX(box), description_label);
+    }
     g_free(title_name);
     g_free(description_name);
     return box;
@@ -177,7 +182,7 @@ GtkWidget *control_create_preference_row_named(const char *name,
     GtkWidget *shell = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 18);
     GtkWidget *text_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     GtkWidget *title_label = gtk_label_new(title);
-    GtkWidget *description_label = gtk_label_new(description);
+    GtkWidget *description_label = NULL;
     char *shell_name = NULL;
     char *text_name = NULL;
     char *title_name = NULL;
@@ -186,25 +191,30 @@ GtkWidget *control_create_preference_row_named(const char *name,
 
     gtk_widget_add_css_class(shell, "preference-row");
     gtk_label_set_xalign(GTK_LABEL(title_label), 0.0f);
-    gtk_label_set_xalign(GTK_LABEL(description_label), 0.0f);
-    gtk_label_set_wrap(GTK_LABEL(description_label), TRUE);
     gtk_widget_add_css_class(title_label, "preference-title");
-    gtk_widget_add_css_class(description_label, "preference-description");
     gtk_widget_set_hexpand(text_box, TRUE);
     control_name_widget(row, name);
     if (name && *name) {
         shell_name = g_strdup_printf("%s-shell", name);
         text_name = g_strdup_printf("%s-text", name);
         title_name = g_strdup_printf("%s-title", name);
-        description_name = g_strdup_printf("%s-description", name);
         control_name_widget(shell, shell_name);
         control_name_widget(text_box, text_name);
         control_name_widget(title_label, title_name);
-        control_name_widget(description_label, description_name);
     }
 
     gtk_box_append(GTK_BOX(text_box), title_label);
-    gtk_box_append(GTK_BOX(text_box), description_label);
+    if (description && *description) {
+        description_label = gtk_label_new(description);
+        gtk_label_set_xalign(GTK_LABEL(description_label), 0.0f);
+        gtk_label_set_wrap(GTK_LABEL(description_label), TRUE);
+        gtk_widget_add_css_class(description_label, "preference-description");
+        if (name && *name) {
+            description_name = g_strdup_printf("%s-description", name);
+            control_name_widget(description_label, description_name);
+        }
+        gtk_box_append(GTK_BOX(text_box), description_label);
+    }
     gtk_box_append(GTK_BOX(shell), text_box);
 
     if (suffix) {

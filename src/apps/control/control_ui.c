@@ -150,11 +150,6 @@ static GtkWidget *build_rime_config(TypioControl *control) {
     GtkWidget *list = control_create_preferences_list_named("rime-config-list");
     GtkWidget *deploy_button;
 
-    gtk_box_append(GTK_BOX(box),
-                   control_create_section_header_named("rime-config-header",
-                                                       "Rime",
-                                                       "Optional Chinese input settings and schema tuning."));
-
     control->rime_schema_model = gtk_string_list_new(nullptr);
     control->rime_schema_id_model = g_ptr_array_new_with_free_func(g_free);
     control->rime_schema_dropdown = GTK_DROP_DOWN(
@@ -174,7 +169,7 @@ static GtkWidget *build_rime_config(TypioControl *control) {
     gtk_list_box_append(GTK_LIST_BOX(list),
                         control_create_preference_row_named("rime-schema-row",
                                                             "Schema",
-                                                            "",
+                                                            "Choose the active Rime schema.",
                                                             GTK_WIDGET(control->rime_schema_dropdown)));
 
     deploy_button = gtk_button_new_with_label("Deploy");
@@ -187,7 +182,7 @@ static GtkWidget *build_rime_config(TypioControl *control) {
                         control_create_preference_row_named(
                             "rime-deploy-row",
                             "Deploy configuration",
-                            "Regenerate Rime build artifacts after editing files under the Rime data directory.",
+                            "Rebuild Rime data after editing custom schema files.",
                             deploy_button));
 
     gtk_box_append(GTK_BOX(box), list);
@@ -196,11 +191,9 @@ static GtkWidget *build_rime_config(TypioControl *control) {
 
 static GtkWidget *build_mozc_config(TypioControl *control) {
     GtkWidget *box = control_create_panel_box_named("mozc-config-section", 12);
-
     gtk_box_append(GTK_BOX(box),
-                   control_create_section_header_named("mozc-config-header",
-                                                       "Mozc",
-                                                       "Mozc manages candidate paging through its own configuration."));
+                   control_create_empty_note_named("mozc-config-empty-note",
+                                                   "No configurable Mozc options are exposed here yet."));
     return box;
 }
 
@@ -208,16 +201,11 @@ static GtkWidget *build_basic_config(TypioControl *control) {
     GtkWidget *box = control_create_panel_box_named("basic-config-section", 12);
     GtkWidget *list = control_create_preferences_list_named("basic-config-list");
 
-    gtk_box_append(GTK_BOX(box),
-                   control_create_section_header_named("basic-config-header",
-                                                       "Basic",
-                                                       "Choose whether printable keys are forwarded as real key events or committed directly as text."));
-
     gtk_list_box_append(GTK_LIST_BOX(list),
                         control_create_preference_row_named(
                             "basic-printable-key-mode-row",
                             "Printable keys",
-                            "Forward preserves application key handling. Commit inserts text directly through Typio.",
+                            "Forward key events or let Typio commit text directly.",
                             create_bound_widget(control, "engines.basic.printable_key_mode")));
 
     gtk_box_append(GTK_BOX(box), list);
@@ -315,7 +303,7 @@ static GtkWidget *build_keyboard_section(TypioControl *control) {
 
     control->engine_settings_window = GTK_WINDOW(gtk_window_new());
     gtk_window_set_title(control->engine_settings_window, "Engine settings");
-    gtk_window_set_default_size(control->engine_settings_window, 520, 420);
+    gtk_window_set_default_size(control->engine_settings_window, 640, 420);
     gtk_window_set_modal(control->engine_settings_window, TRUE);
     gtk_widget_add_css_class(GTK_WIDGET(control->engine_settings_window), "control-root");
     control_name_widget(GTK_WIDGET(control->engine_settings_window), "engine-settings-window");
