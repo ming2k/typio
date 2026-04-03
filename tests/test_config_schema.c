@@ -79,6 +79,11 @@ TEST(schema_find_missing) {
     ASSERT_NULL(f);
 }
 
+TEST(schema_find_rime_full_check_removed) {
+    const TypioConfigField *f = typio_config_schema_find("engines.rime.full_check");
+    ASSERT_NULL(f);
+}
+
 TEST(schema_find_null) {
     const TypioConfigField *f = typio_config_schema_find(NULL);
     ASSERT_NULL(f);
@@ -197,6 +202,7 @@ int main(void) {
     run_test_schema_find_basic_route_mode();
     run_test_schema_find_keyboard_per_app_preferences();
     run_test_schema_find_missing();
+    run_test_schema_find_rime_full_check_removed();
     run_test_schema_find_null();
     run_test_runtime_property_lookup();
     run_test_apply_defaults_empty_config();

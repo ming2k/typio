@@ -127,11 +127,6 @@ static const TypioConfigField schema_fields[] = {
         .type = TYPIO_FIELD_STRING,
         .def.s = "",
     },
-    {
-        .key = "engines.rime.full_check",
-        .type = TYPIO_FIELD_BOOL,
-        .def.b = false,
-    },
 
     /* --- Voice --- */
     {

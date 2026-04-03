@@ -521,7 +521,7 @@ static void build_rime_submenu(DBusMessageIter *parent, TypioTray *tray) {
                         label, nullptr, TRUE);
     }
 
-    build_menu_item(&children, TYPIO_TRAY_RIME_MENU_RELOAD_ID, "Reload Rime Config",
+    build_menu_item(&children, TYPIO_TRAY_RIME_MENU_RELOAD_ID, "Deploy Rime Config",
                     nullptr, TRUE);
     end_menu_item(parent, &var, &st, &children);
     free_rime_menu_info(&info);
@@ -691,7 +691,7 @@ static DBusMessage *handle_menu_event(TypioTray *tray, DBusMessage *msg) {
             }
         } else if (id == TYPIO_TRAY_RIME_MENU_RELOAD_ID) {
             if (tray->menu_callback) {
-                tray->menu_callback(tray, "rime-reload", tray->user_data);
+                tray->menu_callback(tray, "rime-deploy", tray->user_data);
             }
         }
     }

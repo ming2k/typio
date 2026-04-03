@@ -164,22 +164,6 @@ static const char *variant_string(DBusMessageIter *variant) {
     return val;
 }
 
-/* Print all strings from an array-of-strings variant. */
-static void print_string_array(DBusMessageIter *variant) {
-    DBusMessageIter array;
-
-    if (dbus_message_iter_get_arg_type(variant) != DBUS_TYPE_ARRAY) {
-        return;
-    }
-    dbus_message_iter_recurse(variant, &array);
-    while (dbus_message_iter_get_arg_type(&array) == DBUS_TYPE_STRING) {
-        const char *val;
-        dbus_message_iter_get_basic(&array, &val);
-        printf("  %s\n", val);
-        dbus_message_iter_next(&array);
-    }
-}
-
 /* ------------------------------------------------------------------ */
 /*  Subcommand: engine                                                */
 /* ------------------------------------------------------------------ */
@@ -287,10 +271,10 @@ static int cmd_engine(DBusConnection *conn, int argc, char **argv) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Subcommand: schema                                                */
+/*  Subcommand: rime                                                  */
 /* ------------------------------------------------------------------ */
 
-static int cmd_schema(DBusConnection *conn, int argc, char **argv) {
+static int cmd_rime_schema(DBusConnection *conn, int argc, char **argv) {
     if (argc < 1) {
         /* Print current Rime schema. */
         DBusMessage *reply = get_all_properties(conn);
@@ -314,6 +298,32 @@ static int cmd_schema(DBusConnection *conn, int argc, char **argv) {
     }
     dbus_message_unref(reply);
     return 0;
+}
+
+static int cmd_rime(DBusConnection *conn, int argc, char **argv) {
+    const char *sub;
+    DBusMessage *reply;
+
+    if (argc < 1) {
+        return cmd_rime_schema(conn, 0, nullptr);
+    }
+
+    sub = argv[0];
+    if (strcmp(sub, "schema") == 0) {
+        return cmd_rime_schema(conn, argc - 1, argv + 1);
+    }
+
+    if (strcmp(sub, "deploy") == 0) {
+        reply = call_method(conn, TYPIO_STATUS_METHOD_DEPLOY_RIME_CONFIG);
+        if (!reply) {
+            return 1;
+        }
+        dbus_message_unref(reply);
+        return 0;
+    }
+
+    /* Keep `typio-client rime NAME` as a short form for schema switching. */
+    return cmd_rime_schema(conn, argc, argv);
 }
 
 /* ------------------------------------------------------------------ */
@@ -454,7 +464,7 @@ static void print_help(const char *prog) {
     printf("Usage: %s <command> [args...]\n\n", prog);
     printf("Commands:\n");
     printf("  engine [list|next|NAME]  Query or switch keyboard engine\n");
-    printf("  schema [NAME]            Query or set Rime schema\n");
+    printf("  rime [schema|deploy]     Query, deploy, or set Rime schema\n");
     printf("  config <reload|get|set>  Manage configuration\n");
     printf("  status                   Show server status\n");
     printf("  stop                     Stop the Typio server\n");
@@ -486,8 +496,10 @@ int main(int argc, char *argv[]) {
 
     if (strcmp(cmd, "engine") == 0) {
         rc = cmd_engine(conn, argc - 2, argv + 2);
+    } else if (strcmp(cmd, "rime") == 0) {
+        rc = cmd_rime(conn, argc - 2, argv + 2);
     } else if (strcmp(cmd, "schema") == 0) {
-        rc = cmd_schema(conn, argc - 2, argv + 2);
+        rc = cmd_rime_schema(conn, argc - 2, argv + 2);
     } else if (strcmp(cmd, "config") == 0) {
         rc = cmd_config(conn, argc - 2, argv + 2);
     } else if (strcmp(cmd, "status") == 0) {

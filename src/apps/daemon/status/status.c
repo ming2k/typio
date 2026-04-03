@@ -795,6 +795,20 @@ static DBusMessage *status_handle_set_rime_schema(TypioStatusBus *bus,
     return dbus_message_new_method_return(msg);
 }
 
+static DBusMessage *status_handle_deploy_rime_config(TypioStatusBus *bus,
+                                                     DBusMessage *msg) {
+    TypioResult result;
+
+    result = bus ? typio_instance_deploy_rime_config(bus->instance) : TYPIO_ERROR;
+    if (result != TYPIO_OK) {
+        return dbus_message_new_error(msg, DBUS_ERROR_FAILED,
+                                      "Failed to deploy Rime configuration");
+    }
+
+    typio_status_bus_emit_properties_changed(bus);
+    return dbus_message_new_method_return(msg);
+}
+
 static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection *conn,
                                                 DBusMessage *msg,
                                                 void *user_data) {
@@ -848,6 +862,7 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
             "    <method name=\"" TYPIO_STATUS_METHOD_ACTIVATE_ENGINE "\"><arg name=\"engine\" type=\"s\" direction=\"in\"/></method>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_NEXT_ENGINE "\"/>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_SET_RIME_SCHEMA "\"><arg name=\"schema\" type=\"s\" direction=\"in\"/></method>\n"
+            "    <method name=\"" TYPIO_STATUS_METHOD_DEPLOY_RIME_CONFIG "\"/>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_SET_CONFIG_TEXT "\"><arg name=\"content\" type=\"s\" direction=\"in\"/></method>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_RELOAD_CONFIG "\"/>\n"
             "    <method name=\"" TYPIO_STATUS_METHOD_STOP "\"/>\n"
@@ -870,6 +885,8 @@ static DBusHandlerResult status_message_handler([[maybe_unused]] DBusConnection 
             reply = status_handle_next_engine(bus, msg);
         } else if (strcmp(member, TYPIO_STATUS_METHOD_SET_RIME_SCHEMA) == 0) {
             reply = status_handle_set_rime_schema(bus, msg);
+        } else if (strcmp(member, TYPIO_STATUS_METHOD_DEPLOY_RIME_CONFIG) == 0) {
+            reply = status_handle_deploy_rime_config(bus, msg);
         } else if (strcmp(member, TYPIO_STATUS_METHOD_SET_CONFIG_TEXT) == 0) {
             reply = status_handle_set_config_text(bus, msg);
         } else if (strcmp(member, TYPIO_STATUS_METHOD_RELOAD_CONFIG) == 0) {

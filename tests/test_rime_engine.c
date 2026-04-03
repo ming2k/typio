@@ -77,6 +77,30 @@ static bool write_file(const char *path, const char *content) {
     return true;
 }
 
+static int read_deployed_page_size(const char *data_dir) {
+    char path[1024];
+    char line[256];
+    FILE *file;
+    int page_size = -1;
+
+    ASSERT(data_dir != nullptr);
+    ASSERT(snprintf(path, sizeof(path), "%s/rime/build/default.yaml", data_dir) <
+           (int)sizeof(path));
+
+    file = fopen(path, "r");
+    ASSERT_NOT_NULL(file);
+
+    while (fgets(line, sizeof(line), file)) {
+        if (sscanf(line, " page_size: %d", &page_size) == 1 ||
+            sscanf(line, "page_size: %d", &page_size) == 1) {
+            break;
+        }
+    }
+
+    fclose(file);
+    return page_size;
+}
+
 static void capture_commit([[maybe_unused]] TypioInputContext *ctx, const char *text, void *user_data) {
     CaptureState *capture = user_data;
 
@@ -178,14 +202,14 @@ TEST(load_and_compose) {
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
     ASSERT(write_file(config_path,
-                      "default_engine = \"rime\"\n"
+                      "default_engine = \"basic\"\n"
                       "[engines.rime]\n"
                       "schema = \"luna_pinyin\"\n"));
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;
     config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
-    config.default_engine = "rime";
+    config.default_engine = "basic";
 
     TypioInstance *instance = typio_instance_new_with_config(&config);
     ASSERT_NOT_NULL(instance);
@@ -564,6 +588,60 @@ TEST(selection_navigation_only_updates_candidates) {
     typio_instance_free(instance);
 }
 
+TEST(deploy_rime_config_rebuilds_generated_yaml) {
+    char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
+    char config_dir[1024];
+    char data_dir[1024];
+    char rime_dir[1024];
+    char config_path[1024];
+    char custom_path[1024];
+    TypioInstanceConfig config = {};
+
+    ASSERT_NOT_NULL(mkdtemp(temp_root));
+    ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", temp_root) <
+           (int)sizeof(config_dir));
+    ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) <
+           (int)sizeof(data_dir));
+    ASSERT(snprintf(rime_dir, sizeof(rime_dir), "%s/rime", data_dir) <
+           (int)sizeof(rime_dir));
+    ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) <
+           (int)sizeof(config_path));
+    ASSERT(snprintf(custom_path, sizeof(custom_path), "%s/default.custom.yaml", rime_dir) <
+           (int)sizeof(custom_path));
+
+    ASSERT(ensure_dir(config_dir));
+    ASSERT(ensure_dir(data_dir));
+    ASSERT(ensure_dir(rime_dir));
+    ASSERT(write_file(config_path,
+                      "default_engine = \"rime\"\n"
+                      "[engines.rime]\n"
+                      "schema = \"luna_pinyin\"\n"));
+    ASSERT(write_file(custom_path,
+                      "patch:\n"
+                      "  menu:\n"
+                      "    page_size: 5\n"));
+
+    config.config_dir = config_dir;
+    config.data_dir = data_dir;
+    config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
+    config.default_engine = "rime";
+
+    TypioInstance *instance = typio_instance_new_with_config(&config);
+    ASSERT_NOT_NULL(instance);
+    ASSERT_EQ(typio_instance_init(instance), TYPIO_OK);
+    ASSERT_EQ(typio_instance_deploy_rime_config(instance), TYPIO_OK);
+    ASSERT_EQ(read_deployed_page_size(data_dir), 5);
+
+    ASSERT(write_file(custom_path,
+                      "patch:\n"
+                      "  menu:\n"
+                      "    page_size: 9\n"));
+    ASSERT_EQ(typio_instance_deploy_rime_config(instance), TYPIO_OK);
+    ASSERT_EQ(read_deployed_page_size(data_dir), 9);
+
+    typio_instance_free(instance);
+}
+
 int main(void) {
     printf("Running rime integration tests:\n");
     run_test_load_and_compose();
@@ -572,6 +650,7 @@ int main(void) {
     run_test_refocus_preserves_latin_mode();
     run_test_engine_switch_preserves_latin_mode_within_context();
     run_test_selection_navigation_only_updates_candidates();
+    run_test_deploy_rime_config_rebuilds_generated_yaml();
     printf("\nPassed %d/%d tests\n", tests_passed, tests_run);
     return 0;
 }

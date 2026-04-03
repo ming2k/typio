@@ -45,7 +45,6 @@ typedef struct TypioRimeConfig {
     char *schema;
     char *shared_data_dir;
     char *user_data_dir;
-    bool full_check;
 } TypioRimeConfig;
 
 typedef struct TypioRimeState {
@@ -201,7 +200,6 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
 
     const char *shared_data_dir = typio_config_get_string(engine_config, "shared_data_dir", nullptr);
     const char *user_data_dir = typio_config_get_string(engine_config, "user_data_dir", nullptr);
-    const bool full_check = typio_config_get_bool(engine_config, "full_check", false);
     if (shared_data_dir && *shared_data_dir) {
         char *expanded = typio_rime_expand_path(shared_data_dir);
         free(config->shared_data_dir);
@@ -212,7 +210,6 @@ static TypioResult typio_rime_load_config(TypioEngine *engine,
         free(config->user_data_dir);
         config->user_data_dir = expanded;
     }
-    config->full_check = full_check;
 
     typio_config_free(engine_config);
     free(persisted_schema);
@@ -261,10 +258,6 @@ static bool typio_rime_ensure_deployed(TypioRimeState *state) {
     build_path = typio_path_join(state->config.user_data_dir, "build/default.yaml");
     need_maintenance = !typio_rime_path_exists(build_path);
     free(build_path);
-
-    if (state->config.full_check) {
-        need_maintenance = true;
-    }
 
     if (need_maintenance) {
         ok = typio_rime_run_maintenance(state, true);
@@ -875,6 +868,11 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
 
     if (!engine->instance) {
         return TYPIO_OK;
+    }
+
+    if (typio_instance_rime_deploy_requested(engine->instance) &&
+        !typio_rime_run_maintenance(state, true)) {
+        return TYPIO_ERROR;
     }
 
     schema = typio_instance_dup_rime_schema(engine->instance);

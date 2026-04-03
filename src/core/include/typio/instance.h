@@ -202,6 +202,7 @@ TypioResult typio_instance_save_config(TypioInstance *instance);
 
 char *typio_instance_dup_rime_schema(TypioInstance *instance);
 TypioResult typio_instance_set_rime_schema(TypioInstance *instance, const char *schema);
+TypioResult typio_instance_deploy_rime_config(TypioInstance *instance);
 
 /**
  * @brief Export current root configuration as text
@@ -225,6 +226,7 @@ void typio_instance_notify_voice_engine_changed(TypioInstance *instance,
                                                 const TypioEngineInfo *engine);
 void typio_instance_set_focused_context(TypioInstance *instance,
                                         TypioInputContext *ctx);
+bool typio_instance_rime_deploy_requested(TypioInstance *instance);
 
 #ifdef __cplusplus
 }

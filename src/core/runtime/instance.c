@@ -153,6 +153,7 @@ struct TypioInstance {
     TypioLogCallback log_callback;
     void *log_user_data;
 
+    bool rime_deploy_requested;
     bool initialized;
 };
 
@@ -752,6 +753,34 @@ TypioResult typio_instance_set_rime_schema(TypioInstance *instance, const char *
                                      schema);
 }
 
+TypioResult typio_instance_deploy_rime_config(TypioInstance *instance) {
+    TypioEngine *rime;
+    TypioResult result;
+
+    if (!instance || !instance->engine_manager) {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    rime = typio_engine_manager_get_engine(instance->engine_manager, "rime");
+    if (!rime || !rime->ops || !rime->ops->reload_config) {
+        return TYPIO_ERROR_NOT_FOUND;
+    }
+
+    if (!rime->initialized && rime->ops->init) {
+        rime->instance = instance;
+        result = rime->ops->init(rime, instance);
+        if (result != TYPIO_OK) {
+            return result;
+        }
+        rime->initialized = true;
+    }
+
+    instance->rime_deploy_requested = true;
+    result = rime->ops->reload_config(rime);
+    instance->rime_deploy_requested = false;
+    return result;
+}
+
 char *typio_instance_get_config_text(TypioInstance *instance) {
     if (!instance || !instance->config) {
         return nullptr;
@@ -828,4 +857,8 @@ void typio_instance_set_focused_context(TypioInstance *instance,
     if (instance) {
         instance->focused_context = ctx;
     }
+}
+
+bool typio_instance_rime_deploy_requested(TypioInstance *instance) {
+    return instance ? instance->rime_deploy_requested : false;
 }

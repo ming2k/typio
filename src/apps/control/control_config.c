@@ -1561,6 +1561,45 @@ static void on_set_config_text_finished(GObject *source,
     control_refresh_from_proxy(control);
 }
 
+static void on_deploy_rime_config_finished(GObject *source,
+                                           GAsyncResult *result,
+                                           gpointer user_data) {
+    TypioControl *control = user_data;
+    GError *error = NULL;
+    GVariant *reply;
+
+    if (!control) {
+        return;
+    }
+
+    reply = g_dbus_proxy_call_finish(G_DBUS_PROXY(source), result, &error);
+    if (control->rime_deploy_button) {
+        gtk_widget_set_sensitive(GTK_WIDGET(control->rime_deploy_button), TRUE);
+    }
+
+    if (!reply) {
+        g_warning("on_deploy_rime_config_finished: failed: %s",
+                  error ? error->message : "Failed to deploy Rime configuration");
+        control_set_inline_status(control,
+                                  error ? error->message
+                                        : "Unable to deploy Rime configuration.",
+                                  TRUE);
+        control_schedule_status_clear(control, 3000);
+        control_update_availability_label(control,
+                                          error ? error->message
+                                                : "Failed to deploy Rime configuration",
+                                          TRUE);
+        g_clear_error(&error);
+        return;
+    }
+
+    g_variant_unref(reply);
+    control_update_availability_label(control, "", FALSE);
+    control_set_inline_status(control, "Rime configuration deployed.", TRUE);
+    control_schedule_status_clear(control, 2000);
+    control_refresh_from_proxy(control);
+}
+
 static gboolean control_autosave_timeout_cb(gpointer user_data) {
     TypioControl *control = user_data;
     char *content;
@@ -1908,4 +1947,25 @@ void on_engine_selected(GObject *object,
 
     engine_name = control_string_array_get(control->engine_id_model, selected);
     control_activate_engine(control, engine_name);
+}
+
+void on_rime_deploy_clicked([[maybe_unused]] GtkButton *button, gpointer user_data) {
+    TypioControl *control = user_data;
+
+    if (!control || !control->proxy || !g_dbus_proxy_get_name_owner(control->proxy)) {
+        return;
+    }
+
+    if (control->rime_deploy_button) {
+        gtk_widget_set_sensitive(GTK_WIDGET(control->rime_deploy_button), FALSE);
+    }
+
+    g_dbus_proxy_call(control->proxy,
+                      TYPIO_STATUS_METHOD_DEPLOY_RIME_CONFIG,
+                      NULL,
+                      G_DBUS_CALL_FLAGS_NONE,
+                      -1,
+                      NULL,
+                      on_deploy_rime_config_finished,
+                      control);
 }

@@ -34,7 +34,6 @@ default_engine = "rime"
 [engines.rime]
 # shared_data_dir = "/usr/share/rime-data"
 # user_data_dir = "~/.local/share/typio/rime"
-# full_check = false
 
 [engines.mozc]
 # server_path = "/usr/lib/mozc/mozc_server"
@@ -64,7 +63,6 @@ Rime section: `[engines.rime]`
 
 - `shared_data_dir`
 - `user_data_dir`
-- `full_check`
 
 Mozc section: `[engines.mozc]`
 

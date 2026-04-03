@@ -148,6 +148,7 @@ static GtkWidget *create_bound_widget(TypioControl *control,
 static GtkWidget *build_rime_config(TypioControl *control) {
     GtkWidget *box = control_create_panel_box_named("rime-config-section", 12);
     GtkWidget *list = control_create_preferences_list_named("rime-config-list");
+    GtkWidget *deploy_button;
 
     gtk_box_append(GTK_BOX(box),
                    control_create_section_header_named("rime-config-header",
@@ -175,6 +176,19 @@ static GtkWidget *build_rime_config(TypioControl *control) {
                                                             "Schema",
                                                             "",
                                                             GTK_WIDGET(control->rime_schema_dropdown)));
+
+    deploy_button = gtk_button_new_with_label("Deploy");
+    control->rime_deploy_button = GTK_BUTTON(deploy_button);
+    control_name_widget(deploy_button, "rime-deploy-button");
+    gtk_widget_add_css_class(deploy_button, "control-button");
+    g_signal_connect(deploy_button, "clicked",
+                     G_CALLBACK(on_rime_deploy_clicked), control);
+    gtk_list_box_append(GTK_LIST_BOX(list),
+                        control_create_preference_row_named(
+                            "rime-deploy-row",
+                            "Deploy configuration",
+                            "Regenerate Rime build artifacts after editing files under the Rime data directory.",
+                            deploy_button));
 
     gtk_box_append(GTK_BOX(box), list);
     return box;

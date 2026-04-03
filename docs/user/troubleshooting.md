@@ -62,6 +62,16 @@ surface when the required popup objects are available. If you still only see
 inline candidates, Typio likely failed to initialize `wl_compositor`,
 `wl_shm`, or the popup surface itself.
 
+If edits under `~/.local/share/typio/rime` do not affect candidate behavior,
+switch to the `rime` engine and run:
+
+```bash
+typio-client rime deploy
+```
+
+That asks the daemon to rerun librime deployment and regenerate
+`~/.local/share/typio/rime/build/*.yaml` from your source YAML files.
+
 If the popup looks blurry on a 2x HiDPI output, make sure you are running a
 recent Typio build. The popup now follows `wl_surface.enter/leave` and
 `wl_output.scale`, so integer output scales should render sharply after a

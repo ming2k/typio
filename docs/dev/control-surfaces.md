@@ -114,6 +114,9 @@ other top-level keys.
   inputs.
 - Remove maintenance actions from the main flow if the daemon can refresh
   itself or if the action has no meaningful user decision attached.
+  A manual Rime deployment action is an exception because user edits under the
+  Rime data directory are out-of-band source changes and require an explicit
+  rebuild of generated `build/*.yaml` artifacts.
 
 ## Rime Schema Discovery
 

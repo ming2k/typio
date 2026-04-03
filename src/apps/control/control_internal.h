@@ -72,6 +72,7 @@ typedef struct TypioControl {
     GtkDropDown *rime_schema_dropdown;
     GtkStringList *rime_schema_model;
     GPtrArray *rime_schema_id_model;
+    GtkButton *rime_deploy_button;
     GtkDropDown *voice_backend_dropdown;
     GtkStringList *voice_backend_model;
     GtkDropDown *voice_model_dropdown;
@@ -134,6 +135,7 @@ void on_engine_activate_clicked(GtkButton *button, gpointer user_data);
 void on_engine_settings_edit_clicked(GtkButton *button, gpointer user_data);
 gboolean on_engine_settings_window_close_request(GtkWindow *window, gpointer user_data);
 void on_engine_order_reset_clicked(GtkButton *button, gpointer user_data);
+void on_rime_deploy_clicked(GtkButton *button, gpointer user_data);
 void control_clear_proxy(TypioControl *control);
 void control_refresh_from_proxy(TypioControl *control);
 gboolean control_has_pending_config_change(TypioControl *control);

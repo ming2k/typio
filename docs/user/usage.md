@@ -67,6 +67,7 @@ Methods:
 - `ActivateEngine(s)`
 - `NextEngine()`
 - `SetRimeSchema(s)`
+- `DeployRimeConfig()`
 - `SetConfigText(s)`
 - `ReloadConfig()`
 - `Stop()`
@@ -93,8 +94,9 @@ typio-client engine             # print active keyboard engine
 typio-client engine list        # list engines (* marks active)
 typio-client engine next        # cycle to next engine
 typio-client engine rime        # switch to rime
-typio-client schema             # print current Rime schema
-typio-client schema luna_pinyin # set Rime schema
+typio-client rime schema        # print current Rime schema
+typio-client rime deploy        # rebuild generated Rime config files
+typio-client rime schema luna_pinyin # set Rime schema
 typio-client config reload      # reload config from disk
 typio-client config get         # print current config text
 typio-client config set "..."   # replace config text

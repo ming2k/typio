@@ -372,15 +372,15 @@ static void typio_daemon_tray_menu_callback([[maybe_unused]] TypioTray *tray,
         return;
     }
 
-    if (strcmp(action, "rime-reload") == 0) {
-        if (typio_instance_reload_config(app->instance) == TYPIO_OK) {
+    if (strcmp(action, "rime-deploy") == 0) {
+        if (typio_instance_deploy_rime_config(app->instance) == TYPIO_OK) {
             typio_daemon_update_tray_engine_status(app);
 #ifdef HAVE_STATUS_BUS
             typio_daemon_update_status_bus_state(app);
 #endif
-            typio_log(TYPIO_LOG_INFO, "Reloaded Rime configuration");
+            typio_log(TYPIO_LOG_INFO, "Deployed Rime configuration");
         } else {
-            typio_log(TYPIO_LOG_ERROR, "Failed to reload Rime configuration");
+            typio_log(TYPIO_LOG_ERROR, "Failed to deploy Rime configuration");
         }
     }
 }
