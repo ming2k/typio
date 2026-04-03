@@ -7,7 +7,6 @@
 
 #include "string.h"
 
-#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -26,8 +25,6 @@ static char g_recent_logs[TYPIO_LOG_RECENT_CAPACITY][1024];
 static size_t g_recent_log_count = 0;
 static size_t g_recent_log_start = 0;
 static char *g_recent_dump_path = nullptr;
-
-#define TYPIO_LOG_ARCHIVE_RETENTION 20
 
 void typio_log_set_level(TypioLogLevel level) {
     g_log_level = level;
@@ -144,191 +141,6 @@ static bool ensure_parent_directory(const char *path) {
     return ok;
 }
 
-static char *slugify_reason(const char *reason) {
-    size_t len;
-    char *slug;
-    size_t out = 0;
-    bool last_dash = false;
-
-    if (!reason || !*reason) {
-        return typio_strdup("snapshot");
-    }
-
-    len = strlen(reason);
-    slug = calloc(len + 1, sizeof(char));
-    if (!slug) {
-        return nullptr;
-    }
-
-    for (size_t i = 0; i < len; ++i) {
-        unsigned char ch = (unsigned char)reason[i];
-        if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) {
-            slug[out++] = (char)ch;
-            last_dash = false;
-        } else if (ch >= 'A' && ch <= 'Z') {
-            slug[out++] = (char)(ch - 'A' + 'a');
-            last_dash = false;
-        } else if (!last_dash && out > 0) {
-            slug[out++] = '-';
-            last_dash = true;
-        }
-    }
-
-    while (out > 0 && slug[out - 1] == '-') {
-        out--;
-    }
-    slug[out] = '\0';
-
-    if (out == 0) {
-        free(slug);
-        return typio_strdup("snapshot");
-    }
-
-    return slug;
-}
-
-static int archive_name_compare(const void *lhs, const void *rhs) {
-    const char *const *a = lhs;
-    const char *const *b = rhs;
-    return strcmp(*a, *b);
-}
-
-static void prune_old_archives(const char *archive_dir) {
-    DIR *dir;
-    struct dirent *entry;
-    char **names = nullptr;
-    size_t count = 0;
-    size_t capacity = 0;
-
-    if (!archive_dir || !*archive_dir) {
-        return;
-    }
-
-    dir = opendir(archive_dir);
-    if (!dir) {
-        return;
-    }
-
-    while ((entry = readdir(dir)) != nullptr) {
-        char *name;
-        if (entry->d_name[0] == '.') {
-            continue;
-        }
-        if (!typio_str_ends_with(entry->d_name, ".log")) {
-            continue;
-        }
-
-        if (count == capacity) {
-            size_t next_capacity = capacity == 0 ? 8 : capacity * 2;
-            char **next = realloc(names, next_capacity * sizeof(char *));
-            if (!next) {
-                break;
-            }
-            names = next;
-            capacity = next_capacity;
-        }
-
-        name = typio_strdup(entry->d_name);
-        if (!name) {
-            break;
-        }
-        names[count++] = name;
-    }
-
-    closedir(dir);
-
-    if (count <= TYPIO_LOG_ARCHIVE_RETENTION) {
-        for (size_t i = 0; i < count; ++i) {
-            free(names[i]);
-        }
-        free(names);
-        return;
-    }
-
-    qsort(names, count, sizeof(char *), archive_name_compare);
-
-    for (size_t i = 0; i + TYPIO_LOG_ARCHIVE_RETENTION < count; ++i) {
-        char *path = typio_path_join(archive_dir, names[i]);
-        if (path) {
-            unlink(path);
-            free(path);
-        }
-    }
-
-    for (size_t i = 0; i < count; ++i) {
-        free(names[i]);
-    }
-    free(names);
-}
-
-static char *build_recent_archive_path_with_reason(const char *path,
-                                                   const char *reason) {
-    char *dir = nullptr;
-    char *archive_dir = nullptr;
-    char *reason_slug = nullptr;
-    char *archive_name = nullptr;
-    char *archive_path = nullptr;
-    time_t now;
-    struct tm tm_info;
-    char stamp[64];
-
-    if (!path || !*path) {
-        return nullptr;
-    }
-
-    now = time(nullptr);
-    if (localtime_r(&now, &tm_info) == nullptr) {
-        return nullptr;
-    }
-    if (strftime(stamp, sizeof(stamp), "%Y-%m-%d_%H-%M-%S", &tm_info) == 0) {
-        return nullptr;
-    }
-
-    {
-        const char *base_name = strrchr(path, '/');
-        if (base_name) {
-            dir = typio_strndup(path, (size_t)(base_name - path));
-        } else {
-            dir = typio_strdup(".");
-        }
-    }
-    if (!dir) {
-        return nullptr;
-    }
-
-    archive_dir = typio_path_join(dir, "archive");
-    free(dir);
-    if (!archive_dir) {
-        return nullptr;
-    }
-
-    reason_slug = slugify_reason(reason);
-    if (!reason_slug) {
-        free(archive_dir);
-        return nullptr;
-    }
-
-    archive_name = calloc(strlen(stamp) + strlen(reason_slug) + strlen(".log") + 2,
-                          sizeof(char));
-    if (!archive_name) {
-        free(reason_slug);
-        free(archive_dir);
-        return nullptr;
-    }
-
-    snprintf(archive_name,
-             strlen(stamp) + strlen(reason_slug) + strlen(".log") + 2,
-             "%s_%s.log",
-             stamp,
-             reason_slug);
-
-    archive_path = typio_path_join(archive_dir, archive_name);
-    free(archive_name);
-    free(reason_slug);
-    free(archive_dir);
-    return archive_path;
-}
-
 bool typio_log_dump_recent(const char *path) {
     FILE *fp;
 
@@ -354,41 +166,15 @@ bool typio_log_dump_recent(const char *path) {
 
 bool typio_log_dump_recent_to_configured_path(const char *reason) {
     bool ok;
-    bool archive_ok = false;
-    char *archive_path = nullptr;
-    char *archive_dir = nullptr;
 
     if (!g_recent_dump_path || !*g_recent_dump_path)
         return false;
 
     ok = typio_log_dump_recent(g_recent_dump_path);
-    if (ok) {
-        archive_path = build_recent_archive_path_with_reason(g_recent_dump_path,
-                                                             reason);
-        if (archive_path) {
-            archive_ok = typio_log_dump_recent(archive_path);
-            if (archive_ok && strrchr(archive_path, '/')) {
-                archive_dir = typio_strndup(
-                    archive_path,
-                    (size_t)(strrchr(archive_path, '/') - archive_path));
-            }
-            if (archive_ok && archive_dir) {
-                prune_old_archives(archive_dir);
-            }
-        }
-    }
     if (ok && reason && *reason) {
-        if (archive_ok && archive_path) {
-            fprintf(stderr,
-                    "[typio] [INFO] Dumped recent logs to %s and %s (%s)\n",
-                    g_recent_dump_path, archive_path, reason);
-        } else {
-            fprintf(stderr, "[typio] [INFO] Dumped recent logs to %s (%s)\n",
-                    g_recent_dump_path, reason);
-        }
+        fprintf(stderr, "[typio] [INFO] Dumped recent logs to %s (%s)\n",
+                g_recent_dump_path, reason);
     }
-    free(archive_dir);
-    free(archive_path);
     return ok;
 }
 

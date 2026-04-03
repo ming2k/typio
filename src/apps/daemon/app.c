@@ -7,6 +7,8 @@
 #include "typio_build_config.h"
 #include "utils/log.h"
 
+#include <dirent.h>
+#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -390,6 +392,74 @@ static void typio_daemon_install_signal_handlers(TypioDaemonApp *app) {
     signal(SIGTERM, typio_daemon_signal_handler);
 }
 
+static bool typio_daemon_is_legacy_recent_log_name(const char *name) {
+    size_t len;
+    const char prefix[] = "typio-recent-";
+    const char suffix[] = ".log";
+    size_t prefix_len = strlen(prefix);
+    size_t suffix_len = strlen(suffix);
+
+    if (!name || !*name) {
+        return false;
+    }
+
+    if (strcmp(name, "typio-recent.log") == 0) {
+        return true;
+    }
+
+    len = strlen(name);
+    return len > prefix_len + suffix_len &&
+           strncmp(name, prefix, prefix_len) == 0 &&
+           strcmp(name + len - suffix_len, suffix) == 0;
+}
+
+static void typio_daemon_remove_legacy_recent_logs(const char *state_dir) {
+    DIR *dir;
+    struct dirent *entry;
+    size_t removed_count = 0;
+
+    if (!state_dir || !*state_dir) {
+        return;
+    }
+
+    dir = opendir(state_dir);
+    if (!dir) {
+        return;
+    }
+
+    while ((entry = readdir(dir)) != nullptr) {
+        char legacy_path[1024];
+
+        if (!typio_daemon_is_legacy_recent_log_name(entry->d_name)) {
+            continue;
+        }
+
+        if (snprintf(legacy_path, sizeof(legacy_path), "%s/%s",
+                     state_dir, entry->d_name) >= (int)sizeof(legacy_path)) {
+            typio_log(TYPIO_LOG_WARNING,
+                      "Skipping oversized legacy log cleanup path in state dir: %s",
+                      entry->d_name);
+            continue;
+        }
+
+        if (unlink(legacy_path) == 0) {
+            removed_count++;
+        } else if (errno != ENOENT) {
+            typio_log(TYPIO_LOG_WARNING,
+                      "Failed to remove legacy recent log %s: %s",
+                      legacy_path, strerror(errno));
+        }
+    }
+
+    closedir(dir);
+
+    if (removed_count > 0) {
+        typio_log(TYPIO_LOG_INFO,
+                  "Removed %zu legacy recent log file(s) from %s",
+                  removed_count, state_dir);
+    }
+}
+
 static void typio_daemon_configure_recent_log_dump(TypioDaemonApp *app) {
     const char *state_dir;
 
@@ -401,6 +471,8 @@ static void typio_daemon_configure_recent_log_dump(TypioDaemonApp *app) {
     if (!state_dir || !*state_dir) {
         return;
     }
+
+    typio_daemon_remove_legacy_recent_logs(state_dir);
 
     if (snprintf(app->recent_log_dump_path, sizeof(app->recent_log_dump_path),
                  "%s/%s", state_dir, "logs/latest.log") >=

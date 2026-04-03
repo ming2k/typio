@@ -10,8 +10,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <regex.h>
-#include <dirent.h>
-#include <sys/stat.h>
 
 static int tests_run = 0;
 static int tests_passed = 0;
@@ -75,13 +73,10 @@ TEST(dumps_recent_logs_to_requested_file) {
     typio_log_set_recent_dump_path(NULL);
 }
 
-TEST(configured_dump_writes_latest_and_archive) {
+TEST(configured_dump_writes_latest_only) {
     char dir[] = "/tmp/typio-recent-dir-XXXXXX";
     char latest[1024];
     char archive_dir[1024];
-    DIR *dp;
-    struct dirent *entry;
-    bool saw_archive = false;
 
     ASSERT(mkdtemp(dir) != NULL);
     ASSERT(snprintf(latest, sizeof(latest), "%s/logs/latest.log", dir) < (int)sizeof(latest));
@@ -94,38 +89,9 @@ TEST(configured_dump_writes_latest_and_archive) {
 
     ASSERT(typio_log_dump_recent_to_configured_path("unit test"));
     ASSERT(access(latest, F_OK) == 0);
-    ASSERT(access(archive_dir, F_OK) == 0);
-
-    dp = opendir(archive_dir);
-    ASSERT(dp != NULL);
-    while ((entry = readdir(dp)) != NULL) {
-        if (entry->d_name[0] == '.') {
-            continue;
-        }
-        if (strstr(entry->d_name, "unit-test.log") != NULL) {
-            saw_archive = true;
-            break;
-        }
-    }
-    closedir(dp);
-
-    ASSERT(saw_archive);
+    ASSERT(access(archive_dir, F_OK) != 0);
 
     unlink(latest);
-    dp = opendir(archive_dir);
-    ASSERT(dp != NULL);
-    while ((entry = readdir(dp)) != NULL) {
-        char archive_path[1024];
-
-        if (entry->d_name[0] == '.') {
-            continue;
-        }
-        ASSERT(snprintf(archive_path, sizeof(archive_path), "%s/%s", archive_dir, entry->d_name) <
-               (int)sizeof(archive_path));
-        unlink(archive_path);
-    }
-    closedir(dp);
-    rmdir(archive_dir);
     ASSERT(snprintf(archive_dir, sizeof(archive_dir), "%s/logs", dir) <
            (int)sizeof(archive_dir));
     rmdir(archive_dir);
@@ -137,7 +103,7 @@ int main(void) {
     printf("Running recent log dump tests:\n");
 
     run_test_dumps_recent_logs_to_requested_file();
-    run_test_configured_dump_writes_latest_and_archive();
+    run_test_configured_dump_writes_latest_only();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

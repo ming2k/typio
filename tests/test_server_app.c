@@ -48,6 +48,18 @@ static void ensure_dir(const char *path) {
     ASSERT(mkdir(path, 0755) == 0 || access(path, F_OK) == 0);
 }
 
+static void write_text_file(const char *path, const char *content) {
+    FILE *fp;
+
+    ASSERT(path != NULL);
+    fp = fopen(path, "w");
+    ASSERT(fp != NULL);
+    if (content && *content) {
+        ASSERT(fputs(content, fp) >= 0);
+    }
+    ASSERT(fclose(fp) == 0);
+}
+
 static TypioInstance *create_temp_instance(char *root_template,
                                            TypioInstanceConfig *config_out) {
     static char config_dir[1024];
@@ -227,11 +239,68 @@ TEST(voice_engine_change_updates_tray_tooltip) {
     typio_instance_free(instance);
 }
 
+TEST(app_init_removes_legacy_top_level_recent_logs) {
+    char root[] = "/tmp/typio-server-app-test-XXXXXX";
+    char config_dir[1024];
+    char data_dir[1024];
+    char state_dir[1024];
+    char engine_dir[1024];
+    char logs_dir[1024];
+    char latest_log[1024];
+    char legacy_latest[1024];
+    char legacy_archive[1024];
+    char engine_state[1024];
+    TypioInstanceConfig config = {};
+    TypioDaemonApp app = {};
+    char *argv[] = {(char *)"test_server_app", NULL};
+
+    ASSERT(mkdtemp(root) != NULL);
+    ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", root) < (int)sizeof(config_dir));
+    ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", root) < (int)sizeof(data_dir));
+    ASSERT(snprintf(state_dir, sizeof(state_dir), "%s/state", root) < (int)sizeof(state_dir));
+    ASSERT(snprintf(engine_dir, sizeof(engine_dir), "%s/engines", root) < (int)sizeof(engine_dir));
+    ASSERT(snprintf(logs_dir, sizeof(logs_dir), "%s/logs", state_dir) < (int)sizeof(logs_dir));
+    ASSERT(snprintf(latest_log, sizeof(latest_log), "%s/latest.log", logs_dir) < (int)sizeof(latest_log));
+    ASSERT(snprintf(legacy_latest, sizeof(legacy_latest), "%s/typio-recent.log", state_dir) <
+           (int)sizeof(legacy_latest));
+    ASSERT(snprintf(legacy_archive, sizeof(legacy_archive),
+                    "%s/typio-recent-20260401-174727-762678.log", state_dir) <
+           (int)sizeof(legacy_archive));
+    ASSERT(snprintf(engine_state, sizeof(engine_state), "%s/engine-state.toml", state_dir) <
+           (int)sizeof(engine_state));
+
+    ensure_dir(config_dir);
+    ensure_dir(data_dir);
+    ensure_dir(state_dir);
+    ensure_dir(engine_dir);
+    ensure_dir(logs_dir);
+
+    write_text_file(latest_log, "current\n");
+    write_text_file(legacy_latest, "legacy\n");
+    write_text_file(legacy_archive, "legacy archive\n");
+    write_text_file(engine_state, "engine = \"basic\"\n");
+
+    config.config_dir = config_dir;
+    config.data_dir = data_dir;
+    config.state_dir = state_dir;
+    config.engine_dir = engine_dir;
+
+    ASSERT(typio_daemon_app_init(&app, &config, false, argv));
+    ASSERT(access(legacy_latest, F_OK) != 0);
+    ASSERT(access(legacy_archive, F_OK) != 0);
+    ASSERT(access(latest_log, F_OK) == 0);
+    ASSERT(access(engine_state, F_OK) == 0);
+    ASSERT_STR_EQ(app.recent_log_dump_path, latest_log);
+
+    typio_daemon_app_shutdown(&app);
+}
+
 int main(void) {
     printf("Running server app tests:\n");
     run_test_engine_change_preserves_dynamic_status_icon_for_tray();
     run_test_engine_change_uses_static_icon_after_dynamic_engine();
     run_test_voice_engine_change_updates_tray_tooltip();
+    run_test_app_init_removes_legacy_top_level_recent_logs();
     printf("\nPassed %d/%d tests\n", tests_passed, tests_run);
     return 0;
 }

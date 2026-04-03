@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Recent log snapshot de-duplication**: recent-log dumps now persist only
+  `state_dir/logs/latest.log` and no longer write a second archive copy for the
+  same snapshot.
+
+### Fixed
+
+- **Legacy recent-log cleanup**: daemon startup now removes stale
+  top-level `state_dir/typio-recent*.log` files from the pre-2.5.1 layout while
+  keeping the current `state_dir/logs/latest.log` snapshot and runtime state
+  files intact.
+
 ## [2.6.1] - 2026-04-01
 
 ### Fixed
