@@ -7,11 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.2] - 2026-04-03
+
+### Added
+
+- **Explicit Rime deployment action**: added a `DeployRimeConfig` D-Bus
+  method, `typio-client rime deploy`, a tray submenu action, and a control
+  panel Rime settings button so user edits under the Rime data directory can
+  manually regenerate `build/*.yaml` without a persistent `full_check`
+  config flag.
+
 ### Changed
 
 - **Recent log snapshot de-duplication**: recent-log dumps now persist only
   `state_dir/logs/latest.log` and no longer write a second archive copy for the
   same snapshot.
+- **Rime CLI namespacing**: moved user-facing Rime commands under
+  `typio-client rime ...` while keeping the legacy top-level `schema`
+  command as a compatibility alias.
 
 ### Fixed
 
@@ -19,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   top-level `state_dir/typio-recent*.log` files from the pre-2.5.1 layout while
   keeping the current `state_dir/logs/latest.log` snapshot and runtime state
   files intact.
+- **Control panel engine list refresh**: the keyboard-engine settings UI now
+  builds its available-engine model from `AvailableKeyboardEngines` instead of
+  `OrderedKeyboardEngines`, so a stale custom order containing only `basic`
+  no longer hides other engines until Reset is clicked.
+- **Rime deploy action scope**: manual Rime deployment now resolves the Rime
+  engine by name and initializes it on demand instead of requiring `rime` to
+  be the currently active keyboard engine.
 
 ## [2.6.1] - 2026-04-01
 
