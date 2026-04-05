@@ -16,7 +16,6 @@
 #include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
 
-#define TYPIO_WL_VK_NEEDS_KEYMAP_DROP_LIMIT 32
 #define TYPIO_WL_VK_KEYMAP_TIMEOUT_MS 1500
 #define TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_WINDOW_MS 30000
 #define TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_THRESHOLD 3
@@ -134,13 +133,6 @@ static void typio_wl_vk_mark_forward_progress(TypioWlFrontend *frontend) {
     frontend->active_generation_vk_dirty = true;
 }
 
-static bool typio_wl_vk_should_fail_safe(TypioWlFrontend *frontend,
-                                         uint64_t drops) {
-    return frontend &&
-           (frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_BROKEN ||
-            (frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_NEEDS_KEYMAP &&
-             drops >= TYPIO_WL_VK_NEEDS_KEYMAP_DROP_LIMIT));
-}
 
 const char *typio_wl_vk_state_name(TypioWlVirtualKeyboardState state) {
     switch (state) {
@@ -181,6 +173,10 @@ void typio_wl_vk_set_state(TypioWlFrontend *frontend,
 
     if (previous == state)
         return;
+
+    if (state == TYPIO_WL_VK_STATE_READY) {
+        frontend->virtual_keyboard_drop_count = 0;
+    }
 
     typio_wl_trace(frontend,
                    "vk_state",
@@ -322,7 +318,7 @@ bool typio_wl_vk_is_ready(TypioWlFrontend *frontend,
                   drops);
     }
 
-    if (typio_wl_vk_should_fail_safe(frontend, drops)) {
+    if (frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_BROKEN) {
         typio_wl_vk_trigger_fail_safe(frontend, operation, drops);
     }
 
@@ -434,7 +430,8 @@ void typio_wl_vk_release_forwarded_keys(TypioWlFrontend *frontend,
     bool use_generic_name;
 
     if (!frontend || !frontend->virtual_keyboard ||
-        !typio_wl_vk_is_ready(frontend, "hard reset"))
+        frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_ABSENT ||
+        frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_BROKEN)
         return;
 
     time = (uint32_t)typio_wl_monotonic_ms();
