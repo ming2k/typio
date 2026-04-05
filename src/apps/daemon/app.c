@@ -25,9 +25,29 @@ static void typio_daemon_update_tray_engine_status(TypioDaemonApp *app);
 static void typio_daemon_update_status_bus_state(TypioDaemonApp *app);
 #endif
 
-static void typio_daemon_signal_handler([[maybe_unused]] int sig) {
+static const char *typio_daemon_signal_name(int sig) {
+    switch (sig) {
+        case SIGINT:
+            return "SIGINT";
+        case SIGTERM:
+            return "SIGTERM";
+#ifdef SIGHUP
+        case SIGHUP:
+            return "SIGHUP";
+#endif
+#ifdef SIGQUIT
+        case SIGQUIT:
+            return "SIGQUIT";
+#endif
+        default:
+            return "UNKNOWN";
+    }
+}
+
+static void typio_daemon_signal_handler(int sig) {
     if (g_active_app) {
         g_active_app->shutdown_requested_by_signal = true;
+        g_active_app->shutdown_signal = sig;
     }
 #ifdef HAVE_WAYLAND
     if (g_active_app && g_active_app->wl_frontend) {
@@ -713,10 +733,18 @@ int typio_daemon_app_finish(TypioDaemonApp *app, int exit_code) {
         return exit_code;
     }
 
+    if (app->shutdown_requested_by_signal) {
+        int sig = (int)app->shutdown_signal;
+
+        typio_log(TYPIO_LOG_WARNING,
+                  "Shutdown requested by signal: signal=%d (%s)",
+                  sig,
+                  typio_daemon_signal_name(sig));
+    }
+
     if ((exit_code != 0 || app->shutdown_requested_by_signal) &&
         app->recent_log_dump_path[0] != '\0') {
-        typio_log_dump_recent_to_configured_path(
-            app->shutdown_requested_by_signal ? "signal shutdown" : "non-zero exit");
+        typio_log_dump_recent_to_configured_path();
     }
 
     if (app->restart_requested && exit_code == 0) {

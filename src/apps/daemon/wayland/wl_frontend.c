@@ -272,7 +272,7 @@ static void *frontend_watchdog_thread_main(void *data) {
                 typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
                 typio_wl_vk_state_name(frontend->virtual_keyboard_state),
                 frontend->popup_update_pending ? "yes" : "no");
-        typio_log_dump_recent_to_configured_path("watchdog timeout");
+        typio_log_dump_recent_to_configured_path();
         kill(getpid(), SIGKILL);
         break;
     }

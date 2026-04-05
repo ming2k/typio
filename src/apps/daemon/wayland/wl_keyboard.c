@@ -172,7 +172,7 @@ static void keyboard_trigger_guard_reject_fail_safe(TypioWlKeyboard *keyboard,
               typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
               key, keysym, modifiers,
               frontend->guard_reject_press_streak);
-    typio_log_dump_recent_to_configured_path("keyboard routing guard stuck");
+    typio_log_dump_recent_to_configured_path();
     typio_wl_keyboard_release_grab(keyboard);
     typio_wl_frontend_stop(frontend);
 }
@@ -503,7 +503,7 @@ static void kb_handle_key(void *data,
                   "Emergency exit shortcut triggered before normal routing: keycode=%u keysym=0x%x mods=0x%x phase=%s",
                   key, (uint32_t)keysym, modifiers,
                   typio_wl_lifecycle_phase_name(frontend->lifecycle_phase));
-        typio_log_dump_recent_to_configured_path("emergency exit shortcut");
+        typio_log_dump_recent_to_configured_path();
         typio_wl_keyboard_release_grab(keyboard);
         typio_wl_frontend_stop(frontend);
         return;

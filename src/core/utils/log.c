@@ -164,18 +164,11 @@ bool typio_log_dump_recent(const char *path) {
     return true;
 }
 
-bool typio_log_dump_recent_to_configured_path(const char *reason) {
-    bool ok;
-
+bool typio_log_dump_recent_to_configured_path(void) {
     if (!g_recent_dump_path || !*g_recent_dump_path)
         return false;
 
-    ok = typio_log_dump_recent(g_recent_dump_path);
-    if (ok && reason && *reason) {
-        fprintf(stderr, "[typio] [INFO] Dumped recent logs to %s (%s)\n",
-                g_recent_dump_path, reason);
-    }
-    return ok;
+    return typio_log_dump_recent(g_recent_dump_path);
 }
 
 void typio_log(TypioLogLevel level, const char *format, ...) {

@@ -76,25 +76,22 @@ TEST(dumps_recent_logs_to_requested_file) {
 TEST(configured_dump_writes_latest_only) {
     char dir[] = "/tmp/typio-recent-dir-XXXXXX";
     char latest[1024];
-    char archive_dir[1024];
+    char logs_dir[1024];
 
     ASSERT(mkdtemp(dir) != NULL);
     ASSERT(snprintf(latest, sizeof(latest), "%s/logs/latest.log", dir) < (int)sizeof(latest));
-    ASSERT(snprintf(archive_dir, sizeof(archive_dir), "%s/logs/archive", dir) <
-           (int)sizeof(archive_dir));
+    ASSERT(snprintf(logs_dir, sizeof(logs_dir), "%s/logs", dir) < (int)sizeof(logs_dir));
 
     typio_log_set_level(TYPIO_LOG_DEBUG);
     typio_log_set_recent_dump_path(latest);
     typio_log(TYPIO_LOG_INFO, "gamma");
 
-    ASSERT(typio_log_dump_recent_to_configured_path("unit test"));
+    ASSERT(typio_log_dump_recent_to_configured_path());
     ASSERT(access(latest, F_OK) == 0);
-    ASSERT(access(archive_dir, F_OK) != 0);
+    ASSERT(access(logs_dir, F_OK) == 0);
 
     unlink(latest);
-    ASSERT(snprintf(archive_dir, sizeof(archive_dir), "%s/logs", dir) <
-           (int)sizeof(archive_dir));
-    rmdir(archive_dir);
+    rmdir(logs_dir);
     rmdir(dir);
     typio_log_set_recent_dump_path(NULL);
 }

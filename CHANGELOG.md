@@ -105,11 +105,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Recent log snapshot layout**: moved Typio's persisted recent dumps under
-  `~/.local/state/typio/logs/`, with a fixed `latest.log` entrypoint and
-  timestamped archives kept in `logs/archive/`.
-- **Recent log archive naming**: archive filenames now use a more readable
-  `YYYY-MM-DD_HH-MM-SS_reason.log` format and keep only the newest retained
-  snapshots instead of accumulating indefinitely.
+  `~/.local/state/typio/logs/`, with a fixed `latest.log` entrypoint for the
+  most recent persisted snapshot.
+- **Recent log snapshot naming**: persisted dumps now use the stable
+  `latest.log` path instead of creating timestamped archive filenames or
+  encoding the dump reason in the filename.
 - **Wayland key-routing model**: internal routing now expresses a final
   `action` (`consume` or `forward`) separately from `reason`, replacing the
   older route-class abstraction and making trace output easier to interpret.

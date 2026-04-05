@@ -389,7 +389,7 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         typio_log(TYPIO_LOG_WARNING,
                   "Emergency exit shortcut triggered: keycode=%u keysym=0x%x mods=0x%x",
                   key, keysym, modifiers);
-        typio_log_dump_recent_to_configured_path("emergency exit shortcut");
+        typio_log_dump_recent_to_configured_path();
         decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
                                       TYPIO_WL_KEY_REASON_TYPIO_RESERVED);
         key_route_trace_decision(keyboard, "press-stop", key, keysym, modifiers,

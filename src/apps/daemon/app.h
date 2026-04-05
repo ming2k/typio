@@ -4,6 +4,8 @@
 #include "typio_build_config.h"
 #include "typio/instance.h"
 
+#include <signal.h>
+
 #ifdef HAVE_WAYLAND
 #include "wayland/wl_frontend.h"
 #endif
@@ -25,6 +27,7 @@ typedef struct TypioDaemonApp {
     char **argv;
     bool restart_requested;
     bool shutdown_requested_by_signal;
+    volatile sig_atomic_t shutdown_signal;
     char recent_log_dump_path[1024];
 #ifdef HAVE_WAYLAND
     TypioWlFrontend *wl_frontend;

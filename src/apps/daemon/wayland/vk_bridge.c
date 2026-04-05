@@ -22,6 +22,14 @@
 #define TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_THRESHOLD 3
 #define TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_INTERVAL 5
 
+static uint64_t typio_wl_vk_age_ms(uint64_t now_ms, uint64_t then_ms) {
+    if (then_ms == 0 || now_ms < then_ms) {
+        return 0;
+    }
+
+    return now_ms - then_ms;
+}
+
 static bool typio_wl_vk_has_current_generation_keymap(TypioWlFrontend *frontend) {
     return frontend && frontend->active_key_generation != 0 &&
            frontend->virtual_keyboard_keymap_generation ==
@@ -54,6 +62,10 @@ static void typio_wl_vk_record_keymap_cancel(TypioWlFrontend *frontend,
     uint64_t now_ms;
     uint64_t count;
     uint64_t window_ms;
+    uint64_t last_keymap_age_ms;
+    uint64_t last_forward_age_ms;
+    bool has_current_keymap;
+    bool keyboard_grab_active;
 
     if (!frontend || !typio_wl_vk_reason_is_keymap_cancel(reason)) {
         return;
@@ -70,11 +82,24 @@ static void typio_wl_vk_record_keymap_cancel(TypioWlFrontend *frontend,
     frontend->virtual_keyboard_keymap_cancel_count++;
     count = frontend->virtual_keyboard_keymap_cancel_count;
     window_ms = now_ms - frontend->virtual_keyboard_keymap_cancel_window_start_ms;
+    last_keymap_age_ms = typio_wl_vk_age_ms(now_ms,
+                                            frontend->virtual_keyboard_last_keymap_ms);
+    last_forward_age_ms = typio_wl_vk_age_ms(now_ms,
+                                             frontend->virtual_keyboard_last_forward_ms);
+    has_current_keymap = typio_wl_vk_has_current_generation_keymap(frontend);
+    keyboard_grab_active = frontend->keyboard && frontend->keyboard->grab;
 
     typio_log(TYPIO_LOG_DEBUG,
               "Virtual keyboard keymap wait cancelled: reason=%s count=%" PRIu64
-              " window_ms=%" PRIu64,
-              reason, count, window_ms);
+              " window_ms=%" PRIu64 " active_generation=%u keymap_generation=%u"
+              " current_generation_keymap=%s keyboard_grab=%s"
+              " last_keymap_age_ms=%" PRIu64 " last_forward_age_ms=%" PRIu64,
+              reason, count, window_ms,
+              frontend->active_key_generation,
+              frontend->virtual_keyboard_keymap_generation,
+              has_current_keymap ? "yes" : "no",
+              keyboard_grab_active ? "yes" : "no",
+              last_keymap_age_ms, last_forward_age_ms);
 
     if (count < TYPIO_WL_VK_KEYMAP_CANCEL_WARNING_THRESHOLD) {
         return;
@@ -87,9 +112,17 @@ static void typio_wl_vk_record_keymap_cancel(TypioWlFrontend *frontend,
 
     typio_log(TYPIO_LOG_WARNING,
               "Repeated virtual keyboard keymap cancellations before readiness: "
-              "count=%" PRIu64 " window_ms=%" PRIu64 " state=%s",
+              "count=%" PRIu64 " window_ms=%" PRIu64 " state=%s"
+              " active_generation=%u keymap_generation=%u"
+              " current_generation_keymap=%s keyboard_grab=%s"
+              " last_keymap_age_ms=%" PRIu64 " last_forward_age_ms=%" PRIu64,
               count, window_ms,
-              typio_wl_vk_state_name(frontend->virtual_keyboard_state));
+              typio_wl_vk_state_name(frontend->virtual_keyboard_state),
+              frontend->active_key_generation,
+              frontend->virtual_keyboard_keymap_generation,
+              has_current_keymap ? "yes" : "no",
+              keyboard_grab_active ? "yes" : "no",
+              last_keymap_age_ms, last_forward_age_ms);
 }
 
 static void typio_wl_vk_mark_forward_progress(TypioWlFrontend *frontend) {
@@ -214,16 +247,48 @@ void typio_wl_vk_cancel_keymap_wait(TypioWlFrontend *frontend,
 static void typio_wl_vk_trigger_fail_safe(TypioWlFrontend *frontend,
                                           const char *operation,
                                           uint64_t drops) {
+    uint64_t now_ms;
+    uint64_t last_keymap_age_ms;
+    uint64_t last_forward_age_ms;
+    uint64_t cancel_window_ms;
+    bool has_current_keymap;
+    bool keyboard_grab_active;
+
     if (!frontend || !frontend->running) {
         return;
     }
 
+    now_ms = typio_wl_monotonic_ms();
+    last_keymap_age_ms = typio_wl_vk_age_ms(now_ms,
+                                            frontend->virtual_keyboard_last_keymap_ms);
+    last_forward_age_ms = typio_wl_vk_age_ms(now_ms,
+                                             frontend->virtual_keyboard_last_forward_ms);
+    cancel_window_ms = typio_wl_vk_age_ms(
+        now_ms, frontend->virtual_keyboard_keymap_cancel_window_start_ms);
+    has_current_keymap = typio_wl_vk_has_current_generation_keymap(frontend);
+    keyboard_grab_active = frontend->keyboard && frontend->keyboard->grab;
+
     typio_log(TYPIO_LOG_ERROR,
-              "Virtual keyboard fail-safe stop: operation=%s state=%s drops=%" PRIu64,
+              "Virtual keyboard fail-safe stop: operation=%s state=%s drops=%" PRIu64
+              " cancel_count=%" PRIu64 " cancel_window_ms=%" PRIu64
+              " active_generation=%u keymap_generation=%u"
+              " current_generation_keymap=%s keyboard_grab=%s"
+              " last_keymap_age_ms=%" PRIu64 " last_forward_age_ms=%" PRIu64
+              " phase=%s pending_reactivation=%s",
               operation ? operation : "event",
               typio_wl_vk_state_name(frontend->virtual_keyboard_state),
-              drops);
-    typio_log_dump_recent_to_configured_path("virtual keyboard fail-safe stop");
+              drops,
+              frontend->virtual_keyboard_keymap_cancel_count,
+              cancel_window_ms,
+              frontend->active_key_generation,
+              frontend->virtual_keyboard_keymap_generation,
+              has_current_keymap ? "yes" : "no",
+              keyboard_grab_active ? "yes" : "no",
+              last_keymap_age_ms,
+              last_forward_age_ms,
+              typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
+              frontend->pending_reactivation ? "yes" : "no");
+    typio_log_dump_recent_to_configured_path();
     if (frontend->keyboard) {
         typio_wl_keyboard_release_grab(frontend->keyboard);
     }

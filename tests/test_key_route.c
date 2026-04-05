@@ -232,9 +232,7 @@ void typio_log(TypioLogLevel level, const char *format, ...) {
     (void)format;
 }
 
-void typio_log_dump_recent_to_configured_path(const char *reason) {
-    (void)reason;
-}
+void typio_log_dump_recent_to_configured_path(void) {}
 
 void typio_wl_keyboard_release_grab(TypioWlKeyboard *keyboard) {
     (void)keyboard;
