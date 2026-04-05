@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.3] - 2026-04-06
+
+### Fixed
+
+- **Virtual keyboard fail-safe false positive**: the drop counter now resets
+  on each successful keymap receipt instead of accumulating across the entire
+  session, preventing a spurious fail-safe stop after many focus-change cycles.
+  Lifecycle hard-reset no longer counts against the drop limit, and stuck-VK
+  detection is now solely owned by the 1500 ms keymap deadline.
+
 ## [2.6.2] - 2026-04-03
 
 ### Added
