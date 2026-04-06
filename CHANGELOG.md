@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.4] - 2026-04-06
+
+### Fixed
+
+- **Rime hot-reload after deploy**: `typio-client rime deploy` now takes
+  effect immediately without restarting Typio. After maintenance completes,
+  `cleanup_stale_sessions()` invalidates all existing librime sessions so
+  they are transparently recreated with the newly compiled data on next use.
+
 ## [2.6.3] - 2026-04-06
 
 ### Fixed
