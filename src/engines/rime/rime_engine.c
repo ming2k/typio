@@ -841,7 +841,14 @@ static void typio_rime_apply_runtime_config(TypioEngine *engine) {
         return;
     }
 
-    session = typio_rime_get_session(engine, ctx, false);
+    /*
+     * Use create=true: after a deploy, cleanup_stale_sessions() has
+     * invalidated the old session, so find_session returns false and
+     * get_session recreates it fresh with the new compiled data.
+     * For a plain config reload there is no invalidation and the existing
+     * valid session is returned as before.
+     */
+    session = typio_rime_get_session(engine, ctx, true);
     if (!session) {
         return;
     }
@@ -870,9 +877,19 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
         return TYPIO_OK;
     }
 
-    if (typio_instance_rime_deploy_requested(engine->instance) &&
-        !typio_rime_run_maintenance(state, true)) {
-        return TYPIO_ERROR;
+    if (typio_instance_rime_deploy_requested(engine->instance)) {
+        if (!typio_rime_run_maintenance(state, true)) {
+            return TYPIO_ERROR;
+        }
+        /*
+         * Invalidate all existing sessions so they are recreated with the
+         * newly compiled Rime data.  Sessions on unfocused contexts will be
+         * recreated on their next focus_in; the focused context session is
+         * recreated below by apply_runtime_config (which uses create=true).
+         */
+        if (state->api->cleanup_stale_sessions) {
+            state->api->cleanup_stale_sessions();
+        }
     }
 
     schema = typio_instance_dup_rime_schema(engine->instance);
