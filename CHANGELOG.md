@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-04-07
+
+### Removed
+
+- **Obsolete popup components**: Removed older Wayland candidate popup abstraction files and tests (`candidate_popup_damage`, `candidate_popup_state`, `candidate_popup_render_state`) rendered obsolete by the recent redesign.
+
 ## [2.6.4] - 2026-04-06
 
 ### Fixed
