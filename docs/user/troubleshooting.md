@@ -105,8 +105,8 @@ received from the compositor, the daemon duplicated the file descriptor and sent
 the copy to the virtual keyboard, but never closed the duplicate. Every
 application focus switch leaks one file descriptor. The Linux per-process fd
 limit is 1024 by default; as the table fills up, calls that need a new fd (such
-as `mkstemp` inside the Wayland SHM buffer allocator) start failing. Failed
-buffer allocation causes candidate popup frames to be silently dropped during
+as `mkstemp` inside the SHM buffer allocator) start failing. Failed buffer
+allocation causes candidate popup frames to be silently dropped during
 navigation.
 
 **Diagnosis:** While the daemon is running, count the leaked entries:
@@ -168,6 +168,9 @@ Read the last fault snapshot from the recent-log dump:
 ```bash
 find ~/.local/state/typio/logs -type f -name '*.log' 2>/dev/null
 rg -n "Virtual keyboard|fail-safe|keymap timeout|Keyboard grab|Wayland text UI slow|Popup slow render|Rime sync slow" ~/.local/state/typio/logs/latest.log
+
+# Popup slow-render lines now include delta= (selection/content/aux/style)
+# and omit the old fast_path= field.
 ```
 
 Current builds keep a single persisted recent-log snapshot at

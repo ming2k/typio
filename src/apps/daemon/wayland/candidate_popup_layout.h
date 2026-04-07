@@ -1,6 +1,19 @@
 /**
  * @file candidate_popup_layout.h
- * @brief Layout computation and cache for candidate popup UI
+ * @brief Candidate popup geometry: LRU layout cache and immutable geometry snapshots.
+ *
+ * Design:
+ *
+ *   PopupPangoCtx  — one persistent PangoContext per popup, plus an LRU
+ *                    cache of PangoLayouts keyed by (formatted_text, font_desc).
+ *                    Layouts are created without a scratch Cairo surface;
+ *                    pango_cairo_update_layout() is called during painting.
+ *
+ *   PopupGeometry  — an immutable snapshot of the computed layout for one
+ *                    candidate page.  `selected` is NOT part of the geometry
+ *                    because changing the selection does not affect positions.
+ *                    Candidate row layouts are *borrowed* from PopupPangoCtx.
+ *                    Preedit and mode-label layouts are *owned* by the geometry.
  */
 
 #ifndef TYPIO_WL_CANDIDATE_POPUP_LAYOUT_H
@@ -8,164 +21,142 @@
 
 #include "candidate_popup_theme.h"
 #include "typio/input_context.h"
+#include "typio/instance.h"
 
-#include <pango/pango.h>
+#include <pango/pangocairo.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-typedef enum TypioCandidatePopupLayoutMode {
-    TYPIO_CANDIDATE_POPUP_LAYOUT_HORIZONTAL = 0,
-    TYPIO_CANDIDATE_POPUP_LAYOUT_VERTICAL,
-} TypioCandidatePopupLayoutMode;
+/* ── Constants ──────────────────────────────────────────────────────── */
 
-typedef struct TypioCandidatePopupRenderConfig {
+#define POPUP_LAYOUT_CACHE_CAP  64   /* LRU cache capacity (entries)     */
+#define POPUP_MAX_ROWS          16   /* max candidates shown per page     */
+#define POPUP_MIN_WIDTH         220  /* minimum popup width (logical px)  */
+#define POPUP_PADDING           8
+#define POPUP_ROW_PAD_X         4
+#define POPUP_ROW_PAD_Y         2
+#define POPUP_ROW_GAP           4
+#define POPUP_COL_GAP           10
+#define POPUP_SECTION_GAP       6
+#define POPUP_DEFAULT_FONT_SIZE 11
+
+/* ── Configuration ──────────────────────────────────────────────────── */
+
+typedef enum {
+    POPUP_LAYOUT_VERTICAL = 0,
+    POPUP_LAYOUT_HORIZONTAL,
+} PopupLayoutMode;
+
+typedef struct {
     TypioCandidatePopupThemeMode theme_mode;
-    TypioCandidatePopupLayoutMode layout_mode;
-    int font_size;
-    bool mode_indicator;
-    char font_desc[64];
-    char page_font_desc[64];
-} TypioCandidatePopupRenderConfig;
+    PopupLayoutMode              layout_mode;
+    int                          font_size;
+    bool                         mode_indicator;
+    char                         font_desc[64];     /* candidates */
+    char                         aux_font_desc[64]; /* preedit + mode label */
+} PopupConfig;
 
-typedef struct TypioCandidatePopupLine {
-    char *text;
-    PangoLayout *layout;
-    int text_width;
-    int text_height;
-    int width;
-    int height;
-    int x;
-    int y;
-    int text_x;
-    int text_y;
-} TypioCandidatePopupLine;
+/* ── Per-row geometry ───────────────────────────────────────────────── */
 
-typedef struct TypioCandidatePopupCache {
-    TypioCandidatePopupLine *lines;
-    size_t line_count;
-    int selected;
-    uint64_t content_signature;
-    char *preedit_text;
+typedef struct {
+    PangoLayout *layout;   /* borrowed from PopupPangoCtx; do NOT free here */
+    int text_w, text_h;    /* measured text size (logical px)               */
+    int x, y;              /* row background rect origin                    */
+    int w, h;              /* row background rect size                      */
+    int text_x, text_y;   /* text draw origin within the row               */
+} PopupRow;
+
+/* ── Geometry snapshot ──────────────────────────────────────────────── */
+
+typedef struct {
+    PopupRow rows[POPUP_MAX_ROWS];
+    size_t   row_count;
+
+    /* Preedit — owned by this geometry (may be NULL) */
     PangoLayout *preedit_layout;
-    int preedit_width;
-    int preedit_height;
-    int preedit_x;
-    int preedit_y;
-    char *mode_label;
-    PangoLayout *mode_label_layout;
-    int mode_label_width;
-    int mode_label_height;
-    int mode_label_x;
-    int mode_label_y;
-    int mode_label_divider_y;
-    int width;
-    int height;
-    TypioCandidatePopupRenderConfig config;
+    int          pre_x, pre_y;
+    int          pre_w, pre_h;
+
+    /* Mode label — owned by this geometry (may be NULL) */
+    PangoLayout *mode_layout;
+    int          mode_x, mode_y;
+    int          mode_w, mode_h;
+    int          mode_divider_y; /* -1 if no divider */
+
+    int popup_w, popup_h;  /* logical pixels */
+    int scale;
+
+    /* Saved for delta classification on next update */
+    uint64_t    content_sig;
+    char        preedit_text[256];
+    char        mode_label[128];
+    PopupConfig config;
     const TypioCandidatePopupPalette *palette;
-    bool valid;
-} TypioCandidatePopupCache;
+} PopupGeometry;
 
-typedef struct TypioCandidatePopupFontCache {
-    PangoFontDescription *font;
-    PangoFontDescription *page_font;
-    char font_desc[64];
-    char page_font_desc[64];
-} TypioCandidatePopupFontCache;
+/* ── LRU layout cache ───────────────────────────────────────────────── */
 
-typedef struct TypioCandidatePopupConfigCache {
-    TypioCandidatePopupRenderConfig render_config;
-    bool valid;
-} TypioCandidatePopupConfigCache;
+typedef struct {
+    uint64_t     key;          /* FNV-1a hash(formatted_text + font_desc) */
+    char         text[512];    /* formatted candidate text                 */
+    char         font_desc[64];
+    PangoLayout *layout;       /* owned by this entry                      */
+    int          pixel_w;
+    int          pixel_h;
+    uint32_t     lru_tick;
+} PopupLayoutEntry;
 
-void typio_candidate_popup_layout_cache_invalidate(TypioCandidatePopupCache *cache);
+/* ── Persistent Pango context + LRU cache ───────────────────────────── */
 
-void typio_candidate_popup_layout_cache_update_aux(TypioCandidatePopupCache *cache,
-                                         char *preedit_text,
-                                         PangoLayout *preedit_layout,
-                                         int preedit_width, int preedit_height,
-                                         int preedit_x, int preedit_y,
-                                         char *mode_label,
-                                         PangoLayout *mode_label_layout,
-                                         int mode_label_width, int mode_label_height,
-                                         int mode_label_x, int mode_label_y,
-                                         int mode_label_divider_y);
+typedef struct {
+    PangoContext         *ctx;
+    PangoFontDescription *font;      /* main font, matched to config.font_desc     */
+    PangoFontDescription *aux_font;  /* aux font, matched to config.aux_font_desc  */
+    char                  font_desc[64];
+    char                  aux_font_desc[64];
+    PopupLayoutEntry      entries[POPUP_LAYOUT_CACHE_CAP];
+    uint32_t              tick;
+} PopupPangoCtx;
 
-void typio_candidate_popup_layout_cache_store(TypioCandidatePopupCache *cache,
-                                    TypioCandidatePopupLine *lines, size_t line_count,
-                                    int selected,
-                                    uint64_t content_signature,
-                                    char *preedit_text,
-                                    PangoLayout *preedit_layout,
-                                    int preedit_width, int preedit_height,
-                                    int preedit_x, int preedit_y,
-                                    char *mode_label,
-                                    PangoLayout *mode_label_layout,
-                                    int mode_label_width, int mode_label_height,
-                                    int mode_label_x, int mode_label_y,
-                                    int mode_label_divider_y,
-                                    int width, int height,
-                                    const TypioCandidatePopupRenderConfig *config,
-                                    const TypioCandidatePopupPalette *palette);
+/* ── Functions ──────────────────────────────────────────────────────── */
 
-bool typio_candidate_popup_layout_cache_matches(const TypioCandidatePopupCache *cache,
+/* Initialise / tear down the Pango context. */
+void popup_pango_ctx_init(PopupPangoCtx *pc);
+void popup_pango_ctx_free(PopupPangoCtx *pc);
+
+/* Invalidate font descriptions and all cached layouts (call on font/scale change). */
+void popup_pango_ctx_invalidate(PopupPangoCtx *pc);
+
+/**
+ * Compute a full geometry snapshot from scratch.
+ * Candidate layouts are looked up or inserted into the LRU cache.
+ * Preedit and mode-label layouts are created fresh (owned by the returned geometry).
+ * Returns a heap-allocated PopupGeometry, or NULL on allocation failure.
+ */
+PopupGeometry *popup_geometry_compute(PopupPangoCtx *pc,
                                       const TypioCandidateList *candidates,
                                       const char *preedit_text,
                                       const char *mode_label,
-                                      int scale,
-                                      const TypioCandidatePopupRenderConfig *config,
-                                      const TypioCandidatePopupPalette *palette);
+                                      const PopupConfig *config,
+                                      const TypioCandidatePopupPalette *palette,
+                                      int scale);
 
 /**
- * Compute layout: measure text, build lines array, compute total dimensions.
- *
- * On success, *out_lines is heap-allocated and ownership passes to the
- * caller. Returns false on failure.
+ * Rebuild only the aux section (preedit + mode label) while reusing the row
+ * layouts and positions from @base.  Returns a new geometry if the new
+ * preedit/mode label fits within the same popup dimensions; returns NULL if
+ * the dimensions would change (caller should fall back to popup_geometry_compute).
  */
-bool typio_candidate_popup_layout_compute(const TypioCandidateList *candidates,
-                                const char *preedit_text_in,
-                                const char *mode_label_in,
-                                const TypioCandidatePopupRenderConfig *config,
-                                TypioCandidatePopupFontCache *font_cache,
-                                TypioCandidatePopupLine **out_lines,
-                                size_t *out_line_count,
-                                PangoLayout **out_preedit_layout,
-                                int *out_preedit_width,
-                                int *out_preedit_height,
-                                int *out_preedit_x,
-                                int *out_preedit_y,
-                                PangoLayout **out_mode_label_layout,
-                                int *out_mode_label_width,
-                                int *out_mode_label_height,
-                                int *out_mode_label_x,
-                                int *out_mode_label_y,
-                                int *out_mode_label_divider_y,
-                                int *out_width,
-                                int *out_height);
+PopupGeometry *popup_geometry_update_aux(PopupPangoCtx *pc,
+                                         const PopupGeometry *base,
+                                         const char *preedit_text,
+                                         const char *mode_label);
 
-bool typio_candidate_popup_layout_measure_aux(const TypioCandidatePopupCache *cache,
-                                    const char *preedit_text_in,
-                                    const char *mode_label_in,
-                                    const TypioCandidatePopupRenderConfig *config,
-                                    TypioCandidatePopupFontCache *font_cache,
-                                    PangoLayout **out_preedit_layout,
-                                    int *out_preedit_width,
-                                    int *out_preedit_height,
-                                    int *out_preedit_x,
-                                    int *out_preedit_y,
-                                    PangoLayout **out_mode_label_layout,
-                                    int *out_mode_label_width,
-                                    int *out_mode_label_height,
-                                    int *out_mode_label_x,
-                                    int *out_mode_label_y,
-                                    int *out_mode_label_divider_y,
-                                    int *out_width,
-                                    int *out_height);
+/** Free a geometry snapshot (owned layouts only; borrowed row layouts are left alone). */
+void popup_geometry_free(PopupGeometry *g);
 
-PangoFontDescription *typio_candidate_popup_font_get(TypioCandidatePopupFontCache *fc,
-                                           const char *font_desc,
-                                           bool is_page_font);
-
-void typio_candidate_popup_font_cache_free(TypioCandidatePopupFontCache *fc);
+/** Load PopupConfig from the global TypioInstance config. */
+void popup_config_load(PopupConfig *cfg, TypioInstance *instance);
 
 #endif /* TYPIO_WL_CANDIDATE_POPUP_LAYOUT_H */

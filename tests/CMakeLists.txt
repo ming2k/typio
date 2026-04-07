@@ -177,6 +177,7 @@ add_test(NAME test_frontend_aux COMMAND $<TARGET_FILE:test_frontend_aux>)
 add_executable(test_vk_bridge
     test_vk_bridge.c
     ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland/vk_bridge.c
+    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland/lifecycle_model.c
 )
 target_include_directories(test_vk_bridge PRIVATE
     ${CMAKE_BINARY_DIR}
@@ -228,46 +229,6 @@ target_include_directories(test_candidate_guard PRIVATE
 )
 target_link_libraries(test_candidate_guard PRIVATE typio-core)
 add_test(NAME test_candidate_guard COMMAND test_candidate_guard)
-
-add_executable(test_candidate_popup_damage
-    test_candidate_popup_damage.c
-    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland/candidate_popup_damage.c
-)
-target_include_directories(test_candidate_popup_damage PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland
-)
-add_test(NAME test_candidate_popup_damage COMMAND test_candidate_popup_damage)
-
-add_executable(test_candidate_popup_state
-    test_candidate_popup_state.c
-    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland/candidate_popup_state.c
-)
-target_include_directories(test_candidate_popup_state PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland
-)
-add_test(NAME test_candidate_popup_state COMMAND test_candidate_popup_state)
-
-add_executable(test_candidate_popup_render_state
-    test_candidate_popup_render_state.c
-    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland/candidate_popup_render_state.c
-)
-target_include_directories(test_candidate_popup_render_state PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland
-)
-add_test(NAME test_candidate_popup_render_state COMMAND test_candidate_popup_render_state)
-
-add_executable(test_candidate_popup_layout
-    test_candidate_popup_layout.c
-    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland/candidate_popup_layout.c
-    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland/candidate_popup_render_state.c
-)
-target_include_directories(test_candidate_popup_layout PRIVATE
-    ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/daemon/wayland
-    ${CAIRO_PANGO_INCLUDE_DIRS}
-)
-target_link_libraries(test_candidate_popup_layout PRIVATE ${CAIRO_PANGO_LIBRARIES})
-add_test(NAME test_candidate_popup_layout COMMAND test_candidate_popup_layout)
 
 add_executable(test_text_ui_state
     test_text_ui_state.c

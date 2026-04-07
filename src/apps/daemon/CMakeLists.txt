@@ -46,11 +46,8 @@ if(HAVE_WAYLAND)
         wayland/wl_runtime_config.c
         wayland/candidate_popup.c
         wayland/candidate_popup_buffer.c
-        wayland/candidate_popup_damage.c
         wayland/candidate_popup_layout.c
         wayland/candidate_popup_paint.c
-        wayland/candidate_popup_render_state.c
-        wayland/candidate_popup_state.c
         wayland/candidate_popup_theme.c
         wayland/repeat_guard.c
         wayland/shortcut_chord.c

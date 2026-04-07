@@ -1,664 +1,562 @@
 /**
  * @file candidate_popup_layout.c
- * @brief Layout computation and cache for candidate popup UI
+ * @brief Candidate popup geometry: PangoContext-based LRU cache and geometry computation.
  *
- * Handles text measurement with Pango, candidate formatting, position
- * computation for vertical/horizontal layout modes, and the layout cache
- * that allows selection-only changes to skip remeasurement.
+ * Key design choices:
+ *
+ *   - Text measurement uses a persistent PangoContext (pango_font_map_create_context)
+ *     rather than creating a 1×1 scratch Cairo surface on every page change.
+ *
+ *   - Candidate PangoLayouts are cached in a 64-entry LRU keyed by
+ *     FNV-1a hash(formatted_text + font_desc).  On a typical page change,
+ *     most layouts are already cached because the user has seen those
+ *     candidates before, or the same characters appear across pages.
+ *
+ *   - `selected` is intentionally absent from PopupGeometry: changing the
+ *     selection never requires re-measuring text or recomputing positions.
  */
 
 #include "candidate_popup_layout.h"
-#include "candidate_popup_render_state.h"
+#include "typio/config.h"
 
 #include <cairo.h>
-#include <pango/pangocairo.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define TYPIO_CANDIDATE_POPUP_PADDING 8
-#define TYPIO_CANDIDATE_POPUP_ROW_GAP 4
-#define TYPIO_CANDIDATE_POPUP_COLUMN_GAP 10
-#define TYPIO_CANDIDATE_POPUP_SECTION_GAP 6
-#define TYPIO_CANDIDATE_POPUP_MIN_WIDTH 220
-#define TYPIO_CANDIDATE_POPUP_ROW_PADDING_X 4
-#define TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y 2
+/* ── FNV-1a hash ────────────────────────────────────────────────────── */
 
-/* ── Candidate formatting ──────────────────────────────────────────── */
+static uint64_t fnv1a(uint64_t h, const char *s) {
+    const unsigned char *p = (const unsigned char *)s;
+    while (*p) {
+        h ^= *p++;
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
 
-static char *format_candidate(const TypioCandidate *candidate, size_t index) {
-    const char *label;
-    const char *text;
+static uint64_t layout_cache_key(const char *text, const char *font_desc) {
+    uint64_t h = 14695981039346656037ULL;
+    h = fnv1a(h, text);
+    h ^= 0xffULL;
+    h *= 1099511628211ULL;
+    h = fnv1a(h, font_desc);
+    return h;
+}
+
+/* ── Candidate text formatting ──────────────────────────────────────── */
+
+static void format_candidate(const TypioCandidate *c, size_t idx,
+                              char *buf, size_t buf_size) {
     char fallback_label[32];
-    char buf[512];
+    const char *label;
 
-    if (!candidate || !candidate->text) {
-        return nullptr;
+    if (!c || !c->text) {
+        buf[0] = '\0';
+        return;
     }
 
-    text = candidate->text;
-
-    if (candidate->label && candidate->label[0]) {
-        label = candidate->label;
+    if (c->label && c->label[0]) {
+        label = c->label;
     } else {
-        snprintf(fallback_label, sizeof(fallback_label), "%zu", index + 1);
+        snprintf(fallback_label, sizeof(fallback_label), "%zu", idx + 1);
         label = fallback_label;
     }
 
-    if (candidate->comment && candidate->comment[0]) {
-        snprintf(buf, sizeof(buf), "%s. %s  %s", label, text, candidate->comment);
+    if (c->comment && c->comment[0]) {
+        snprintf(buf, buf_size, "%s. %s  %s", label, c->text, c->comment);
     } else {
-        snprintf(buf, sizeof(buf), "%s. %s", label, text);
+        snprintf(buf, buf_size, "%s. %s", label, c->text);
     }
-
-    return strdup(buf);
 }
 
-/* ── Line helpers ──────────────────────────────────────────────────── */
+/* ── PangoContext management ────────────────────────────────────────── */
 
-static void free_lines(TypioCandidatePopupLine *lines, size_t count) {
-    if (!lines) {
-        return;
+static void pango_ctx_rebuild_fonts(PopupPangoCtx *pc) {
+    if (pc->font) {
+        pango_font_description_free(pc->font);
+        pc->font = nullptr;
+    }
+    if (pc->aux_font) {
+        pango_font_description_free(pc->aux_font);
+        pc->aux_font = nullptr;
     }
 
-    for (size_t i = 0; i < count; ++i) {
-        if (lines[i].layout) {
-            g_object_unref(lines[i].layout);
+    if (pc->font_desc[0]) {
+        pc->font = pango_font_description_from_string(pc->font_desc);
+    }
+    if (pc->aux_font_desc[0]) {
+        pc->aux_font = pango_font_description_from_string(pc->aux_font_desc);
+    }
+}
+
+void popup_pango_ctx_init(PopupPangoCtx *pc) {
+    PangoFontMap *font_map;
+
+    if (!pc) return;
+
+    memset(pc, 0, sizeof(*pc));
+
+    font_map = pango_cairo_font_map_get_default();
+    pc->ctx  = pango_font_map_create_context(font_map);
+
+    if (pc->ctx) {
+        /* Set font options for consistent rendering */
+        cairo_font_options_t *opts = cairo_font_options_create();
+        cairo_font_options_set_antialias(opts, CAIRO_ANTIALIAS_SUBPIXEL);
+        cairo_font_options_set_hint_style(opts, CAIRO_HINT_STYLE_SLIGHT);
+        pango_cairo_context_set_font_options(pc->ctx, opts);
+        cairo_font_options_destroy(opts);
+    }
+}
+
+void popup_pango_ctx_free(PopupPangoCtx *pc) {
+    size_t i;
+
+    if (!pc) return;
+
+    for (i = 0; i < POPUP_LAYOUT_CACHE_CAP; ++i) {
+        if (pc->entries[i].layout) {
+            g_object_unref(pc->entries[i].layout);
+            pc->entries[i].layout = nullptr;
         }
-        free(lines[i].text);
     }
-    free(lines);
+
+    if (pc->font) {
+        pango_font_description_free(pc->font);
+        pc->font = nullptr;
+    }
+    if (pc->aux_font) {
+        pango_font_description_free(pc->aux_font);
+        pc->aux_font = nullptr;
+    }
+    if (pc->ctx) {
+        g_object_unref(pc->ctx);
+        pc->ctx = nullptr;
+    }
+
+    memset(pc, 0, sizeof(*pc));
 }
 
-/* ── Text measurement ──────────────────────────────────────────────── */
+void popup_pango_ctx_invalidate(PopupPangoCtx *pc) {
+    size_t i;
 
-static PangoLayout *create_text_layout(cairo_t *cr, PangoFontDescription *font,
-                                       const char *text) {
-    PangoLayout *layout = pango_cairo_create_layout(cr);
-    if (!layout) {
-        return nullptr;
+    if (!pc) return;
+
+    /* Clear all cached layouts — font metrics may have changed */
+    for (i = 0; i < POPUP_LAYOUT_CACHE_CAP; ++i) {
+        if (pc->entries[i].layout) {
+            g_object_unref(pc->entries[i].layout);
+        }
+        memset(&pc->entries[i], 0, sizeof(pc->entries[i]));
     }
-    pango_layout_set_font_description(layout, font);
-    pango_layout_set_text(layout, text ? text : "", -1);
-    return layout;
+    pc->tick = 0;
+
+    pango_ctx_rebuild_fonts(pc);
 }
 
-static bool measure_layout(PangoLayout *layout, int *width, int *height) {
-    if (!layout) {
-        return false;
+/* ── Font cache helpers ─────────────────────────────────────────────── */
+
+static bool pango_ctx_ensure_font(PopupPangoCtx *pc,
+                                   const char *font_desc,
+                                   const char *aux_font_desc) {
+    bool changed = false;
+
+    if (!pc || !pc->ctx) return false;
+
+    if (strcmp(pc->font_desc, font_desc ? font_desc : "") != 0) {
+        snprintf(pc->font_desc, sizeof(pc->font_desc),
+                 "%s", font_desc ? font_desc : "");
+        changed = true;
     }
-    pango_layout_get_pixel_size(layout, width, height);
+    if (strcmp(pc->aux_font_desc, aux_font_desc ? aux_font_desc : "") != 0) {
+        snprintf(pc->aux_font_desc, sizeof(pc->aux_font_desc),
+                 "%s", aux_font_desc ? aux_font_desc : "");
+        changed = true;
+    }
+
+    if (changed) {
+        /* Fonts changed: all cached layouts are stale */
+        popup_pango_ctx_invalidate(pc);
+    }
+
+    if (!pc->font && pc->font_desc[0]) {
+        pc->font = pango_font_description_from_string(pc->font_desc);
+    }
+    if (!pc->aux_font && pc->aux_font_desc[0]) {
+        pc->aux_font = pango_font_description_from_string(pc->aux_font_desc);
+    }
+
     return true;
 }
 
-/* ── Font cache ────────────────────────────────────────────────────── */
+/* ── LRU cache lookup / insert ──────────────────────────────────────── */
 
-PangoFontDescription *typio_candidate_popup_font_get(TypioCandidatePopupFontCache *fc,
-                                           const char *font_desc,
-                                           bool is_page_font) {
-    char *cached_desc = is_page_font ? fc->page_font_desc : fc->font_desc;
-    PangoFontDescription **cached_font = is_page_font ? &fc->page_font : &fc->font;
+/**
+ * Find a cached layout for (text, font_desc).
+ * On hit: update lru_tick and return the entry.
+ * On miss: evict the LRU entry, create a new layout, return the entry.
+ * Returns NULL only if PangoContext is unavailable.
+ */
+static PopupLayoutEntry *lru_get_or_create(PopupPangoCtx *pc,
+                                            const char *text,
+                                            PangoFontDescription *font,
+                                            const char *font_desc) {
+    uint64_t key;
+    size_t   i;
+    size_t   lru_idx  = 0;
+    uint32_t lru_tick = UINT32_MAX;
+    PangoLayout *layout;
 
-    if (*cached_font && strcmp(cached_desc, font_desc) == 0) {
-        return *cached_font;
+    if (!pc || !pc->ctx || !text || !font) return nullptr;
+
+    key = layout_cache_key(text, font_desc ? font_desc : "");
+    pc->tick++;
+
+    /* Linear scan: find hit or identify LRU victim */
+    for (i = 0; i < POPUP_LAYOUT_CACHE_CAP; ++i) {
+        PopupLayoutEntry *e = &pc->entries[i];
+
+        if (e->layout && e->key == key &&
+            strcmp(e->text, text) == 0 &&
+            strcmp(e->font_desc, font_desc ? font_desc : "") == 0) {
+            /* Cache hit */
+            e->lru_tick = pc->tick;
+            return e;
+        }
+
+        if (!e->layout || e->lru_tick < lru_tick) {
+            lru_tick = e->layout ? e->lru_tick : 0;
+            lru_idx  = i;
+        }
     }
 
-    if (*cached_font) {
-        pango_font_description_free(*cached_font);
+    /* Cache miss: evict LRU slot */
+    PopupLayoutEntry *victim = &pc->entries[lru_idx];
+    if (victim->layout) {
+        g_object_unref(victim->layout);
+        victim->layout = nullptr;
     }
 
-    *cached_font = pango_font_description_from_string(font_desc);
-    snprintf(is_page_font ? fc->page_font_desc : fc->font_desc,
-             sizeof(fc->font_desc), "%s", font_desc);
-    return *cached_font;
+    layout = pango_layout_new(pc->ctx);
+    if (!layout) return nullptr;
+
+    pango_layout_set_font_description(layout, font);
+    pango_layout_set_text(layout, text, -1);
+    pango_layout_get_pixel_size(layout, &victim->pixel_w, &victim->pixel_h);
+
+    victim->key      = key;
+    victim->layout   = layout;
+    victim->lru_tick = pc->tick;
+    snprintf(victim->text,      sizeof(victim->text),      "%s", text);
+    snprintf(victim->font_desc, sizeof(victim->font_desc), "%s",
+             font_desc ? font_desc : "");
+
+    return victim;
 }
 
-void typio_candidate_popup_font_cache_free(TypioCandidatePopupFontCache *fc) {
-    if (!fc) {
-        return;
+/* ── Standalone layout creation (preedit / mode label) ──────────────── */
+
+static PangoLayout *make_layout(PopupPangoCtx *pc,
+                                 PangoFontDescription *font,
+                                 const char *text,
+                                 int *out_w, int *out_h) {
+    PangoLayout *l;
+
+    if (!pc || !pc->ctx || !font || !text) return nullptr;
+
+    l = pango_layout_new(pc->ctx);
+    if (!l) return nullptr;
+
+    pango_layout_set_font_description(l, font);
+    pango_layout_set_text(l, text, -1);
+    pango_layout_get_pixel_size(l, out_w, out_h);
+    return l;
+}
+
+/* ── Geometry helpers ───────────────────────────────────────────────── */
+
+/* Compute the popup width and height, and assign row positions. */
+static void compute_positions(PopupGeometry *g,
+                               const PopupConfig *cfg,
+                               int pre_h_used) {
+    int content_w = g->pre_w;
+    int content_h = pre_h_used ? g->pre_h : 0;
+    int row_w     = 0;
+    int row_h     = 0;
+    size_t i;
+
+    /* Measure content area */
+    if (cfg->layout_mode == POPUP_LAYOUT_VERTICAL) {
+        for (i = 0; i < g->row_count; ++i) {
+            if (g->rows[i].w > content_w) content_w = g->rows[i].w;
+            content_h += g->rows[i].h;
+            if (i + 1 < g->row_count) content_h += POPUP_ROW_GAP;
+        }
+    } else {
+        for (i = 0; i < g->row_count; ++i) {
+            if (row_w > 0) row_w += POPUP_COL_GAP;
+            row_w += g->rows[i].w;
+            if (g->rows[i].h > row_h) row_h = g->rows[i].h;
+        }
+        content_h += row_h;
+        int total_row = row_w;
+        if (g->mode_layout && g->mode_w > 0) {
+            total_row += POPUP_COL_GAP + g->mode_w;
+        }
+        content_w = total_row > g->pre_w ? total_row : g->pre_w;
     }
-    if (fc->font) {
-        pango_font_description_free(fc->font);
-        fc->font = nullptr;
+
+    if (pre_h_used && g->row_count > 0) content_h += POPUP_SECTION_GAP;
+
+    /* Mode label (vertical layout only adds to height here) */
+    if (g->mode_layout && g->mode_h > 0 &&
+        cfg->layout_mode == POPUP_LAYOUT_VERTICAL) {
+        content_h += POPUP_SECTION_GAP + g->mode_h;
+        if (g->mode_w > content_w) content_w = g->mode_w;
     }
-    if (fc->page_font) {
-        pango_font_description_free(fc->page_font);
-        fc->page_font = nullptr;
+
+    g->popup_w = content_w + POPUP_PADDING * 2;
+    if (g->popup_w < POPUP_MIN_WIDTH) g->popup_w = POPUP_MIN_WIDTH;
+    g->popup_h = content_h + POPUP_PADDING * 2;
+
+    /* Row positions */
+    int y = POPUP_PADDING;
+    if (pre_h_used) y += g->pre_h + POPUP_SECTION_GAP;
+
+    if (cfg->layout_mode == POPUP_LAYOUT_VERTICAL) {
+        for (i = 0; i < g->row_count; ++i) {
+            g->rows[i].x      = POPUP_PADDING;
+            g->rows[i].y      = y;
+            g->rows[i].w      = g->popup_w - POPUP_PADDING * 2;
+            g->rows[i].text_x = g->rows[i].x + POPUP_ROW_PAD_X;
+            g->rows[i].text_y = g->rows[i].y + POPUP_ROW_PAD_Y;
+            y += g->rows[i].h;
+            if (i + 1 < g->row_count) y += POPUP_ROW_GAP;
+        }
+    } else {
+        int x = POPUP_PADDING;
+        for (i = 0; i < g->row_count; ++i) {
+            g->rows[i].x      = x;
+            g->rows[i].y      = y;
+            g->rows[i].text_x = x + POPUP_ROW_PAD_X;
+            g->rows[i].text_y = y + POPUP_ROW_PAD_Y;
+            x += g->rows[i].w + POPUP_COL_GAP;
+        }
+    }
+
+    /* Preedit position */
+    g->pre_x = POPUP_PADDING;
+    g->pre_y = POPUP_PADDING;
+
+    /* Mode label position */
+    if (g->mode_layout && g->mode_h > 0) {
+        g->mode_x = g->popup_w - POPUP_PADDING - g->mode_w;
+        if (cfg->layout_mode == POPUP_LAYOUT_HORIZONTAL) {
+            g->mode_y        = y + POPUP_ROW_PAD_Y;
+            g->mode_divider_y = -1;
+        } else {
+            g->mode_divider_y = g->popup_h - POPUP_PADDING -
+                                g->mode_h - POPUP_ROW_PAD_Y;
+            g->mode_y        = g->popup_h - POPUP_PADDING - g->mode_h;
+        }
+    } else {
+        g->mode_divider_y = -1;
     }
 }
 
-/* ── Cache management ──────────────────────────────────────────────── */
+/* ── Public API ─────────────────────────────────────────────────────── */
 
-void typio_candidate_popup_layout_cache_invalidate(TypioCandidatePopupCache *cache) {
-    if (!cache) {
-        return;
-    }
-    free_lines(cache->lines, cache->line_count);
-    free(cache->preedit_text);
-    if (cache->preedit_layout) {
-        g_object_unref(cache->preedit_layout);
-    }
-    free(cache->mode_label);
-    if (cache->mode_label_layout) {
-        g_object_unref(cache->mode_label_layout);
-    }
-    memset(cache, 0, sizeof(*cache));
-    cache->selected = -1;
-}
-
-void typio_candidate_popup_layout_cache_update_aux(TypioCandidatePopupCache *cache,
-                                         char *preedit_text,
-                                         PangoLayout *preedit_layout,
-                                         int preedit_width, int preedit_height,
-                                         int preedit_x, int preedit_y,
-                                         char *mode_label,
-                                         PangoLayout *mode_label_layout,
-                                         int mode_label_width, int mode_label_height,
-                                         int mode_label_x, int mode_label_y,
-                                         int mode_label_divider_y) {
-    if (!cache) {
-        return;
-    }
-
-    free(cache->preedit_text);
-    if (cache->preedit_layout) {
-        g_object_unref(cache->preedit_layout);
-    }
-    free(cache->mode_label);
-    if (cache->mode_label_layout) {
-        g_object_unref(cache->mode_label_layout);
-    }
-
-    cache->preedit_text = preedit_text;
-    cache->preedit_layout = preedit_layout;
-    cache->preedit_width = preedit_width;
-    cache->preedit_height = preedit_height;
-    cache->preedit_x = preedit_x;
-    cache->preedit_y = preedit_y;
-    cache->mode_label = mode_label;
-    cache->mode_label_layout = mode_label_layout;
-    cache->mode_label_width = mode_label_width;
-    cache->mode_label_height = mode_label_height;
-    cache->mode_label_x = mode_label_x;
-    cache->mode_label_y = mode_label_y;
-    cache->mode_label_divider_y = mode_label_divider_y;
-}
-
-void typio_candidate_popup_layout_cache_store(TypioCandidatePopupCache *cache,
-                                    TypioCandidatePopupLine *lines, size_t line_count,
-                                    int selected,
-                                    uint64_t content_signature,
-                                    char *preedit_text,
-                                    PangoLayout *preedit_layout,
-                                    int preedit_width, int preedit_height,
-                                    int preedit_x, int preedit_y,
-                                    char *mode_label,
-                                    PangoLayout *mode_label_layout,
-                                    int mode_label_width, int mode_label_height,
-                                    int mode_label_x, int mode_label_y,
-                                    int mode_label_divider_y,
-                                    int width, int height,
-                                    const TypioCandidatePopupRenderConfig *config,
-                                    const TypioCandidatePopupPalette *palette) {
-    free_lines(cache->lines, cache->line_count);
-    free(cache->preedit_text);
-    if (cache->preedit_layout) {
-        g_object_unref(cache->preedit_layout);
-    }
-    free(cache->mode_label);
-    if (cache->mode_label_layout) {
-        g_object_unref(cache->mode_label_layout);
-    }
-    cache->preedit_text = nullptr;
-    cache->preedit_layout = nullptr;
-    cache->mode_label = nullptr;
-    cache->mode_label_layout = nullptr;
-
-    cache->lines = lines;
-    cache->line_count = line_count;
-    cache->selected = selected;
-    cache->content_signature = content_signature;
-    cache->width = width;
-    cache->height = height;
-    cache->config = *config;
-    cache->palette = palette;
-    cache->valid = true;
-    typio_candidate_popup_layout_cache_update_aux(cache,
-                                         preedit_text,
-                                         preedit_layout,
-                                         preedit_width, preedit_height,
-                                         preedit_x, preedit_y,
-                                         mode_label,
-                                         mode_label_layout,
-                                         mode_label_width, mode_label_height,
-                                         mode_label_x, mode_label_y,
-                                         mode_label_divider_y);
-}
-
-bool typio_candidate_popup_layout_cache_matches(const TypioCandidatePopupCache *cache,
+PopupGeometry *popup_geometry_compute(PopupPangoCtx *pc,
                                       const TypioCandidateList *candidates,
                                       const char *preedit_text,
                                       const char *mode_label,
-                                      int scale,
-                                      const TypioCandidatePopupRenderConfig *config,
-                                      const TypioCandidatePopupPalette *palette) {
-    TypioCandidatePopupRenderState cached = {
-        .cache_valid = cache->valid,
-        .line_count = cache->line_count,
-        .content_signature = cache->content_signature,
-        .palette_token = cache->palette,
-        .theme_mode = cache->config.theme_mode,
-        .layout_mode = cache->config.layout_mode,
-        .font_size = cache->config.font_size,
-        .font_desc = cache->config.font_desc,
-        .page_font_desc = cache->config.page_font_desc,
-        .width = cache->width,
-        .height = cache->height,
-        .preedit_text = cache->preedit_text,
-        .mode_label = cache->mode_label,
-    };
-    TypioCandidatePopupRenderState current = {
-        .cache_valid = true,
-        .line_count = candidates->count,
-        .content_signature = candidates->content_signature,
-        .palette_token = palette,
-        .theme_mode = config->theme_mode,
-        .layout_mode = config->layout_mode,
-        .font_size = config->font_size,
-        .font_desc = config->font_desc,
-        .page_font_desc = config->page_font_desc,
-        .width = cache->width,
-        .height = cache->height,
-        .preedit_text = preedit_text,
-        .mode_label = mode_label,
-    };
+                                      const PopupConfig *cfg,
+                                      const TypioCandidatePopupPalette *palette,
+                                      int scale) {
+    PopupGeometry *g;
+    size_t i;
 
-    return typio_candidate_popup_render_state_matches(&cached, &current, scale);
+    if (!pc || !candidates || !cfg || !palette) return nullptr;
+    if (candidates->count > POPUP_MAX_ROWS) return nullptr;
+
+    /* Ensure fonts match current config */
+    if (!pango_ctx_ensure_font(pc, cfg->font_desc, cfg->aux_font_desc)) {
+        return nullptr;
+    }
+
+    g = calloc(1, sizeof(*g));
+    if (!g) return nullptr;
+
+    g->row_count       = candidates->count;
+    g->scale           = scale;
+    g->content_sig     = candidates->content_signature;
+    g->palette         = palette;
+    g->config          = *cfg;
+    g->mode_divider_y  = -1;
+
+    snprintf(g->preedit_text, sizeof(g->preedit_text),
+             "%s", preedit_text ? preedit_text : "");
+    snprintf(g->mode_label, sizeof(g->mode_label),
+             "%s", mode_label ? mode_label : "");
+
+    /* Measure each candidate row via the LRU cache */
+    for (i = 0; i < candidates->count; ++i) {
+        char formatted[512];
+        PopupLayoutEntry *entry;
+
+        format_candidate(&candidates->candidates[i], i,
+                         formatted, sizeof(formatted));
+
+        entry = lru_get_or_create(pc, formatted, pc->font, cfg->font_desc);
+        if (!entry) {
+            free(g);
+            return nullptr;
+        }
+
+        g->rows[i].layout  = entry->layout;
+        g->rows[i].text_w  = entry->pixel_w;
+        g->rows[i].text_h  = entry->pixel_h;
+        g->rows[i].w       = entry->pixel_w + POPUP_ROW_PAD_X * 2;
+        g->rows[i].h       = entry->pixel_h + POPUP_ROW_PAD_Y * 2;
+    }
+
+    /* Preedit layout (owned) */
+    if (preedit_text && preedit_text[0] && pc->aux_font) {
+        g->preedit_layout = make_layout(pc, pc->aux_font, preedit_text,
+                                         &g->pre_w, &g->pre_h);
+    }
+
+    /* Mode label layout (owned) */
+    if (cfg->mode_indicator && mode_label && mode_label[0] && pc->aux_font) {
+        g->mode_layout = make_layout(pc, pc->aux_font, mode_label,
+                                      &g->mode_w, &g->mode_h);
+    }
+
+    compute_positions(g, cfg, preedit_text && preedit_text[0] ? 1 : 0);
+
+    return g;
 }
 
-/* ── Layout computation ────────────────────────────────────────────── */
+PopupGeometry *popup_geometry_update_aux(PopupPangoCtx *pc,
+                                          const PopupGeometry *base,
+                                          const char *preedit_text,
+                                          const char *mode_label) {
+    PopupGeometry *g;
+    int new_pre_w = 0, new_pre_h = 0;
+    int new_mode_w = 0, new_mode_h = 0;
+    PangoLayout *new_preedit_layout = nullptr;
+    PangoLayout *new_mode_layout    = nullptr;
 
-bool typio_candidate_popup_layout_compute(const TypioCandidateList *candidates,
-                                const char *preedit_text_in,
-                                const char *mode_label_in,
-                                const TypioCandidatePopupRenderConfig *config,
-                                TypioCandidatePopupFontCache *font_cache,
-                                TypioCandidatePopupLine **out_lines,
-                                size_t *out_line_count,
-                                PangoLayout **out_preedit_layout,
-                                int *out_preedit_width,
-                                int *out_preedit_height,
-                                int *out_preedit_x,
-                                int *out_preedit_y,
-                                PangoLayout **out_mode_label_layout,
-                                int *out_mode_label_width,
-                                int *out_mode_label_height,
-                                int *out_mode_label_x,
-                                int *out_mode_label_y,
-                                int *out_mode_label_divider_y,
-                                int *out_width,
-                                int *out_height) {
-    size_t line_count = candidates->count;
-    TypioCandidatePopupLine *lines = calloc(line_count, sizeof(*lines));
-    PangoLayout *preedit_layout = nullptr;
-    PangoLayout *mode_label_layout = nullptr;
-    if (!lines) {
-        return false;
+    if (!pc || !base) return nullptr;
+
+    /* Measure new aux layouts */
+    if (preedit_text && preedit_text[0] && pc->aux_font) {
+        new_preedit_layout = make_layout(pc, pc->aux_font, preedit_text,
+                                          &new_pre_w, &new_pre_h);
+        if (!new_preedit_layout) return nullptr;
     }
 
-    PangoFontDescription *font = typio_candidate_popup_font_get(
-        font_cache, config->font_desc, false);
-    PangoFontDescription *page_font = typio_candidate_popup_font_get(
-        font_cache, config->page_font_desc, true);
-
-    cairo_surface_t *scratch = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
-    cairo_t *cr = cairo_create(scratch);
-
-    int preedit_width = 0;
-    int preedit_height = 0;
-    if (preedit_text_in) {
-        preedit_layout = create_text_layout(cr, page_font, preedit_text_in);
-    }
-    if (preedit_text_in && !measure_layout(preedit_layout, &preedit_width, &preedit_height)) {
-        cairo_destroy(cr);
-        cairo_surface_destroy(scratch);
-        free_lines(lines, line_count);
-        if (preedit_layout) {
-            g_object_unref(preedit_layout);
-        }
-        return false;
-    }
-
-    int mode_label_width = 0;
-    int mode_label_height = 0;
-    if (mode_label_in) {
-        mode_label_layout = create_text_layout(cr, page_font, mode_label_in);
-    }
-    if (mode_label_in &&
-        !measure_layout(mode_label_layout, &mode_label_width, &mode_label_height)) {
-        cairo_destroy(cr);
-        cairo_surface_destroy(scratch);
-        free_lines(lines, line_count);
-        if (preedit_layout) {
-            g_object_unref(preedit_layout);
-        }
-        if (mode_label_layout) {
-            g_object_unref(mode_label_layout);
-        }
-        return false;
-    }
-
-    int content_width = preedit_width;
-    int content_height = preedit_text_in ? preedit_height : 0;
-    int items_height = 0;
-    int row_width = 0;
-    int row_height = 0;
-
-    for (size_t i = 0; i < line_count; ++i) {
-        lines[i].text = format_candidate(&candidates->candidates[i], i);
-        if (lines[i].text) {
-            lines[i].layout = create_text_layout(cr, font, lines[i].text);
-        }
-        if (!lines[i].text || !measure_layout(lines[i].layout,
-                          &lines[i].text_width, &lines[i].text_height)) {
-            cairo_destroy(cr);
-            cairo_surface_destroy(scratch);
-            free_lines(lines, line_count);
-            if (preedit_layout) {
-                g_object_unref(preedit_layout);
-            }
-            if (mode_label_layout) {
-                g_object_unref(mode_label_layout);
-            }
-            return false;
-        }
-
-        lines[i].width = lines[i].text_width + TYPIO_CANDIDATE_POPUP_ROW_PADDING_X * 2;
-        lines[i].height = lines[i].text_height + TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y * 2;
-
-        if (config->layout_mode == TYPIO_CANDIDATE_POPUP_LAYOUT_VERTICAL) {
-            if (lines[i].width > content_width) {
-                content_width = lines[i].width;
-            }
-            items_height += lines[i].height;
-            if (i + 1 < line_count) {
-                items_height += TYPIO_CANDIDATE_POPUP_ROW_GAP;
-            }
-        } else {
-            if (row_width > 0) {
-                row_width += TYPIO_CANDIDATE_POPUP_COLUMN_GAP;
-            }
-            row_width += lines[i].width;
-            if (lines[i].height > row_height) {
-                row_height = lines[i].height;
-            }
+    if (base->config.mode_indicator && mode_label && mode_label[0] && pc->aux_font) {
+        new_mode_layout = make_layout(pc, pc->aux_font, mode_label,
+                                       &new_mode_w, &new_mode_h);
+        if (!new_mode_layout) {
+            if (new_preedit_layout) g_object_unref(new_preedit_layout);
+            return nullptr;
         }
     }
 
-    cairo_destroy(cr);
-    cairo_surface_destroy(scratch);
+    /* If either aux dimension changed, dimensions would change → signal failure */
+    bool pre_dims_same  = (new_pre_w == base->pre_w && new_pre_h == base->pre_h);
+    bool mode_dims_same = (new_mode_w == base->mode_w && new_mode_h == base->mode_h);
 
-    if (config->layout_mode == TYPIO_CANDIDATE_POPUP_LAYOUT_HORIZONTAL) {
-        if (row_height > 0) {
-            items_height += row_height;
-        }
-        int total_row = row_width;
-        if (mode_label_in && mode_label_width > 0) {
-            total_row += TYPIO_CANDIDATE_POPUP_COLUMN_GAP + mode_label_width;
-        }
-        if (total_row > content_width) {
-            content_width = total_row;
-        }
+    if (!pre_dims_same || !mode_dims_same) {
+        if (new_preedit_layout) g_object_unref(new_preedit_layout);
+        if (new_mode_layout)    g_object_unref(new_mode_layout);
+        return nullptr;
     }
 
-    if (preedit_text_in && line_count > 0) {
-        content_height += TYPIO_CANDIDATE_POPUP_SECTION_GAP;
-    }
-    content_height += items_height;
-
-    if (mode_label_in && mode_label_height > 0 &&
-        config->layout_mode == TYPIO_CANDIDATE_POPUP_LAYOUT_VERTICAL) {
-        content_height += TYPIO_CANDIDATE_POPUP_SECTION_GAP + mode_label_height;
-        if (mode_label_width > content_width) {
-            content_width = mode_label_width;
-        }
+    /* Dimensions unchanged: build updated geometry by copying base */
+    g = malloc(sizeof(*g));
+    if (!g) {
+        if (new_preedit_layout) g_object_unref(new_preedit_layout);
+        if (new_mode_layout)    g_object_unref(new_mode_layout);
+        return nullptr;
     }
 
-    int width = content_width + TYPIO_CANDIDATE_POPUP_PADDING * 2;
-    if (width < TYPIO_CANDIDATE_POPUP_MIN_WIDTH) {
-        width = TYPIO_CANDIDATE_POPUP_MIN_WIDTH;
-    }
-    int height = content_height + TYPIO_CANDIDATE_POPUP_PADDING * 2;
+    *g = *base;  /* shallow copy — rows[].layout pointers are still valid */
 
-    /* Compute row positions. */
-    int y = TYPIO_CANDIDATE_POPUP_PADDING;
-    int preedit_x = TYPIO_CANDIDATE_POPUP_PADDING;
-    int preedit_y = TYPIO_CANDIDATE_POPUP_PADDING;
-    if (preedit_text_in) {
-        y += preedit_height + TYPIO_CANDIDATE_POPUP_SECTION_GAP;
-    }
+    /* Replace owned aux layouts */
+    g->preedit_layout = new_preedit_layout;
+    g->pre_w          = new_pre_w;
+    g->pre_h          = new_pre_h;
+    g->mode_layout    = new_mode_layout;
+    g->mode_w         = new_mode_w;
+    g->mode_h         = new_mode_h;
 
-    if (config->layout_mode == TYPIO_CANDIDATE_POPUP_LAYOUT_VERTICAL) {
-        for (size_t i = 0; i < line_count; ++i) {
-            lines[i].x = TYPIO_CANDIDATE_POPUP_PADDING;
-            lines[i].y = y;
-            lines[i].width = width - TYPIO_CANDIDATE_POPUP_PADDING * 2;
-            lines[i].text_x = lines[i].x + TYPIO_CANDIDATE_POPUP_ROW_PADDING_X;
-            lines[i].text_y = lines[i].y + TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y;
-            y += lines[i].height;
-            if (i + 1 < line_count) {
-                y += TYPIO_CANDIDATE_POPUP_ROW_GAP;
-            }
-        }
-    } else {
-        int x = TYPIO_CANDIDATE_POPUP_PADDING;
-        for (size_t i = 0; i < line_count; ++i) {
-            lines[i].x = x;
-            lines[i].y = y;
-            lines[i].text_x = lines[i].x + TYPIO_CANDIDATE_POPUP_ROW_PADDING_X;
-            lines[i].text_y = lines[i].y + TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y;
-            x += lines[i].width + TYPIO_CANDIDATE_POPUP_COLUMN_GAP;
-        }
-    }
+    snprintf(g->preedit_text, sizeof(g->preedit_text),
+             "%s", preedit_text ? preedit_text : "");
+    snprintf(g->mode_label, sizeof(g->mode_label),
+             "%s", mode_label ? mode_label : "");
 
-    int mode_label_x = 0;
-    int mode_label_y = 0;
-    int mode_label_divider_y = -1;
-    if (mode_label_in && mode_label_height > 0) {
-        mode_label_x = width - TYPIO_CANDIDATE_POPUP_PADDING - mode_label_width;
-        if (config->layout_mode == TYPIO_CANDIDATE_POPUP_LAYOUT_HORIZONTAL) {
-            mode_label_y = y + TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y;
-        } else {
-            mode_label_divider_y = height - TYPIO_CANDIDATE_POPUP_PADDING -
-                                   mode_label_height - TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y;
-            mode_label_y = height - TYPIO_CANDIDATE_POPUP_PADDING - mode_label_height;
-        }
-    }
-
-    *out_lines = lines;
-    *out_line_count = line_count;
-    *out_preedit_layout = preedit_layout;
-    *out_preedit_width = preedit_width;
-    *out_preedit_height = preedit_height;
-    *out_preedit_x = preedit_x;
-    *out_preedit_y = preedit_y;
-    *out_mode_label_layout = mode_label_layout;
-    *out_mode_label_width = mode_label_width;
-    *out_mode_label_height = mode_label_height;
-    *out_mode_label_x = mode_label_x;
-    *out_mode_label_y = mode_label_y;
-    *out_mode_label_divider_y = mode_label_divider_y;
-    *out_width = width;
-    *out_height = height;
-    return true;
+    return g;
 }
 
-bool typio_candidate_popup_layout_measure_aux(const TypioCandidatePopupCache *cache,
-                                    const char *preedit_text_in,
-                                    const char *mode_label_in,
-                                    const TypioCandidatePopupRenderConfig *config,
-                                    TypioCandidatePopupFontCache *font_cache,
-                                    PangoLayout **out_preedit_layout,
-                                    int *out_preedit_width,
-                                    int *out_preedit_height,
-                                    int *out_preedit_x,
-                                    int *out_preedit_y,
-                                    PangoLayout **out_mode_label_layout,
-                                    int *out_mode_label_width,
-                                    int *out_mode_label_height,
-                                    int *out_mode_label_x,
-                                    int *out_mode_label_y,
-                                    int *out_mode_label_divider_y,
-                                    int *out_width,
-                                    int *out_height) {
-    PangoFontDescription *page_font;
-    cairo_surface_t *scratch;
-    cairo_t *cr;
-    PangoLayout *preedit_layout = nullptr;
-    PangoLayout *mode_label_layout = nullptr;
-    int preedit_width = 0;
-    int preedit_height = 0;
-    int mode_label_width = 0;
-    int mode_label_height = 0;
-    int items_height = 0;
-    int content_width = 0;
-    int content_height = 0;
-    int row_width = 0;
-    int row_height = 0;
-    int preedit_x = TYPIO_CANDIDATE_POPUP_PADDING;
-    int preedit_y = TYPIO_CANDIDATE_POPUP_PADDING;
-    int mode_label_x = 0;
-    int mode_label_y = 0;
-    int mode_label_divider_y = -1;
-    int width;
-    int height;
-    int y;
+void popup_geometry_free(PopupGeometry *g) {
+    if (!g) return;
 
-    if (!cache || !cache->valid || !config || !font_cache) {
-        return false;
+    /* Row layouts are borrowed from the cache — do NOT free them */
+
+    if (g->preedit_layout) {
+        g_object_unref(g->preedit_layout);
+    }
+    if (g->mode_layout) {
+        g_object_unref(g->mode_layout);
     }
 
-    page_font = typio_candidate_popup_font_get(font_cache, config->page_font_desc, true);
-    scratch = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
-    cr = cairo_create(scratch);
+    free(g);
+}
 
-    if (preedit_text_in) {
-        preedit_layout = create_text_layout(cr, page_font, preedit_text_in);
-    }
-    if (preedit_text_in && !measure_layout(preedit_layout, &preedit_width, &preedit_height)) {
-        cairo_destroy(cr);
-        cairo_surface_destroy(scratch);
-        if (preedit_layout) {
-            g_object_unref(preedit_layout);
+void popup_config_load(PopupConfig *cfg, TypioInstance *instance) {
+    TypioConfig *global_cfg;
+    const char  *theme;
+    const char  *layout;
+    int          font_size;
+
+    if (!cfg) return;
+
+    cfg->theme_mode    = TYPIO_CANDIDATE_POPUP_THEME_AUTO;
+    cfg->layout_mode   = POPUP_LAYOUT_VERTICAL;
+    cfg->font_size     = POPUP_DEFAULT_FONT_SIZE;
+    cfg->mode_indicator = true;
+
+    global_cfg = instance ? typio_instance_get_config(instance) : nullptr;
+    if (global_cfg) {
+        theme  = typio_config_get_string(global_cfg, "display.popup_theme",       nullptr);
+        layout = typio_config_get_string(global_cfg, "display.candidate_layout",  nullptr);
+        font_size = typio_config_get_int(global_cfg, "display.font_size",
+                                          POPUP_DEFAULT_FONT_SIZE);
+
+        if (theme && strcmp(theme, "dark") == 0) {
+            cfg->theme_mode = TYPIO_CANDIDATE_POPUP_THEME_DARK;
+        } else if (theme && strcmp(theme, "light") == 0) {
+            cfg->theme_mode = TYPIO_CANDIDATE_POPUP_THEME_LIGHT;
         }
-        return false;
+
+        if (layout && strcmp(layout, "horizontal") == 0) {
+            cfg->layout_mode = POPUP_LAYOUT_HORIZONTAL;
+        }
+
+        if (font_size < 6)  font_size = 6;
+        if (font_size > 72) font_size = 72;
+        cfg->font_size = font_size;
+
+        cfg->mode_indicator = typio_config_get_bool(global_cfg,
+                                                     "display.popup_mode_indicator",
+                                                     true);
     }
 
-    if (mode_label_in) {
-        mode_label_layout = create_text_layout(cr, page_font, mode_label_in);
-    }
-    if (mode_label_in &&
-        !measure_layout(mode_label_layout, &mode_label_width, &mode_label_height)) {
-        cairo_destroy(cr);
-        cairo_surface_destroy(scratch);
-        if (preedit_layout) {
-            g_object_unref(preedit_layout);
-        }
-        if (mode_label_layout) {
-            g_object_unref(mode_label_layout);
-        }
-        return false;
-    }
-
-    cairo_destroy(cr);
-    cairo_surface_destroy(scratch);
-
-    content_width = preedit_width;
-    content_height = preedit_text_in ? preedit_height : 0;
-
-    if (config->layout_mode == TYPIO_CANDIDATE_POPUP_LAYOUT_VERTICAL) {
-        for (size_t i = 0; i < cache->line_count; ++i) {
-            if (cache->lines[i].width > content_width) {
-                content_width = cache->lines[i].width;
-            }
-            items_height += cache->lines[i].height;
-            if (i + 1 < cache->line_count) {
-                items_height += TYPIO_CANDIDATE_POPUP_ROW_GAP;
-            }
-        }
-    } else {
-        for (size_t i = 0; i < cache->line_count; ++i) {
-            if (row_width > 0) {
-                row_width += TYPIO_CANDIDATE_POPUP_COLUMN_GAP;
-            }
-            row_width += cache->lines[i].width;
-            if (cache->lines[i].height > row_height) {
-                row_height = cache->lines[i].height;
-            }
-        }
-        if (row_height > 0) {
-            items_height = row_height;
-        }
-        content_width = row_width;
-        if (preedit_width > content_width) {
-            content_width = preedit_width;
-        }
-        if (mode_label_in && mode_label_width > 0) {
-            int total_row = row_width + TYPIO_CANDIDATE_POPUP_COLUMN_GAP + mode_label_width;
-            if (total_row > content_width) {
-                content_width = total_row;
-            }
-        }
-    }
-
-    if (preedit_text_in && cache->line_count > 0) {
-        content_height += TYPIO_CANDIDATE_POPUP_SECTION_GAP;
-    }
-    content_height += items_height;
-
-    if (mode_label_in && mode_label_height > 0 &&
-        config->layout_mode == TYPIO_CANDIDATE_POPUP_LAYOUT_VERTICAL) {
-        content_height += TYPIO_CANDIDATE_POPUP_SECTION_GAP + mode_label_height;
-        if (mode_label_width > content_width) {
-            content_width = mode_label_width;
-        }
-    }
-
-    width = content_width + TYPIO_CANDIDATE_POPUP_PADDING * 2;
-    if (width < TYPIO_CANDIDATE_POPUP_MIN_WIDTH) {
-        width = TYPIO_CANDIDATE_POPUP_MIN_WIDTH;
-    }
-    height = content_height + TYPIO_CANDIDATE_POPUP_PADDING * 2;
-
-    y = TYPIO_CANDIDATE_POPUP_PADDING;
-    if (preedit_text_in) {
-        y += preedit_height + TYPIO_CANDIDATE_POPUP_SECTION_GAP;
-    }
-
-    if (mode_label_in && mode_label_height > 0) {
-        mode_label_x = width - TYPIO_CANDIDATE_POPUP_PADDING - mode_label_width;
-        if (config->layout_mode == TYPIO_CANDIDATE_POPUP_LAYOUT_HORIZONTAL) {
-            mode_label_y = y + TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y;
-        } else {
-            mode_label_divider_y = height - TYPIO_CANDIDATE_POPUP_PADDING -
-                                   mode_label_height - TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y;
-            mode_label_y = height - TYPIO_CANDIDATE_POPUP_PADDING - mode_label_height;
-        }
-    }
-
-    *out_preedit_layout = preedit_layout;
-    *out_preedit_width = preedit_width;
-    *out_preedit_height = preedit_height;
-    *out_preedit_x = preedit_x;
-    *out_preedit_y = preedit_y;
-    *out_mode_label_layout = mode_label_layout;
-    *out_mode_label_width = mode_label_width;
-    *out_mode_label_height = mode_label_height;
-    *out_mode_label_x = mode_label_x;
-    *out_mode_label_y = mode_label_y;
-    *out_mode_label_divider_y = mode_label_divider_y;
-    *out_width = width;
-    *out_height = height;
-    return true;
+    snprintf(cfg->font_desc,     sizeof(cfg->font_desc),     "Sans %d", cfg->font_size);
+    snprintf(cfg->aux_font_desc, sizeof(cfg->aux_font_desc), "Sans %d",
+             cfg->font_size > 6 ? cfg->font_size - 1 : 6);
 }

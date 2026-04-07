@@ -115,8 +115,17 @@ Within the Wayland daemon, responsibilities are intentionally split by layer:
   implementation.
 - `candidate_popup.c`
   Implements the current Wayland-native popup backend over
-  `zwp_input_popup_surface_v2`, including render-path selection between
-  selection-only, auxiliary-text-only, and full repaint flows.
+  `zwp_input_popup_surface_v2`.  A `PopupDelta` classifier drives render-path
+  selection (selection-only, aux-only, content, or style rebuild).
+- `candidate_popup_layout.c`
+  Owns text measurement and geometry computation.  A persistent `PopupPangoCtx`
+  holds a 64-entry LRU cache of `PangoLayout` objects keyed by formatted
+  candidate text and font description, so layouts survive page changes and avoid
+  repeated font shaping.  `PopupGeometry` is an immutable snapshot of all
+  computed positions; the selected index is deliberately excluded from it.
+- `candidate_popup_paint.c`
+  Owns Cairo pixel rendering for all three render paths, each accepting a
+  `PopupGeometry*` rather than a long parameter list.
 - `key_route.c`
   Owns key-routing decisions. The current model separates final action
   (`consume` or `forward`) from routing reason (for example reserved Typio
@@ -311,33 +320,70 @@ separate:
 2. `TypioInputContext` stores that state as the UI source of truth
 3. `wl_input_method.c` decides when text UI must be refreshed
 4. `text_ui_backend.c` provides the Typio-side UI backend boundary
-5. `candidate_popup.c` renders the current Wayland popup backend over
-   `zwp_input_popup_surface_v2`
+5. `candidate_popup.c` classifies the change and dispatches to the correct
+   render path over `zwp_input_popup_surface_v2`
 
 The important architectural rule is that `wl_input_method.c` depends on the
 text-UI backend abstraction, not on a concrete popup implementation. Timing
 details for synchronous candidate refresh and related hot-path constraints are
 documented in [Timing Model](timing-model.md).
 
-The popup renderer currently uses three paint paths:
+### Delta classification
 
-1. `selection-only`
-   Chosen when candidate content, popup geometry, theme, and auxiliary text are
-   unchanged and only the selected index moved. The renderer repaints only the
-   old and new candidate rows.
-2. `aux-only`
-   Chosen when candidate content and static render inputs are unchanged, the
-   selected index is unchanged, and only `preedit` and/or `mode_label` changed.
-   This path is allowed only when remeasuring the auxiliary text keeps the same
-   popup width and height; otherwise it falls back to a full render.
-3. `full render`
-   Used for any content, geometry, scale, theme, font, or mixed-state change
-   that cannot be safely handled by the narrower paths.
+Every update is first classified into one of five `PopupDelta` values before
+any rendering work begins:
+
+| Delta | Trigger | Action |
+|-------|---------|--------|
+| `NONE` | Nothing visible changed | Skip rendering |
+| `SELECTION` | Only selected index changed | Repaint two rows only |
+| `AUX` | Only preedit / mode label changed (same popup size) | Repaint aux area only |
+| `CONTENT` | Candidate list changed (page navigation) | Full repaint |
+| `STYLE` | Font, theme, or output scale changed | Cache invalidation + full repaint |
+
+Classification is a pure comparison of the incoming state against the cached
+`PopupGeometry` snapshot and costs no rendering work.
+
+### Geometry and layout cache
+
+`PopupGeometry` is an immutable snapshot of all computed candidate positions and
+auxiliary text positions for one page. The selected index is **not** part of the
+geometry; changing the selection never requires re-measuring text or recomputing
+positions.
+
+Text measurement and `PangoLayout` objects are owned by `PopupPangoCtx`, a
+persistent per-popup structure holding a 64-entry LRU cache. Cache entries are
+keyed by `FNV-1a(formatted_text + font_desc)`. Layouts are created directly
+from a `PangoContext` — no scratch Cairo surface is needed for measurement.
+`pango_cairo_update_layout()` is called during painting to adapt metrics to the
+scaled Cairo context.
+
+On a typical page change, most candidate layouts are already in the cache
+because the user has seen those candidates in a previous session or because the
+same characters recur across adjacent pages. Cold-cache layout creation involves
+HarfBuzz text shaping; warm-cache lookup is a hash comparison and a `lru_tick`
+bump.
+
+### Paint paths
+
+`candidate_popup_paint.c` implements three paint functions, each accepting a
+`PopupGeometry*`:
+
+1. `popup_paint_full`
+   Full background, border, all candidate rows, preedit, and mode label.
+   Used for `CONTENT` and `STYLE` deltas.
+2. `popup_paint_selection`
+   Copies the last committed buffer, then repaints only the old and new
+   selected rows. Used for `SELECTION` delta.
+3. `popup_paint_aux`
+   Copies the last committed buffer, erases the old preedit and mode-label
+   regions, and draws the new ones. Used for `AUX` delta when popup dimensions
+   are unchanged; falls back to `popup_paint_full` otherwise.
 
 The safety rule is strict: partial repaint paths may reuse the last committed
 buffer, but they must not change popup geometry or buffer-pool ownership
-semantics. If any fast-path precondition is not met, the implementation must
-fall back to full layout and repaint.
+semantics. If any precondition is not met the implementation falls back to
+`popup_paint_full`.
 
 ## Keyboard Safety Model
 

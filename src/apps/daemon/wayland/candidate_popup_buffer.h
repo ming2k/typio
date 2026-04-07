@@ -22,7 +22,7 @@ typedef struct TypioCandidatePopupBuffer {
     bool busy;
 } TypioCandidatePopupBuffer;
 
-#define TYPIO_CANDIDATE_POPUP_BUFFER_COUNT 4
+#define TYPIO_CANDIDATE_POPUP_BUFFER_COUNT 3
 
 void typio_candidate_popup_buffer_reset(TypioCandidatePopupBuffer *buffer);
 bool typio_candidate_popup_buffer_create(TypioCandidatePopupBuffer *buffer,

@@ -1,413 +1,306 @@
 /**
  * @file candidate_popup_paint.c
- * @brief Cairo paint-and-commit path for the popup UI
+ * @brief Cairo paint paths for the candidate popup.
  *
- * Full paint, selection-only repaint, and auxiliary-text-only repaint all land
- * here after layout has already determined geometry and cached text layouts.
+ * All three render paths share the same low-level drawing helpers.
+ * pango_cairo_update_layout() is called before every pango_cairo_show_layout()
+ * so that Pango adapts font metrics to the scaled Cairo context — this is the
+ * correct handshake for layouts created via PangoContext without Cairo.
  */
 
 #include "candidate_popup_paint.h"
-#include "candidate_popup_damage.h"
 
 #include <cairo.h>
 #include <pango/pangocairo.h>
 #include <wayland-client.h>
-
-#include <limits.h>
 #include <string.h>
 
-#define TYPIO_CANDIDATE_POPUP_PADDING 8
-#define TYPIO_CANDIDATE_POPUP_ROW_PADDING_X 4
-#define TYPIO_CANDIDATE_POPUP_ROW_PADDING_Y 2
+/* ── Scaling helper ─────────────────────────────────────────────────── */
 
-static bool popup_scaled_dimension(int logical, int scale, int *physical) {
-    if (!physical || logical < 0 || scale < 1) {
-        return false;
-    }
-
-    if (logical > INT_MAX / scale) {
-        return false;
-    }
-
+static bool scaled(int logical, int scale, int *physical) {
+    if (!physical || logical < 0 || scale < 1) return false;
     *physical = logical * scale;
     return true;
 }
 
-static void popup_draw_layout(cairo_t *cr, PangoLayout *layout,
-                              double x, double y,
-                              double r, double g, double b) {
-    if (!layout) {
-        return;
-    }
+/* ── Low-level drawing ──────────────────────────────────────────────── */
 
+static void draw_layout(cairo_t *cr, PangoLayout *layout,
+                         double x, double y,
+                         double r, double g, double b) {
+    if (!layout) return;
     pango_cairo_update_layout(cr, layout);
     cairo_move_to(cr, x, y);
     cairo_set_source_rgb(cr, r, g, b);
     pango_cairo_show_layout(cr, layout);
 }
 
-static void popup_repaint_row(cairo_t *cr,
-                              const TypioCandidatePopupLine *line,
-                              bool is_selected,
-                              const TypioCandidatePopupPalette *palette) {
-    cairo_set_source_rgba(cr, palette->bg_r, palette->bg_g,
-                          palette->bg_b, palette->bg_a);
-    cairo_rectangle(cr, line->x, line->y, line->width, line->height);
+static void draw_row(cairo_t *cr, const PopupRow *row, bool selected,
+                      const TypioCandidatePopupPalette *p) {
+    /* Background */
+    cairo_set_source_rgba(cr, p->bg_r, p->bg_g, p->bg_b, p->bg_a);
+    cairo_rectangle(cr, row->x, row->y, row->w, row->h);
     cairo_fill(cr);
 
-    if (is_selected) {
-        cairo_set_source_rgba(cr, palette->selection_r, palette->selection_g,
-                              palette->selection_b, palette->selection_a);
-        cairo_rectangle(cr, line->x, line->y, line->width, line->height);
+    if (selected) {
+        cairo_set_source_rgba(cr, p->selection_r, p->selection_g,
+                              p->selection_b, p->selection_a);
+        cairo_rectangle(cr, row->x, row->y, row->w, row->h);
         cairo_fill(cr);
-        popup_draw_layout(cr, line->layout, line->text_x, line->text_y,
-                        palette->selection_text_r,
-                        palette->selection_text_g,
-                        palette->selection_text_b);
+        draw_layout(cr, row->layout, row->text_x, row->text_y,
+                    p->selection_text_r, p->selection_text_g, p->selection_text_b);
     } else {
-        popup_draw_layout(cr, line->layout, line->text_x, line->text_y,
-                        palette->text_r, palette->text_g, palette->text_b);
+        draw_layout(cr, row->layout, row->text_x, row->text_y,
+                    p->text_r, p->text_g, p->text_b);
     }
 }
 
-static void popup_clear_rect(cairo_t *cr,
-                             const TypioCandidatePopupDamageLine *line,
-                             const TypioCandidatePopupPalette *palette) {
-    if (!line || line->width <= 0 || line->height <= 0) {
-        return;
+static void draw_mode_label(cairo_t *cr, const PopupGeometry *g,
+                              const TypioCandidatePopupPalette *p) {
+    if (!g->mode_layout) return;
+
+    if (g->mode_divider_y >= 0) {
+        cairo_set_source_rgba(cr, p->border_r, p->border_g,
+                              p->border_b, p->border_a * 0.5);
+        cairo_move_to(cr, POPUP_PADDING, g->mode_divider_y + 0.5);
+        cairo_line_to(cr, g->popup_w - POPUP_PADDING, g->mode_divider_y + 0.5);
+        cairo_set_line_width(cr, 1.0);
+        cairo_stroke(cr);
     }
 
-    cairo_set_source_rgba(cr, palette->bg_r, palette->bg_g,
-                          palette->bg_b, palette->bg_a);
-    cairo_rectangle(cr, line->x, line->y, line->width, line->height);
-    cairo_fill(cr);
+    draw_layout(cr, g->mode_layout,
+                g->mode_x, g->mode_y,
+                p->muted_r, p->muted_g, p->muted_b);
 }
 
-static void popup_append_damage_line(TypioCandidatePopupDamageLine *lines,
-                                     size_t *line_count,
-                                     int x, int y, int width, int height) {
-    if (!lines || !line_count || width <= 0 || height <= 0) {
-        return;
-    }
+/* ── Buffer helpers ─────────────────────────────────────────────────── */
 
-    lines[*line_count] = (TypioCandidatePopupDamageLine){
-        .x = x,
-        .y = y,
-        .width = width,
-        .height = height,
-    };
-    (*line_count)++;
+static TypioCandidatePopupBuffer *acquire_buffer(const PopupPaintTarget *t,
+                                                   int bw, int bh) {
+    return typio_candidate_popup_buffer_acquire(t->buffers, t->buffer_count,
+                                                t->shm, bw, bh);
 }
 
-bool typio_candidate_popup_paint_and_commit(const TypioCandidatePopupPaintTarget *target,
-                                  const TypioCandidatePopupLine *lines,
-                                  size_t line_count,
-                                  int selected,
-                                  PangoLayout *preedit_layout,
-                                  int preedit_x,
-                                  int preedit_y,
-                                  PangoLayout *mode_label_layout,
-                                  int mode_label_x,
-                                  int mode_label_y,
-                                  int mode_label_divider_y,
-                                  int width, int height,
-                                  int scale,
-                                  const TypioCandidatePopupPalette *palette,
-                                  TypioCandidatePopupBuffer **out_buffer) {
-    int buffer_width;
-    int buffer_height;
-    TypioCandidatePopupBuffer *buffer;
-    cairo_surface_t *surface;
+static cairo_t *open_buffer_cr(TypioCandidatePopupBuffer *buf,
+                                 cairo_surface_t **out_surface,
+                                 int bw, int bh, int scale) {
+    cairo_surface_t *surf;
     cairo_t *cr;
 
-    if (!target || !target->surface || !target->shm || !target->buffers ||
-        !palette) {
-        return false;
-    }
-
-    if (!popup_scaled_dimension(width, scale, &buffer_width) ||
-        !popup_scaled_dimension(height, scale, &buffer_height)) {
-        return false;
-    }
-
-    buffer = typio_candidate_popup_buffer_acquire(target->buffers, target->buffer_count,
-                                        target->shm, buffer_width, buffer_height);
-    if (!buffer) {
-        return false;
-    }
-
-    memset(buffer->data, 0, buffer->size);
-    surface = cairo_image_surface_create_for_data((unsigned char *)buffer->data,
-                                                  CAIRO_FORMAT_ARGB32,
-                                                  buffer_width, buffer_height,
-                                                  buffer->stride);
-    cr = cairo_create(surface);
+    surf = cairo_image_surface_create_for_data(
+        (unsigned char *)buf->data, CAIRO_FORMAT_ARGB32,
+        bw, bh, buf->stride);
+    cr   = cairo_create(surf);
     cairo_scale(cr, scale, scale);
+    *out_surface = surf;
+    return cr;
+}
 
-    cairo_set_source_rgba(cr, palette->bg_r, palette->bg_g,
-                          palette->bg_b, palette->bg_a);
+static void commit_buffer(const PopupPaintTarget *t,
+                           TypioCandidatePopupBuffer *buf,
+                           int scale,
+                           int damage_x, int damage_y,
+                           int damage_w, int damage_h) {
+    wl_surface_set_buffer_scale(t->surface, scale);
+    wl_surface_attach(t->surface, buf->buffer, 0, 0);
+    wl_surface_damage(t->surface, damage_x, damage_y, damage_w, damage_h);
+    wl_surface_commit(t->surface);
+    buf->busy = true;
+}
+
+/* ── Public API ─────────────────────────────────────────────────────── */
+
+bool popup_paint_full(const PopupPaintTarget *target,
+                      const PopupGeometry *geom,
+                      int selected,
+                      TypioCandidatePopupBuffer **out_buf) {
+    int bw, bh;
+    TypioCandidatePopupBuffer *buf;
+    cairo_surface_t *surf;
+    cairo_t *cr;
+    size_t i;
+    const TypioCandidatePopupPalette *p = geom->palette;
+
+    if (!target || !target->surface || !target->shm || !geom || !p) return false;
+
+    if (!scaled(geom->popup_w, geom->scale, &bw) ||
+        !scaled(geom->popup_h, geom->scale, &bh)) return false;
+
+    buf = acquire_buffer(target, bw, bh);
+    if (!buf) return false;
+
+    memset(buf->data, 0, buf->size);
+    cr = open_buffer_cr(buf, &surf, bw, bh, geom->scale);
+
+    /* Background */
+    cairo_set_source_rgba(cr, p->bg_r, p->bg_g, p->bg_b, p->bg_a);
     cairo_paint(cr);
 
-    cairo_set_source_rgba(cr, palette->border_r, palette->border_g,
-                          palette->border_b, palette->border_a);
-    cairo_rectangle(cr, 0.5, 0.5, width - 1.0, height - 1.0);
+    /* Border */
+    cairo_set_source_rgba(cr, p->border_r, p->border_g, p->border_b, p->border_a);
+    cairo_rectangle(cr, 0.5, 0.5, geom->popup_w - 1.0, geom->popup_h - 1.0);
     cairo_set_line_width(cr, 1.0);
     cairo_stroke(cr);
 
-    if (preedit_layout) {
-        popup_draw_layout(cr, preedit_layout, preedit_x, preedit_y,
-                        palette->preedit_r, palette->preedit_g, palette->preedit_b);
+    /* Preedit */
+    if (geom->preedit_layout) {
+        draw_layout(cr, geom->preedit_layout, geom->pre_x, geom->pre_y,
+                    p->preedit_r, p->preedit_g, p->preedit_b);
     }
 
-    for (size_t i = 0; i < line_count; ++i) {
-        const TypioCandidatePopupLine *line = &lines[i];
-        bool is_selected = (selected >= 0 && (size_t)selected == i);
-        popup_repaint_row(cr, line, is_selected, palette);
+    /* Candidate rows */
+    for (i = 0; i < geom->row_count; ++i) {
+        bool is_sel = (selected >= 0 && (size_t)selected == i);
+        draw_row(cr, &geom->rows[i], is_sel, p);
     }
 
-    if (mode_label_layout) {
-        if (mode_label_divider_y >= 0) {
-            cairo_set_source_rgba(cr, palette->border_r, palette->border_g,
-                                  palette->border_b, palette->border_a * 0.5);
-            cairo_move_to(cr, TYPIO_CANDIDATE_POPUP_PADDING, mode_label_divider_y + 0.5);
-            cairo_line_to(cr, width - TYPIO_CANDIDATE_POPUP_PADDING, mode_label_divider_y + 0.5);
-            cairo_set_line_width(cr, 1.0);
-            cairo_stroke(cr);
-        }
-        popup_draw_layout(cr, mode_label_layout, mode_label_x, mode_label_y,
-                          palette->muted_r, palette->muted_g, palette->muted_b);
-    }
+    /* Mode label */
+    draw_mode_label(cr, geom, p);
 
-    cairo_surface_flush(surface);
+    cairo_surface_flush(surf);
     cairo_destroy(cr);
-    cairo_surface_destroy(surface);
+    cairo_surface_destroy(surf);
 
-    wl_surface_set_buffer_scale(target->surface, scale);
-    wl_surface_attach(target->surface, buffer->buffer, 0, 0);
-    wl_surface_damage(target->surface, 0, 0, width, height);
-    wl_surface_commit(target->surface);
-    buffer->busy = true;
+    commit_buffer(target, buf, geom->scale, 0, 0, geom->popup_w, geom->popup_h);
 
-    if (out_buffer) {
-        *out_buffer = buffer;
-    }
+    if (out_buf) *out_buf = buf;
     return true;
 }
 
-bool typio_candidate_popup_paint_selection_update(
-                                  const TypioCandidatePopupPaintTarget *target,
-                                  const TypioCandidatePopupLine *lines,
-                                  size_t line_count,
-                                  int old_selected,
-                                  int new_selected,
-                                  int width, int height,
-                                  int scale,
-                                  const TypioCandidatePopupPalette *palette,
-                                  const TypioCandidatePopupBuffer *source_buffer,
-                                  TypioCandidatePopupBuffer **out_buffer) {
-    int buffer_width;
-    int buffer_height;
-    TypioCandidatePopupBuffer *buffer;
-    cairo_surface_t *surface;
+bool popup_paint_selection(const PopupPaintTarget *target,
+                            const PopupGeometry *geom,
+                            int old_sel,
+                            int new_sel,
+                            const TypioCandidatePopupBuffer *src,
+                            TypioCandidatePopupBuffer **out_buf) {
+    int bw, bh;
+    TypioCandidatePopupBuffer *buf;
+    cairo_surface_t *surf;
     cairo_t *cr;
+    const TypioCandidatePopupPalette *p = geom->palette;
 
-    if (!target || !target->surface || !target->shm || !target->buffers ||
-        !palette || !source_buffer || !source_buffer->data) {
-        return false;
+    if (!target || !target->surface || !target->shm || !geom ||
+        !src || !src->data || !p) return false;
+
+    if (!scaled(geom->popup_w, geom->scale, &bw) ||
+        !scaled(geom->popup_h, geom->scale, &bh)) return false;
+
+    if (src->width != bw || src->height != bh) return false;
+
+    buf = acquire_buffer(target, bw, bh);
+    if (!buf) return false;
+
+    if (buf != src) {
+        memcpy(buf->data, src->data, src->size);
     }
 
-    if (!popup_scaled_dimension(width, scale, &buffer_width) ||
-        !popup_scaled_dimension(height, scale, &buffer_height)) {
-        return false;
+    cr = open_buffer_cr(buf, &surf, bw, bh, geom->scale);
+
+    /* Repaint only the two affected rows */
+    if (old_sel >= 0 && (size_t)old_sel < geom->row_count) {
+        draw_row(cr, &geom->rows[old_sel], false, p);
+    }
+    if (new_sel >= 0 && (size_t)new_sel < geom->row_count) {
+        draw_row(cr, &geom->rows[new_sel], true, p);
     }
 
-    if (source_buffer->width != buffer_width || source_buffer->height != buffer_height) {
-        return false;
-    }
-
-    buffer = typio_candidate_popup_buffer_acquire(target->buffers, target->buffer_count,
-                                        target->shm, buffer_width, buffer_height);
-    if (!buffer) {
-        return false;
-    }
-
-    if (buffer != source_buffer) {
-        memcpy(buffer->data, source_buffer->data, source_buffer->size);
-    }
-
-    surface = cairo_image_surface_create_for_data((unsigned char *)buffer->data,
-                                                  CAIRO_FORMAT_ARGB32,
-                                                  buffer_width, buffer_height,
-                                                  buffer->stride);
-    cr = cairo_create(surface);
-    cairo_scale(cr, scale, scale);
-
-    if (old_selected >= 0 && (size_t)old_selected < line_count) {
-        popup_repaint_row(cr, &lines[old_selected], false, palette);
-    }
-
-    if (new_selected >= 0 && (size_t)new_selected < line_count) {
-        popup_repaint_row(cr, &lines[new_selected], true, palette);
-    }
-
-    cairo_surface_flush(surface);
+    cairo_surface_flush(surf);
     cairo_destroy(cr);
-    cairo_surface_destroy(surface);
+    cairo_surface_destroy(surf);
 
-    wl_surface_set_buffer_scale(target->surface, scale);
-    wl_surface_attach(target->surface, buffer->buffer, 0, 0);
-
-    if (old_selected >= 0 && (size_t)old_selected < line_count) {
-        wl_surface_damage(target->surface, lines[old_selected].x, lines[old_selected].y,
-                          lines[old_selected].width, lines[old_selected].height);
+    /* Damage only the repainted rows */
+    wl_surface_set_buffer_scale(target->surface, geom->scale);
+    wl_surface_attach(target->surface, buf->buffer, 0, 0);
+    if (old_sel >= 0 && (size_t)old_sel < geom->row_count) {
+        const PopupRow *r = &geom->rows[old_sel];
+        wl_surface_damage(target->surface, r->x, r->y, r->w, r->h);
     }
-    if (new_selected >= 0 && (size_t)new_selected < line_count) {
-        wl_surface_damage(target->surface, lines[new_selected].x, lines[new_selected].y,
-                          lines[new_selected].width, lines[new_selected].height);
+    if (new_sel >= 0 && (size_t)new_sel < geom->row_count) {
+        const PopupRow *r = &geom->rows[new_sel];
+        wl_surface_damage(target->surface, r->x, r->y, r->w, r->h);
     }
-
     wl_surface_commit(target->surface);
-    buffer->busy = true;
+    buf->busy = true;
 
-    if (out_buffer) {
-        *out_buffer = buffer;
-    }
+    if (out_buf) *out_buf = buf;
     return true;
 }
 
-bool typio_candidate_popup_paint_aux_update(
-                                  const TypioCandidatePopupPaintTarget *target,
-                                  int width, int height,
-                                  int scale,
-                                  const TypioCandidatePopupPalette *palette,
-                                  const TypioCandidatePopupBuffer *source_buffer,
-                                  PangoLayout *old_preedit_layout,
-                                  int old_preedit_x,
-                                  int old_preedit_y,
-                                  int old_preedit_width,
-                                  int old_preedit_height,
-                                  PangoLayout *new_preedit_layout,
-                                  int new_preedit_x,
-                                  int new_preedit_y,
-                                  int new_preedit_width,
-                                  int new_preedit_height,
-                                  PangoLayout *old_mode_label_layout,
-                                  int old_mode_label_x,
-                                  int old_mode_label_y,
-                                  int old_mode_label_width,
-                                  int old_mode_label_height,
-                                  int old_mode_label_divider_y,
-                                  PangoLayout *new_mode_label_layout,
-                                  int new_mode_label_x,
-                                  int new_mode_label_y,
-                                  int new_mode_label_width,
-                                  int new_mode_label_height,
-                                  int new_mode_label_divider_y,
-                                  TypioCandidatePopupBuffer **out_buffer) {
-    int buffer_width;
-    int buffer_height;
-    TypioCandidatePopupBuffer *buffer;
-    cairo_surface_t *surface;
+bool popup_paint_aux(const PopupPaintTarget *target,
+                      const PopupGeometry *old_geom,
+                      const PopupGeometry *new_geom,
+                      const TypioCandidatePopupBuffer *src,
+                      TypioCandidatePopupBuffer **out_buf) {
+    int bw, bh;
+    TypioCandidatePopupBuffer *buf;
+    cairo_surface_t *surf;
     cairo_t *cr;
-    TypioCandidatePopupDamageLine damage_lines[6] = {};
-    size_t damage_count = 0;
-    TypioCandidatePopupDamageRect damage = {};
+    const TypioCandidatePopupPalette *p = new_geom->palette;
 
-    if (!target || !target->surface || !target->shm || !target->buffers ||
-        !palette || !source_buffer || !source_buffer->data) {
-        return false;
+    if (!target || !target->surface || !target->shm ||
+        !old_geom || !new_geom || !src || !src->data || !p) return false;
+
+    if (new_geom->popup_w != old_geom->popup_w ||
+        new_geom->popup_h != old_geom->popup_h) return false;
+
+    if (!scaled(new_geom->popup_w, new_geom->scale, &bw) ||
+        !scaled(new_geom->popup_h, new_geom->scale, &bh)) return false;
+
+    if (src->width != bw || src->height != bh) return false;
+
+    buf = acquire_buffer(target, bw, bh);
+    if (!buf) return false;
+
+    if (buf != src) {
+        memcpy(buf->data, src->data, src->size);
     }
 
-    if (!popup_scaled_dimension(width, scale, &buffer_width) ||
-        !popup_scaled_dimension(height, scale, &buffer_height)) {
-        return false;
+    cr = open_buffer_cr(buf, &surf, bw, bh, new_geom->scale);
+
+    /* Erase old preedit region */
+    if (old_geom->preedit_layout && old_geom->pre_w > 0 && old_geom->pre_h > 0) {
+        cairo_set_source_rgba(cr, p->bg_r, p->bg_g, p->bg_b, p->bg_a);
+        cairo_rectangle(cr, old_geom->pre_x, old_geom->pre_y,
+                         old_geom->pre_w, old_geom->pre_h);
+        cairo_fill(cr);
     }
 
-    if (source_buffer->width != buffer_width || source_buffer->height != buffer_height) {
-        return false;
-    }
-
-    buffer = typio_candidate_popup_buffer_acquire(target->buffers, target->buffer_count,
-                                        target->shm, buffer_width, buffer_height);
-    if (!buffer) {
-        return false;
-    }
-
-    if (buffer != source_buffer) {
-        memcpy(buffer->data, source_buffer->data, source_buffer->size);
-    }
-
-    popup_append_damage_line(damage_lines, &damage_count,
-                             old_preedit_x, old_preedit_y,
-                             old_preedit_width, old_preedit_height);
-    popup_append_damage_line(damage_lines, &damage_count,
-                             new_preedit_x, new_preedit_y,
-                             new_preedit_width, new_preedit_height);
-    popup_append_damage_line(damage_lines, &damage_count,
-                             old_mode_label_x, old_mode_label_y,
-                             old_mode_label_width, old_mode_label_height);
-    popup_append_damage_line(damage_lines, &damage_count,
-                             new_mode_label_x, new_mode_label_y,
-                             new_mode_label_width, new_mode_label_height);
-    if (old_mode_label_layout && old_mode_label_divider_y >= 0) {
-        popup_append_damage_line(damage_lines, &damage_count,
-                                 TYPIO_CANDIDATE_POPUP_PADDING, old_mode_label_divider_y,
-                                 width - TYPIO_CANDIDATE_POPUP_PADDING * 2, 1);
-    }
-    if (new_mode_label_layout && new_mode_label_divider_y >= 0) {
-        popup_append_damage_line(damage_lines, &damage_count,
-                                 TYPIO_CANDIDATE_POPUP_PADDING, new_mode_label_divider_y,
-                                 width - TYPIO_CANDIDATE_POPUP_PADDING * 2, 1);
-    }
-
-    if (!typio_candidate_popup_damage_union(damage_lines, damage_count, &damage)) {
-        if (out_buffer) {
-            *out_buffer = buffer;
+    /* Erase old mode label region */
+    if (old_geom->mode_layout && old_geom->mode_w > 0 && old_geom->mode_h > 0) {
+        cairo_set_source_rgba(cr, p->bg_r, p->bg_g, p->bg_b, p->bg_a);
+        cairo_rectangle(cr, old_geom->mode_x, old_geom->mode_y,
+                         old_geom->mode_w, old_geom->mode_h);
+        cairo_fill(cr);
+        /* Erase divider line too if present */
+        if (old_geom->mode_divider_y >= 0) {
+            cairo_rectangle(cr, POPUP_PADDING, old_geom->mode_divider_y,
+                             new_geom->popup_w - POPUP_PADDING * 2, 1);
+            cairo_fill(cr);
         }
-        return true;
     }
 
-    surface = cairo_image_surface_create_for_data((unsigned char *)buffer->data,
-                                                  CAIRO_FORMAT_ARGB32,
-                                                  buffer_width, buffer_height,
-                                                  buffer->stride);
-    cr = cairo_create(surface);
-    cairo_scale(cr, scale, scale);
-
-    for (size_t i = 0; i < damage_count; ++i) {
-        popup_clear_rect(cr, &damage_lines[i], palette);
+    /* Draw new preedit */
+    if (new_geom->preedit_layout) {
+        draw_layout(cr, new_geom->preedit_layout,
+                    new_geom->pre_x, new_geom->pre_y,
+                    p->preedit_r, p->preedit_g, p->preedit_b);
     }
 
-    if (new_preedit_layout) {
-        popup_draw_layout(cr, new_preedit_layout, new_preedit_x, new_preedit_y,
-                          palette->preedit_r, palette->preedit_g, palette->preedit_b);
-    }
+    /* Draw new mode label */
+    draw_mode_label(cr, new_geom, p);
 
-    if (new_mode_label_layout) {
-        if (new_mode_label_divider_y >= 0) {
-            cairo_set_source_rgba(cr, palette->border_r, palette->border_g,
-                                  palette->border_b, palette->border_a * 0.5);
-            cairo_move_to(cr, TYPIO_CANDIDATE_POPUP_PADDING, new_mode_label_divider_y + 0.5);
-            cairo_line_to(cr, width - TYPIO_CANDIDATE_POPUP_PADDING, new_mode_label_divider_y + 0.5);
-            cairo_set_line_width(cr, 1.0);
-            cairo_stroke(cr);
-        }
-        popup_draw_layout(cr, new_mode_label_layout, new_mode_label_x, new_mode_label_y,
-                          palette->muted_r, palette->muted_g, palette->muted_b);
-    }
-
-    cairo_surface_flush(surface);
+    cairo_surface_flush(surf);
     cairo_destroy(cr);
-    cairo_surface_destroy(surface);
+    cairo_surface_destroy(surf);
 
-    wl_surface_set_buffer_scale(target->surface, scale);
-    wl_surface_attach(target->surface, buffer->buffer, 0, 0);
-    wl_surface_damage(target->surface, damage.x, damage.y, damage.width, damage.height);
-    wl_surface_commit(target->surface);
-    buffer->busy = true;
+    /* Damage the union of old and new aux regions */
+    int damage_x = POPUP_PADDING;
+    int damage_y = 0;
+    int damage_w = new_geom->popup_w - POPUP_PADDING * 2;
+    int damage_h = new_geom->popup_h;
+    commit_buffer(target, buf, new_geom->scale,
+                  damage_x, damage_y, damage_w, damage_h);
 
-    if (out_buffer) {
-        *out_buffer = buffer;
-    }
+    if (out_buf) *out_buf = buf;
     return true;
 }
