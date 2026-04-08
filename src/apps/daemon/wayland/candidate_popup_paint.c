@@ -86,12 +86,25 @@ static cairo_t *open_buffer_cr(TypioCandidatePopupBuffer *buf,
                                  int bw, int bh, int scale) {
     cairo_surface_t *surf;
     cairo_t *cr;
+    cairo_font_options_t *opts;
 
     surf = cairo_image_surface_create_for_data(
         (unsigned char *)buf->data, CAIRO_FORMAT_ARGB32,
         bw, bh, buf->stride);
     cr   = cairo_create(surf);
     cairo_scale(cr, scale, scale);
+
+    /* Match the font options used when creating PangoLayouts in
+     * popup_pango_ctx_init().  Without this, pango_cairo_update_layout()
+     * detects a mismatch between the PangoContext's font options and
+     * the Cairo context's defaults, triggering unnecessary text
+     * re-shaping on every paint and polluting Pango's internal font
+     * cache over time. */
+    opts = cairo_font_options_create();
+    cairo_font_options_set_antialias(opts, CAIRO_ANTIALIAS_SUBPIXEL);
+    cairo_font_options_set_hint_style(opts, CAIRO_HINT_STYLE_SLIGHT);
+    cairo_set_font_options(cr, opts);
+    cairo_font_options_destroy(opts);
     *out_surface = surf;
     return cr;
 }

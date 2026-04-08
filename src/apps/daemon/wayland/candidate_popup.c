@@ -116,7 +116,7 @@ static PopupDelta classify_delta(const PopupGeometry *geom,
                                   int scale,
                                   int new_selected) {
     if (!geom) {
-        return POPUP_DELTA_STYLE;  /* no prior geometry — treat as full rebuild */
+        return POPUP_DELTA_CONTENT;  /* no prior geometry — full rebuild, but keep cache */
     }
 
     /* Style changes invalidate everything */
