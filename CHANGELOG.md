@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.1] - 2026-04-09
+
+### Fixed
+
+- **Candidate popup progressive lag**: Fixed a Pango/Cairo font options
+  mismatch that caused `pango_cairo_update_layout()` to re-shape text on
+  every paint call, defeating the LRU layout cache and degrading
+  performance over time.
+- **Unnecessary cache invalidation**: The popup layout cache is no longer
+  cleared on every hide-to-show transition; only a content rebuild is
+  triggered when no prior geometry exists.
+
 ## [2.7.0] - 2026-04-07
 
 ### Removed
