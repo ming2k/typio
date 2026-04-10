@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-04-11
+
+### Added
+
+- **Arena allocator**: Introduced a fast arena-based memory allocator for 
+  transient core objects.
+
+### Changed
+
+- **Refined candidate UI**:
+  - Candidate index labels are now automatically scaled to 80% of the candidate 
+    font size for better visual hierarchy.
+  - Improved vertical layout with row height normalization for a more 
+    consistent appearance.
+- **Wayland frontend refactoring**: Internal focus transition logic has been 
+  decoupled into explicit state machine handlers, improving maintainability 
+  and event tracing.
+
+### Fixed
+
+- **Rime hot-reload after deploy**: `typio-client rime deploy` now takes
+  effect immediately without restarting Typio. After maintenance completes,
+  a `deploy_id` increment triggers transparent session recreation on next use,
+  ensuring all existing contexts pick up the newly compiled Rime data.
+
 ## [2.7.3] - 2026-04-10
 
 ### Added
@@ -72,8 +97,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Rime hot-reload after deploy**: `typio-client rime deploy` now takes
   effect immediately without restarting Typio. After maintenance completes,
-  a `deploy_id` increment triggers transparent session recreation on next use,
-  ensuring all existing contexts pick up the newly compiled Rime data.
+  `cleanup_stale_sessions()` invalidates all existing librime sessions so
+  they are transparently recreated with the newly compiled data on next use.
 
 ## [2.6.3] - 2026-04-06
 

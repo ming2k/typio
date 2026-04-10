@@ -36,12 +36,15 @@ static uint64_t fnv1a(uint64_t h, const char *s) {
 }
 
 static uint64_t layout_cache_key(const char *label, const char *text,
+                                  const char *label_font_desc,
                                   const char *font_desc) {
     uint64_t h = 14695981039346656037ULL;
     h = fnv1a(h, label);
     h ^= 0x01ULL; h *= 1099511628211ULL;
     h = fnv1a(h, text);
     h ^= 0xffULL; h *= 1099511628211ULL;
+    h = fnv1a(h, label_font_desc);
+    h ^= 0x55ULL; h *= 1099511628211ULL;
     h = fnv1a(h, font_desc);
     return h;
 }
@@ -87,6 +90,10 @@ static void pango_ctx_rebuild_fonts(PopupPangoCtx *pc) {
         pango_font_description_free(pc->font);
         pc->font = nullptr;
     }
+    if (pc->label_font) {
+        pango_font_description_free(pc->label_font);
+        pc->label_font = nullptr;
+    }
     if (pc->aux_font) {
         pango_font_description_free(pc->aux_font);
         pc->aux_font = nullptr;
@@ -94,6 +101,9 @@ static void pango_ctx_rebuild_fonts(PopupPangoCtx *pc) {
 
     if (pc->font_desc[0]) {
         pc->font = pango_font_description_from_string(pc->font_desc);
+    }
+    if (pc->label_font_desc[0]) {
+        pc->label_font = pango_font_description_from_string(pc->label_font_desc);
     }
     if (pc->aux_font_desc[0]) {
         pc->aux_font = pango_font_description_from_string(pc->aux_font_desc);
@@ -140,6 +150,10 @@ void popup_pango_ctx_free(PopupPangoCtx *pc) {
         pango_font_description_free(pc->font);
         pc->font = nullptr;
     }
+    if (pc->label_font) {
+        pango_font_description_free(pc->label_font);
+        pc->label_font = nullptr;
+    }
     if (pc->aux_font) {
         pango_font_description_free(pc->aux_font);
         pc->aux_font = nullptr;
@@ -176,6 +190,7 @@ void popup_pango_ctx_invalidate(PopupPangoCtx *pc) {
 
 static bool pango_ctx_ensure_font(PopupPangoCtx *pc,
                                    const char *font_desc,
+                                   const char *label_font_desc,
                                    const char *aux_font_desc) {
     bool changed = false;
 
@@ -184,6 +199,11 @@ static bool pango_ctx_ensure_font(PopupPangoCtx *pc,
     if (strcmp(pc->font_desc, font_desc ? font_desc : "") != 0) {
         snprintf(pc->font_desc, sizeof(pc->font_desc),
                  "%s", font_desc ? font_desc : "");
+        changed = true;
+    }
+    if (strcmp(pc->label_font_desc, label_font_desc ? label_font_desc : "") != 0) {
+        snprintf(pc->label_font_desc, sizeof(pc->label_font_desc),
+                 "%s", label_font_desc ? label_font_desc : "");
         changed = true;
     }
     if (strcmp(pc->aux_font_desc, aux_font_desc ? aux_font_desc : "") != 0) {
@@ -199,6 +219,9 @@ static bool pango_ctx_ensure_font(PopupPangoCtx *pc,
 
     if (!pc->font && pc->font_desc[0]) {
         pc->font = pango_font_description_from_string(pc->font_desc);
+    }
+    if (!pc->label_font && pc->label_font_desc[0]) {
+        pc->label_font = pango_font_description_from_string(pc->label_font_desc);
     }
     if (!pc->aux_font && pc->aux_font_desc[0]) {
         pc->aux_font = pango_font_description_from_string(pc->aux_font_desc);
@@ -221,6 +244,8 @@ static bool pango_ctx_ensure_font(PopupPangoCtx *pc,
 static PopupLayoutEntry *lru_get_or_create(PopupPangoCtx *pc,
                                             const char *label,
                                             const char *text,
+                                            PangoFontDescription *label_font,
+                                            const char *label_font_desc,
                                             PangoFontDescription *font,
                                             const char *font_desc) {
     uint64_t key;
@@ -231,11 +256,12 @@ static PopupLayoutEntry *lru_get_or_create(PopupPangoCtx *pc,
     PangoLayout     *lbl_layout;
     PangoRectangle   ink;
     PangoRectangle   label_ink;
-    const char      *fd = font_desc ? font_desc : "";
+    const char      *lfd = label_font_desc ? label_font_desc : "";
+    const char      *fd  = font_desc ? font_desc : "";
 
-    if (!pc || !pc->ctx || !label || !text || !font) return nullptr;
+    if (!pc || !pc->ctx || !label || !text || !label_font || !font) return nullptr;
 
-    key = layout_cache_key(label, text, fd);
+    key = layout_cache_key(label, text, lfd, fd);
     pc->tick++;
 
     /* Linear scan: cache hit or find LRU victim */
@@ -245,6 +271,7 @@ static PopupLayoutEntry *lru_get_or_create(PopupPangoCtx *pc,
         if (e->layout && e->key == key &&
             strcmp(e->label, label) == 0 &&
             strcmp(e->text,  text)  == 0 &&
+            strcmp(e->label_font_desc, lfd) == 0 &&
             strcmp(e->font_desc, fd) == 0) {
             e->lru_tick = pc->tick;
             return e;
@@ -267,10 +294,10 @@ static PopupLayoutEntry *lru_get_or_create(PopupPangoCtx *pc,
         victim->label_layout = nullptr;
     }
 
-    /* Create label layout */
+    /* Create label layout — uses the smaller label_font */
     lbl_layout = pango_layout_new(pc->ctx);
     if (!lbl_layout) return nullptr;
-    pango_layout_set_font_description(lbl_layout, font);
+    pango_layout_set_font_description(lbl_layout, label_font);
     pango_layout_set_text(lbl_layout, label, -1);
     pango_layout_get_pixel_size(lbl_layout, &victim->label_pixel_w,
                                              &victim->label_pixel_h);
@@ -296,9 +323,10 @@ static PopupLayoutEntry *lru_get_or_create(PopupPangoCtx *pc,
     victim->layout       = text_layout;
     victim->label_layout = lbl_layout;
     victim->lru_tick     = pc->tick;
-    snprintf(victim->label,     sizeof(victim->label),     "%s", label);
-    snprintf(victim->text,      sizeof(victim->text),      "%s", text);
-    snprintf(victim->font_desc, sizeof(victim->font_desc), "%s", fd);
+    snprintf(victim->label,            sizeof(victim->label),            "%s", label);
+    snprintf(victim->text,             sizeof(victim->text),             "%s", text);
+    snprintf(victim->label_font_desc,  sizeof(victim->label_font_desc),  "%s", lfd);
+    snprintf(victim->font_desc,        sizeof(victim->font_desc),        "%s", fd);
 
     return victim;
 }
@@ -324,53 +352,31 @@ static PangoLayout *make_layout(PopupPangoCtx *pc,
 
 /* ── Geometry helpers ───────────────────────────────────────────────── */
 
-/* Compute the popup width and height, and assign row positions. */
-static void compute_positions(PopupGeometry *g,
-                               const PopupConfig *cfg,
-                               int pre_h_used) {
+static void compute_positions_vertical(PopupGeometry *g, int pre_h_used) {
     int content_w = g->pre_w;
     int content_h = pre_h_used ? g->pre_h : 0;
-    int row_w     = 0;
-    int row_h     = 0;
     int max_label_w = 0;
     size_t i;
 
-    /* For vertical layout, find the widest label so all text aligns in a column */
-    if (cfg->layout_mode == POPUP_LAYOUT_VERTICAL) {
-        for (i = 0; i < g->row_count; ++i) {
-            if (g->rows[i].label_w > max_label_w) max_label_w = g->rows[i].label_w;
-        }
+    /* Find the widest label so all text aligns in a column */
+    for (i = 0; i < g->row_count; ++i) {
+        if (g->rows[i].label_w > max_label_w) max_label_w = g->rows[i].label_w;
     }
 
     /* Measure content area */
-    if (cfg->layout_mode == POPUP_LAYOUT_VERTICAL) {
-        for (i = 0; i < g->row_count; ++i) {
-            /* Row width uses max label column so all rows are the same width */
-            int rw = max_label_w + POPUP_LABEL_GAP + g->rows[i].text_w
-                     + POPUP_ROW_PAD_X * 2;
-            if (rw > content_w) content_w = rw;
-            content_h += g->rows[i].h;
-            if (i + 1 < g->row_count) content_h += POPUP_ROW_GAP;
-        }
-    } else {
-        for (i = 0; i < g->row_count; ++i) {
-            if (row_w > 0) row_w += POPUP_COL_GAP;
-            row_w += g->rows[i].w;
-            if (g->rows[i].h > row_h) row_h = g->rows[i].h;
-        }
-        content_h += row_h;
-        int total_row = row_w;
-        if (g->mode_layout && g->mode_w > 0) {
-            total_row += POPUP_COL_GAP + g->mode_w;
-        }
-        content_w = total_row > g->pre_w ? total_row : g->pre_w;
+    for (i = 0; i < g->row_count; ++i) {
+        /* Row width uses max label column so all rows are the same width */
+        int rw = max_label_w + POPUP_LABEL_GAP + g->rows[i].text_w
+                 + POPUP_ROW_PAD_X * 2;
+        if (rw > content_w) content_w = rw;
+        content_h += g->rows[i].h;
+        if (i + 1 < g->row_count) content_h += POPUP_ROW_GAP;
     }
 
     if (pre_h_used && g->row_count > 0) content_h += POPUP_SECTION_GAP;
 
-    /* Mode label (vertical layout only adds to height here) */
-    if (g->mode_layout && g->mode_h > 0 &&
-        cfg->layout_mode == POPUP_LAYOUT_VERTICAL) {
+    /* Mode label adds to height here */
+    if (g->mode_layout && g->mode_h > 0) {
         content_h += POPUP_SECTION_GAP + g->mode_h;
         if (g->mode_w > content_w) content_w = g->mode_w;
     }
@@ -383,38 +389,21 @@ static void compute_positions(PopupGeometry *g,
     int y = POPUP_PADDING;
     if (pre_h_used) y += g->pre_h + POPUP_SECTION_GAP;
 
-    if (cfg->layout_mode == POPUP_LAYOUT_VERTICAL) {
-        for (i = 0; i < g->row_count; ++i) {
-            int row_content_h = g->rows[i].h - POPUP_ROW_PAD_Y * 2;
-            int label_top = y + POPUP_ROW_PAD_Y + (row_content_h - g->rows[i].label_h) / 2;
-            int text_top  = y + POPUP_ROW_PAD_Y + (row_content_h - g->rows[i].text_h) / 2;
-            g->rows[i].x       = POPUP_PADDING;
-            g->rows[i].y       = y;
-            g->rows[i].w       = g->popup_w - POPUP_PADDING * 2;
-            /* Label left-aligned; all candidate texts share the same column */
-            g->rows[i].label_x = g->rows[i].x + POPUP_ROW_PAD_X;
-            g->rows[i].label_y = label_top + g->rows[i].label_ink_y_offset;
-            g->rows[i].text_x  = g->rows[i].x + POPUP_ROW_PAD_X
-                                  + max_label_w + POPUP_LABEL_GAP;
-            g->rows[i].text_y  = text_top + g->rows[i].text_ink_y_offset;
-            y += g->rows[i].h;
-            if (i + 1 < g->row_count) y += POPUP_ROW_GAP;
-        }
-    } else {
-        int x = POPUP_PADDING;
-        for (i = 0; i < g->row_count; ++i) {
-            int row_content_h = g->rows[i].h - POPUP_ROW_PAD_Y * 2;
-            int label_top = y + POPUP_ROW_PAD_Y + (row_content_h - g->rows[i].label_h) / 2;
-            int text_top  = y + POPUP_ROW_PAD_Y + (row_content_h - g->rows[i].text_h) / 2;
-            g->rows[i].x       = x;
-            g->rows[i].y       = y;
-            g->rows[i].label_x = x + POPUP_ROW_PAD_X;
-            g->rows[i].label_y = label_top + g->rows[i].label_ink_y_offset;
-            g->rows[i].text_x  = x + POPUP_ROW_PAD_X
-                                  + g->rows[i].label_w + POPUP_LABEL_GAP;
-            g->rows[i].text_y  = text_top + g->rows[i].text_ink_y_offset;
-            x += g->rows[i].w + POPUP_COL_GAP;
-        }
+    for (i = 0; i < g->row_count; ++i) {
+        int row_content_h = g->rows[i].h - POPUP_ROW_PAD_Y * 2;
+        int label_top = y + POPUP_ROW_PAD_Y + (row_content_h - g->rows[i].label_h) / 2;
+        int text_top  = y + POPUP_ROW_PAD_Y + (row_content_h - g->rows[i].text_h) / 2;
+        g->rows[i].x       = POPUP_PADDING;
+        g->rows[i].y       = y;
+        g->rows[i].w       = g->popup_w - POPUP_PADDING * 2;
+        /* Label left-aligned; all candidate texts share the same column */
+        g->rows[i].label_x = g->rows[i].x + POPUP_ROW_PAD_X;
+        g->rows[i].label_y = label_top + g->rows[i].label_ink_y_offset;
+        g->rows[i].text_x  = g->rows[i].x + POPUP_ROW_PAD_X
+                              + max_label_w + POPUP_LABEL_GAP;
+        g->rows[i].text_y  = text_top + g->rows[i].text_ink_y_offset;
+        y += g->rows[i].h;
+        if (i + 1 < g->row_count) y += POPUP_ROW_GAP;
     }
 
     /* Preedit position */
@@ -424,16 +413,81 @@ static void compute_positions(PopupGeometry *g,
     /* Mode label position */
     if (g->mode_layout && g->mode_h > 0) {
         g->mode_x = g->popup_w - POPUP_PADDING - g->mode_w;
-        if (cfg->layout_mode == POPUP_LAYOUT_HORIZONTAL) {
-            g->mode_y        = y + POPUP_ROW_PAD_Y;
-            g->mode_divider_y = -1;
-        } else {
-            g->mode_divider_y = g->popup_h - POPUP_PADDING -
-                                g->mode_h - POPUP_ROW_PAD_Y;
-            g->mode_y        = g->popup_h - POPUP_PADDING - g->mode_h;
-        }
+        g->mode_divider_y = g->popup_h - POPUP_PADDING -
+                            g->mode_h - POPUP_ROW_PAD_Y;
+        g->mode_y        = g->popup_h - POPUP_PADDING - g->mode_h;
     } else {
         g->mode_divider_y = -1;
+    }
+}
+
+static void compute_positions_horizontal(PopupGeometry *g, int pre_h_used) {
+    int content_w = g->pre_w;
+    int content_h = pre_h_used ? g->pre_h : 0;
+    int row_w     = 0;
+    int row_h     = 0;
+    size_t i;
+
+    /* Measure content area */
+    for (i = 0; i < g->row_count; ++i) {
+        if (row_w > 0) row_w += POPUP_COL_GAP;
+        row_w += g->rows[i].w;
+        if (g->rows[i].h > row_h) row_h = g->rows[i].h;
+    }
+    content_h += row_h;
+    int total_row = row_w;
+    if (g->mode_layout && g->mode_w > 0) {
+        total_row += POPUP_COL_GAP + g->mode_w;
+    }
+    content_w = total_row > g->pre_w ? total_row : g->pre_w;
+
+    if (pre_h_used && g->row_count > 0) content_h += POPUP_SECTION_GAP;
+
+    g->popup_w = content_w + POPUP_PADDING * 2;
+    if (g->popup_w < POPUP_MIN_WIDTH) g->popup_w = POPUP_MIN_WIDTH;
+    g->popup_h = content_h + POPUP_PADDING * 2;
+
+    /* Row positions */
+    int y = POPUP_PADDING;
+    if (pre_h_used) y += g->pre_h + POPUP_SECTION_GAP;
+
+    int x = POPUP_PADDING;
+    for (i = 0; i < g->row_count; ++i) {
+        int row_content_h = g->rows[i].h - POPUP_ROW_PAD_Y * 2;
+        int label_top = y + POPUP_ROW_PAD_Y + (row_content_h - g->rows[i].label_h) / 2;
+        int text_top  = y + POPUP_ROW_PAD_Y + (row_content_h - g->rows[i].text_h) / 2;
+        g->rows[i].x       = x;
+        g->rows[i].y       = y;
+        g->rows[i].label_x = x + POPUP_ROW_PAD_X;
+        g->rows[i].label_y = label_top + g->rows[i].label_ink_y_offset;
+        g->rows[i].text_x  = x + POPUP_ROW_PAD_X
+                              + g->rows[i].label_w + POPUP_LABEL_GAP;
+        g->rows[i].text_y  = text_top + g->rows[i].text_ink_y_offset;
+        x += g->rows[i].w + POPUP_COL_GAP;
+    }
+
+    /* Preedit position */
+    g->pre_x = POPUP_PADDING;
+    g->pre_y = POPUP_PADDING;
+
+    /* Mode label position */
+    if (g->mode_layout && g->mode_h > 0) {
+        g->mode_x = g->popup_w - POPUP_PADDING - g->mode_w;
+        g->mode_y        = y + POPUP_ROW_PAD_Y;
+        g->mode_divider_y = -1;
+    } else {
+        g->mode_divider_y = -1;
+    }
+}
+
+/* Compute the popup width and height, and assign row positions. */
+static void compute_positions(PopupGeometry *g,
+                               const PopupConfig *cfg,
+                               int pre_h_used) {
+    if (cfg->layout_mode == POPUP_LAYOUT_VERTICAL) {
+        compute_positions_vertical(g, pre_h_used);
+    } else {
+        compute_positions_horizontal(g, pre_h_used);
     }
 }
 
@@ -453,7 +507,7 @@ PopupGeometry *popup_geometry_compute(PopupPangoCtx *pc,
     if (candidates->count > POPUP_MAX_ROWS) return nullptr;
 
     /* Ensure fonts match current config */
-    if (!pango_ctx_ensure_font(pc, cfg->font_desc, cfg->aux_font_desc)) {
+    if (!pango_ctx_ensure_font(pc, cfg->font_desc, cfg->label_font_desc, cfg->aux_font_desc)) {
         return nullptr;
     }
 
@@ -486,6 +540,7 @@ PopupGeometry *popup_geometry_compute(PopupPangoCtx *pc,
                                 text_buf,  sizeof(text_buf));
 
         entry = lru_get_or_create(pc, label_buf, text_buf,
+                                  pc->label_font, cfg->label_font_desc,
                                   pc->font, cfg->font_desc);
         if (!entry) {
             free(g);
@@ -503,10 +558,22 @@ PopupGeometry *popup_geometry_compute(PopupPangoCtx *pc,
         /* Row width: label + gap + text + horizontal padding */
         g->rows[i].w = entry->label_pixel_w + POPUP_LABEL_GAP
                        + entry->pixel_w + POPUP_ROW_PAD_X * 2;
-        /* Row height follows the tallest visible glyph box in the row. */
+        /* Temporarily store ink content height in h; normalised below. */
         g->rows[i].h = (entry->label_ink_h > entry->ink_h
-                        ? entry->label_ink_h : entry->ink_h)
-                       + POPUP_ROW_PAD_Y * 2;
+                        ? entry->label_ink_h : entry->ink_h);
+    }
+
+    /* Normalise: all rows share the same height = max ink content height + padding.
+     * Using per-glyph ink height (not Pango logical height) keeps rows compact;
+     * taking the max across all rows ensures every row is identical in height. */
+    {
+        int max_content_h = 0;
+        for (i = 0; i < g->row_count; ++i) {
+            if (g->rows[i].h > max_content_h) max_content_h = g->rows[i].h;
+        }
+        for (i = 0; i < g->row_count; ++i) {
+            g->rows[i].h = max_content_h + POPUP_ROW_PAD_Y * 2;
+        }
     }
 
     /* Preedit layout (owned) */
@@ -682,10 +749,15 @@ void popup_config_load(PopupConfig *cfg, TypioInstance *instance) {
 
 #undef LOAD_VARIANT
 
-build_descs:
-    snprintf(cfg->font_desc,     sizeof(cfg->font_desc),
+build_descs:;
+    /* label font: ~80% of candidate size, minimum 6pt */
+    int label_size = cfg->font_size * 4 / 5;
+    if (label_size < 6) label_size = 6;
+    snprintf(cfg->font_desc,       sizeof(cfg->font_desc),
              "%s %d", cfg->font_family, cfg->font_size);
-    snprintf(cfg->aux_font_desc, sizeof(cfg->aux_font_desc),
+    snprintf(cfg->label_font_desc, sizeof(cfg->label_font_desc),
+             "%s %d", cfg->font_family, label_size);
+    snprintf(cfg->aux_font_desc,   sizeof(cfg->aux_font_desc),
              "%s %d", cfg->font_family,
              cfg->font_size > 6 ? cfg->font_size - 1 : 6);
 }

@@ -342,5 +342,8 @@ if(BUILD_RIME_ENGINE)
     )
     add_dependencies(test_rime_engine typio-engine-rime)
     add_test(NAME test_rime_engine COMMAND test_rime_engine)
-    set_tests_properties(test_rime_engine PROPERTIES LABELS "integration")
+    set_tests_properties(test_rime_engine PROPERTIES 
+        LABELS "integration"
+        ENVIRONMENT "TYPIO_RIME_SYNC_DEPLOY=1"
+    )
 endif()

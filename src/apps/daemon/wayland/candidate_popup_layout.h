@@ -35,9 +35,9 @@
 #define POPUP_MIN_WIDTH         220  /* minimum popup width (logical px)  */
 #define POPUP_PADDING           6
 #define POPUP_ROW_PAD_X         3    /* horizontal padding inside each row */
-#define POPUP_ROW_PAD_Y         3    /* vertical padding inside each row   */
-#define POPUP_ROW_GAP           3    /* gap between rows (vertical layout) */
-#define POPUP_COL_GAP           12   /* gap between columns (horizontal)   */
+#define POPUP_ROW_PAD_Y         4    /* vertical padding inside each row   */
+#define POPUP_ROW_GAP           0    /* gap between rows (vertical layout) */
+#define POPUP_COL_GAP           6    /* gap between columns (horizontal)   */
 #define POPUP_SECTION_GAP       6
 #define POPUP_LABEL_GAP         5    /* gap between index label and text   */
 #define POPUP_DEFAULT_FONT_SIZE 11
@@ -70,9 +70,10 @@ typedef struct {
     PopupLayoutMode              layout_mode;
     int                          font_size;
     bool                         mode_indicator;
-    char                         font_desc[96];     /* candidates */
-    char                         aux_font_desc[96]; /* preedit + mode label */
-    char                         font_family[80];   /* font family name      */
+    char                         font_desc[96];       /* candidates */
+    char                         label_font_desc[96]; /* index labels (auto-scaled smaller) */
+    char                         aux_font_desc[96];   /* preedit + mode label */
+    char                         font_family[80];     /* font family name      */
     PopupThemeVariant            light_custom;  /* user overrides for light mode */
     PopupThemeVariant            dark_custom;   /* user overrides for dark mode  */
 } PopupConfig;
@@ -132,9 +133,10 @@ typedef struct {
 /* ── LRU layout cache ───────────────────────────────────────────────── */
 
 typedef struct {
-    uint64_t     key;              /* FNV-1a hash(label + text + font_desc)  */
+    uint64_t     key;              /* FNV-1a hash(label + text + label_font_desc + font_desc) */
     char         label[64];        /* index label text (e.g. "1", "a")       */
     char         text[512];        /* candidate text (e.g. "的  comment")    */
+    char         label_font_desc[96];
     char         font_desc[96];
     PangoLayout *label_layout;     /* owned: label portion                   */
     PangoLayout *layout;           /* owned: candidate text portion          */
@@ -153,9 +155,11 @@ typedef struct {
 
 typedef struct {
     PangoContext         *ctx;
-    PangoFontDescription *font;      /* main font, matched to config.font_desc     */
-    PangoFontDescription *aux_font;  /* aux font, matched to config.aux_font_desc  */
+    PangoFontDescription *font;        /* main font, matched to config.font_desc       */
+    PangoFontDescription *label_font;  /* label font, matched to config.label_font_desc */
+    PangoFontDescription *aux_font;    /* aux font, matched to config.aux_font_desc    */
     char                  font_desc[96];
+    char                  label_font_desc[96];
     char                  aux_font_desc[96];
     PopupLayoutEntry      entries[POPUP_LAYOUT_CACHE_CAP];
     uint32_t              tick;

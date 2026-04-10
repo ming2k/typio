@@ -10,6 +10,7 @@ add_library(typio-core
     runtime/config.c
     runtime/config_schema.c
     runtime/rime_schema_list.c
+    utils/arena.c
     utils/list.c
     utils/string.c
     utils/log.c
