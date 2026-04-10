@@ -280,6 +280,8 @@ static bool popup_render(TypioWlCandidatePopup *popup,
         delta = POPUP_DELTA_NONE;
     }
 
+    bool force_full_render = false;
+
     switch (delta) {
 
     case POPUP_DELTA_NONE:
@@ -301,7 +303,7 @@ static bool popup_render(TypioWlCandidatePopup *popup,
         if (!ok) {
             /* Fallback: full repaint */
             delta_name = "selection→full";
-            goto full_render;
+            force_full_render = true;
         }
         break;
 
@@ -329,7 +331,7 @@ static bool popup_render(TypioWlCandidatePopup *popup,
         }
         if (!ok) {
             delta_name = "aux→full";
-            goto full_render;
+            force_full_render = true;
         }
         break;
     }
@@ -338,11 +340,16 @@ static bool popup_render(TypioWlCandidatePopup *popup,
     case POPUP_DELTA_STYLE:
         delta_name = "style";
         popup_pango_ctx_invalidate(&popup->pango);
-        /* fall through */
+        force_full_render = true;
+        break;
     case POPUP_DELTA_CONTENT:
-        if (delta == POPUP_DELTA_CONTENT) delta_name = "content";
-        /* fall through */
-    full_render: {
+        delta_name = "content";
+        force_full_render = true;
+        break;
+
+    } /* switch */
+
+    if (force_full_render) {
         PopupGeometry *new_geom = popup_geometry_compute(&popup->pango,
                                                           cands,
                                                           preedit_text,
@@ -367,10 +374,7 @@ static bool popup_render(TypioWlCandidatePopup *popup,
             typio_log(TYPIO_LOG_WARNING,
                       "Popup: paint_full failed; keeping previous frame");
         }
-        break;
     }
-
-    } /* switch */
 
     t1 = typio_wl_monotonic_ms();
     if (ok && (t1 - t0) >= POPUP_SLOW_RENDER_MS) {

@@ -244,7 +244,11 @@ TypioVoiceBackend *typio_voice_backend_sherpa_new(const char *data_dir,
 
     if (model && *model) {
         /* Explicit model name */
-        snprintf(model_dir, sizeof(model_dir), "%s/%s", base_dir, model);
+        int ret = snprintf(model_dir, sizeof(model_dir), "%s/%s", base_dir, model);
+        if (ret < 0 || (size_t)ret >= sizeof(model_dir)) {
+            typio_log(TYPIO_LOG_WARNING, "sherpa-onnx: model path too long");
+            return NULL;
+        }
         type = detect_model_type(model_dir, tokens_path, file1, file2, file3,
                                  sizeof(tokens_path));
     }

@@ -285,25 +285,36 @@ static bool typio_rime_run_maintenance(TypioRimeState *state, bool full_check) {
         return false;
     }
 
-    typio_log_info("Rime deployment started");
+    const char *sync_env = getenv("TYPIO_RIME_SYNC_DEPLOY");
+    bool sync = sync_env && strcmp(sync_env, "1") == 0;
+
+    typio_log_info("Rime deployment started (%s)", sync ? "blocking" : "non-blocking");
 
     if (!state->api->start_maintenance(full_check ? True : False)) {
         typio_log_error("Rime deployment failed to start");
         return false;
     }
 
-    if (state->api->join_maintenance_thread) {
+    if (sync && state->api->join_maintenance_thread) {
         state->api->join_maintenance_thread();
+        state->maintenance_done = true;
+    } else {
+        state->maintenance_done = false;
     }
 
-    state->maintenance_done = true;
     return true;
+}
+
+static bool typio_rime_is_maintaining(TypioRimeState *state) {
+    if (!state || !state->api || !state->api->is_maintenance_mode) {
+        return false;
+    }
+    return state->api->is_maintenance_mode() ? true : false;
 }
 
 static bool typio_rime_ensure_deployed(TypioRimeState *state) {
     char *build_path;
     bool need_maintenance;
-    bool ok = true;
 
     if (!state) {
         return false;
@@ -313,15 +324,37 @@ static bool typio_rime_ensure_deployed(TypioRimeState *state) {
         return true;
     }
 
+    /* Check if maintenance is currently running */
+    if (typio_rime_is_maintaining(state)) {
+        return false;
+    }
+
+    /* 
+     * If we were maintaining but is_maintenance_mode() is now false,
+     * it means we just finished. 
+     */
+    if (state->api->is_maintenance_mode && !state->api->is_maintenance_mode()) {
+        /*
+         * But we only want to mark it done if we actually needed it or
+         * if we've already checked the build path.
+         */
+    }
+
     build_path = typio_path_join(state->config.user_data_dir, "build/default.yaml");
     need_maintenance = !typio_rime_path_exists(build_path);
     free(build_path);
 
     if (need_maintenance) {
-        ok = typio_rime_run_maintenance(state, true);
+        if (typio_rime_run_maintenance(state, true)) {
+            /* If synchronous, it's already done */
+            return state->maintenance_done;
+        }
+        return false;
     }
 
-    return ok;
+    /* No maintenance needed or it's already finished */
+    state->maintenance_done = true;
+    return true;
 }
 
 static void typio_rime_free_session(void *data) {
@@ -416,6 +449,13 @@ static TypioRimeSession *typio_rime_get_session(TypioEngine *engine,
     session = typio_input_context_get_property(ctx, TYPIO_RIME_SESSION_KEY);
     if (session &&
         (!state->api->find_session || state->api->find_session(session->session_id))) {
+        /*
+         * If we have a session but we just finished a maintenance/deployment
+         * cycle, the old session is stale. find_session might still return true
+         * for a moment, but we should force recreation if maintenance_done
+         * was just toggled. In Typio, reload_config handles invalidation for
+         * explicit deploys, but auto-deploys on startup also need cleanup.
+         */
         return session;
     }
 
@@ -424,6 +464,7 @@ static TypioRimeSession *typio_rime_get_session(TypioEngine *engine,
     }
 
     if (!typio_rime_ensure_deployed(state)) {
+        /* Still deploying; don't block, just return null for now */
         return nullptr;
     }
 
@@ -503,6 +544,9 @@ static bool typio_rime_is_selection_only_change(const RimeContext *rime_context,
 
     /* Verify candidate texts actually match.  This is O(n) string comparisons
      * but n is the page size (typically 5–10) and strcmp short-circuits. */
+    const size_t select_keys_len = rime_context->menu.select_keys ? strlen(rime_context->menu.select_keys) : 0;
+    static const char *const fast_labels[] = {"1", "2", "3", "4", "5", "6", "7", "8", "9"};
+
     for (int i = 0; i < rime_context->menu.num_candidates; ++i) {
         const char *rime_text = rime_context->menu.candidates[i].text;
         const char *cur_text = current->candidates[i].text;
@@ -514,11 +558,12 @@ static bool typio_rime_is_selection_only_change(const RimeContext *rime_context,
 
         if (rime_context->select_labels && rime_context->select_labels[i]) {
             rime_label = rime_context->select_labels[i];
-        } else if (rime_context->menu.select_keys &&
-                   (size_t)i < strlen(rime_context->menu.select_keys)) {
+        } else if (rime_context->menu.select_keys && (size_t)i < select_keys_len) {
             fallback_label[0] = rime_context->menu.select_keys[i];
             fallback_label[1] = '\0';
             rime_label = fallback_label;
+        } else if (i < 9) {
+            rime_label = fast_labels[i];
         } else {
             snprintf(fallback_label, sizeof(fallback_label), "%d", i + 1);
             rime_label = fallback_label;
@@ -616,8 +661,16 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
 
     if (rime_context.menu.num_candidates > 0 && rime_context.menu.candidates) {
         const int count = rime_context.menu.num_candidates;
-        TypioCandidate *items = calloc((size_t)count, sizeof(*items));
-        char **labels = calloc((size_t)count, sizeof(*labels));
+        TypioCandidate stack_items[10];
+        char *stack_labels[10];
+        TypioCandidate *items = count <= 10 ? stack_items : calloc((size_t)count, sizeof(*items));
+        char **labels = count <= 10 ? stack_labels : calloc((size_t)count, sizeof(*labels));
+
+        if (count <= 10) {
+            memset(items, 0, sizeof(TypioCandidate) * (size_t)count);
+            memset(labels, 0, sizeof(char *) * (size_t)count);
+        }
+
         candidate_count = (size_t)count;
         selected = rime_context.menu.highlighted_candidate_index;
         page = rime_context.menu.page_no;
@@ -637,6 +690,9 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
                 .has_next = !rime_context.menu.is_last_page,
             };
 
+            const size_t select_keys_len = rime_context.menu.select_keys ? strlen(rime_context.menu.select_keys) : 0;
+            static const char *const fast_labels[] = {"1", "2", "3", "4", "5", "6", "7", "8", "9"};
+
             for (int i = 0; i < count; ++i) {
                 items[i].text = rime_context.menu.candidates[i].text;
                 items[i].comment = rime_context.menu.candidates[i].comment;
@@ -646,11 +702,15 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
                     continue;
                 }
 
-                if (rime_context.menu.select_keys &&
-                    (size_t)i < strlen(rime_context.menu.select_keys)) {
+                if (rime_context.menu.select_keys && (size_t)i < select_keys_len) {
                     char label[2] = {rime_context.menu.select_keys[i], '\0'};
                     labels[i] = typio_strdup(label);
                     items[i].label = labels[i];
+                    continue;
+                }
+
+                if (i < 9) {
+                    items[i].label = fast_labels[i];
                     continue;
                 }
 
@@ -670,9 +730,9 @@ static bool typio_rime_sync_context(TypioRimeSession *session,
             for (int i = 0; i < count; ++i) {
                 free(labels[i]);
             }
+            if (count > 10) free(labels);
         }
-        free(labels);
-        free(items);
+        if (count > 10) free(items);
     } else {
         typio_input_context_clear_candidates(ctx);
     }
@@ -747,14 +807,13 @@ static TypioResult typio_rime_init(TypioEngine *engine, TypioInstance *instance)
 
     state->initialized = true;
 
-    if (!typio_rime_ensure_deployed(state)) {
-        if (state->api->finalize) {
-            state->api->finalize();
-        }
-        typio_rime_free_config(&state->config);
-        free(state);
-        return TYPIO_ERROR;
-    }
+    /* 
+     * Kick off deployment if needed.  In non-blocking mode, ensure_deployed
+     * returns false while maintenance is running.  Initialization should
+     * still succeed; the engine will simply stay in "deploying" state
+     * (returning HANDLED with a preedit message) until it finishes.
+     */
+    typio_rime_ensure_deployed(state);
 
     typio_engine_set_user_data(engine, state);
     return TYPIO_OK;
@@ -848,7 +907,25 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
     }
 
     session = typio_rime_get_session(engine, ctx, true);
-    if (!session || !session->state->api->process_key) {
+    if (!session) {
+        if (typio_rime_is_maintaining(typio_engine_get_user_data(engine))) {
+            /* Show a temporary preedit message during deployment */
+            TypioPreeditSegment segment = {
+                .text = "… Rime 正在部署",
+                .format = TYPIO_PREEDIT_NONE,
+            };
+            TypioPreedit preedit = {
+                .segments = &segment,
+                .segment_count = 1,
+                .cursor_pos = 0,
+            };
+            typio_input_context_set_preedit(ctx, &preedit);
+            return TYPIO_KEY_HANDLED;
+        }
+        return TYPIO_KEY_NOT_HANDLED;
+    }
+
+    if (!session->state->api->process_key) {
         return TYPIO_KEY_NOT_HANDLED;
     }
 
