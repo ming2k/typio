@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.3] - 2026-04-10
+
+### Added
+
+- **Popup palette overrides**: candidate popup light and dark themes now
+  support per-channel color overrides from `typio.toml`, including background,
+  border, text, muted text, preedit, selection, and selection-text colors.
+
+### Changed
+
+- **Candidate popup row layout**: candidate indices are rendered as a separate
+  muted label column with tighter horizontal spacing and refined padding for a
+  denser popup layout.
+- **Popup font configuration**: candidate and auxiliary popup text now reuse a
+  configured font family consistently across cached layouts and theme rebuilds.
+
+### Fixed
+
+- **Candidate row vertical alignment**: candidate indices and primary text now
+  align against their visible ink extents instead of sharing one text offset,
+  avoiding mismatched vertical centering between numbers and glyphs.
+- **Selection highlight density**: selected candidates now keep tighter outer
+  spacing while preserving enough internal vertical padding for the highlighted
+  content to read cleanly.
+
 ## [2.7.2] - 2026-04-10
 
 ### Changed
