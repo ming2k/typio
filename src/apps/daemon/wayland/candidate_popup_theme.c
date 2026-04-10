@@ -21,6 +21,8 @@
 
 #define TYPIO_CANDIDATE_POPUP_THEME_CACHE_MS 5000
 
+/* ── Built-in palettes ──────────────────────────────────────────────── */
+
 static const TypioCandidatePopupPalette palette_light = {
     .bg_r = 0.985, .bg_g = 0.988, .bg_b = 0.992, .bg_a = 0.985,
     .border_r = 0.82, .border_g = 0.85, .border_b = 0.89, .border_a = 1.0,
@@ -40,6 +42,7 @@ static const TypioCandidatePopupPalette palette_dark = {
     .selection_r = 0.20, .selection_g = 0.44, .selection_b = 0.95, .selection_a = 0.97,
     .selection_text_r = 1.0, .selection_text_g = 1.0, .selection_text_b = 1.0,
 };
+
 
 static bool str_contains_dark(const char *value) {
     if (!value || !*value) {
@@ -148,8 +151,16 @@ static const TypioCandidatePopupPalette *resolve_uncached(TypioCandidatePopupThe
     }
 }
 
-const TypioCandidatePopupPalette *typio_candidate_popup_theme_resolve(TypioCandidatePopupThemeCache *cache,
-                                                    TypioCandidatePopupThemeMode mode) {
+const TypioCandidatePopupPalette *typio_candidate_popup_palette_light(void) {
+    return &palette_light;
+}
+
+const TypioCandidatePopupPalette *typio_candidate_popup_palette_dark(void) {
+    return &palette_dark;
+}
+
+const TypioCandidatePopupPalette *typio_candidate_popup_theme_resolve(
+    TypioCandidatePopupThemeCache *cache, TypioCandidatePopupThemeMode mode) {
     uint64_t now = typio_wl_monotonic_ms();
 
     if (cache->palette && cache->mode == mode &&
@@ -161,4 +172,43 @@ const TypioCandidatePopupPalette *typio_candidate_popup_theme_resolve(TypioCandi
     cache->mode = mode;
     cache->resolved_at_ms = now;
     return cache->palette;
+}
+
+/* ── Utilities ──────────────────────────────────────────────────────── */
+
+bool typio_parse_hex_color(const char *hex,
+                            double *r, double *g, double *b, double *a) {
+    unsigned int ri, gi, bi, ai = 255;
+    int len;
+
+    if (!hex || hex[0] != '#') return false;
+
+    len = (int)strlen(hex + 1);
+    if (len == 6) {
+        if (sscanf(hex + 1, "%2x%2x%2x", &ri, &gi, &bi) != 3) return false;
+    } else if (len == 8) {
+        if (sscanf(hex + 1, "%2x%2x%2x%2x", &ri, &gi, &bi, &ai) != 4) return false;
+    } else {
+        return false;
+    }
+
+    if (r) *r = ri / 255.0;
+    if (g) *g = gi / 255.0;
+    if (b) *b = bi / 255.0;
+    if (a) *a = ai / 255.0;
+    return true;
+}
+
+uint64_t typio_candidate_popup_palette_hash(const TypioCandidatePopupPalette *p) {
+    uint64_t h = 14695981039346656037ULL;
+    const unsigned char *bytes = (const unsigned char *)p;
+    size_t i;
+
+    if (!p) return 0;
+
+    for (i = 0; i < sizeof(*p); ++i) {
+        h ^= bytes[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
 }

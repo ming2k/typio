@@ -8,9 +8,45 @@ default_engine = "basic"
 # per_app_preferences = true
 
 [display]
+# Theme: "auto" (follow desktop), "light", or "dark"  (default: "auto")
 popup_theme = "auto"
-candidate_layout = "horizontal"
+
+# Candidate layout: "horizontal" or "vertical"  (default: "vertical")
+candidate_layout = "vertical"
+
+# Popup font size in points, range 6–72  (default: 11)
 font_size = 11
+
+# Font family for the popup  (default: "Sans")
+# font_family = "Noto Sans CJK SC"
+
+# Show engine mode label (e.g. "中" / "A") in popup  (default: true)
+# popup_mode_indicator = true
+
+# ── Custom color schemas ─────────────────────────────────────────────
+# Define per-channel overrides for the light and/or dark variants.
+# Custom values take priority over the built-in palette for that variant.
+# The active variant is chosen by popup_theme (or desktop detection for "auto").
+# Use 6-digit hex (#rrggbb) or 8-digit hex (#rrggbbaa) with alpha.
+# Omit any key to keep the built-in default for that channel.
+
+# [display.colors.light]
+# background     = "#f8f9fa"
+# border         = "#ced4da"
+# text           = "#212529"
+# muted          = "#868e96"   # candidate index numbers and mode label
+# preedit        = "#495057"
+# selection      = "#339af0f5"
+# selection_text = "#ffffff"
+
+# [display.colors.dark]
+# background     = "#141414"
+# border         = "#2a2a2a"
+# text           = "#e8e8e8"
+# muted          = "#666666"
+# preedit        = "#aaaaaa"
+# selection      = "#1971c2f5"
+# selection_text = "#ffffff"
 
 [engines.basic]
 # "forward" sends printable keys through virtual keyboard forwarding.

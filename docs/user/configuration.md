@@ -61,9 +61,44 @@ Top level:
 Display section: `[display]`
 
 - `popup_theme` — `"auto"`, `"light"`, or `"dark"` (default: `"auto"`)
-- `candidate_layout` — `"horizontal"` or `"vertical"` (default: `"horizontal"`)
+  - `"auto"` infers the preference from desktop settings (GTK dark theme, KDE color scheme, etc.)
+- `candidate_layout` — `"horizontal"` or `"vertical"` (default: `"vertical"`)
 - `font_size` — popup text size, 6–72 (default: `11`)
+- `font_family` — font family name (default: `"Sans"`); e.g. `"Noto Sans CJK SC"`
 - `popup_mode_indicator` — show engine mode label in popup (default: `true`)
+
+Custom color schemas: `[display.colors.light]` and `[display.colors.dark]`
+
+Each section customises one variant of the popup. Custom values override the
+corresponding built-in palette; the active variant is whichever one `popup_theme`
+resolves to for the current session (light or dark). Omit any key to keep the
+built-in default for that channel. Colors are 6-digit (`#rrggbb`) or 8-digit
+(`#rrggbbaa`) hex strings.
+
+Available keys (same for both sections):
+
+- `background` — popup background (RGBA)
+- `border` — popup border (RGBA)
+- `text` — candidate text color
+- `muted` — candidate index labels and mode indicator
+- `preedit` — preedit text color
+- `selection` — selected-row highlight (RGBA)
+- `selection_text` — text color on selected row
+
+Example — softer accent colors for both light and dark:
+
+```toml
+[display]
+popup_theme = "auto"
+
+[display.colors.light]
+selection = "#2f9e44f5"
+muted     = "#868e96"
+
+[display.colors.dark]
+selection = "#2f9e44f5"
+muted     = "#666666"
+```
 
 Rime section: `[engines.rime]`
 

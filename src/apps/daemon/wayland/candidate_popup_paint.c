@@ -43,13 +43,22 @@ static void draw_row(cairo_t *cr, const PopupRow *row, bool selected,
     cairo_fill(cr);
 
     if (selected) {
+        /* Selection highlight */
         cairo_set_source_rgba(cr, p->selection_r, p->selection_g,
                               p->selection_b, p->selection_a);
         cairo_rectangle(cr, row->x, row->y, row->w, row->h);
         cairo_fill(cr);
+        /* Both label and text in selection_text color */
+        draw_layout(cr, row->label_layout, row->label_x, row->label_y,
+                    p->selection_text_r, p->selection_text_g, p->selection_text_b);
         draw_layout(cr, row->layout, row->text_x, row->text_y,
                     p->selection_text_r, p->selection_text_g, p->selection_text_b);
     } else {
+        /* Label (index) in muted color; candidate text in primary text color.
+         * This creates clear visual hierarchy: the number is a secondary hint,
+         * the candidate character is the primary action target. */
+        draw_layout(cr, row->label_layout, row->label_x, row->label_y,
+                    p->muted_r, p->muted_g, p->muted_b);
         draw_layout(cr, row->layout, row->text_x, row->text_y,
                     p->text_r, p->text_g, p->text_b);
     }

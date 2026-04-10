@@ -112,7 +112,7 @@ static PopupDelta classify_delta(const PopupGeometry *geom,
                                   const char *preedit,
                                   const char *mode_label,
                                   const PopupConfig *cfg,
-                                  const TypioCandidatePopupPalette *palette,
+                                  uint64_t palette_sig,
                                   int scale,
                                   int new_selected) {
     if (!geom) {
@@ -121,7 +121,7 @@ static PopupDelta classify_delta(const PopupGeometry *geom,
 
     /* Style changes invalidate everything */
     if (geom->scale != scale ||
-        geom->palette != palette ||
+        geom->palette_sig != palette_sig ||
         geom->config.theme_mode   != cfg->theme_mode   ||
         geom->config.layout_mode  != cfg->layout_mode  ||
         geom->config.font_size    != cfg->font_size     ||
@@ -244,7 +244,8 @@ static bool popup_render(TypioWlCandidatePopup *popup,
                           const char *preedit_text,
                           const char *mode_label) {
     const PopupConfig              *cfg;
-    const TypioCandidatePopupPalette *palette;
+    TypioCandidatePopupPalette       palette;
+    uint64_t                         pal_sig;
     PopupPaintTarget                 target;
     int                              scale;
     int                              new_selected;
@@ -258,8 +259,9 @@ static bool popup_render(TypioWlCandidatePopup *popup,
     t0  = typio_wl_monotonic_ms();
     cfg = get_config(popup);
 
-    palette = typio_candidate_popup_theme_resolve(&popup->theme_cache,
-                                                   cfg->theme_mode);
+    /* Resolve preset + apply user color overrides into a local palette copy */
+    popup_config_build_palette(cfg, &popup->theme_cache, &palette);
+    pal_sig      = typio_candidate_popup_palette_hash(&palette);
     scale        = render_scale(popup);
     new_selected = cands->selected;
 
@@ -271,7 +273,7 @@ static bool popup_render(TypioWlCandidatePopup *popup,
     };
 
     delta = classify_delta(popup->geom, cands, preedit_text, mode_label,
-                            cfg, palette, scale, new_selected);
+                            cfg, pal_sig, scale, new_selected);
 
     /* ── NONE: selection identical to what's already on screen ───────── */
     if (delta == POPUP_DELTA_SELECTION && new_selected == popup->selected) {
@@ -345,7 +347,7 @@ static bool popup_render(TypioWlCandidatePopup *popup,
                                                           cands,
                                                           preedit_text,
                                                           mode_label,
-                                                          cfg, palette, scale);
+                                                          cfg, &palette, scale);
         if (!new_geom) {
             typio_log(TYPIO_LOG_WARNING,
                       "Popup: geometry computation failed");

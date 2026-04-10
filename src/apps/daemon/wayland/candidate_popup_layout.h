@@ -33,12 +33,13 @@
 #define POPUP_LAYOUT_CACHE_CAP  64   /* LRU cache capacity (entries)     */
 #define POPUP_MAX_ROWS          16   /* max candidates shown per page     */
 #define POPUP_MIN_WIDTH         220  /* minimum popup width (logical px)  */
-#define POPUP_PADDING           8
-#define POPUP_ROW_PAD_X         4
-#define POPUP_ROW_PAD_Y         2
-#define POPUP_ROW_GAP           4
-#define POPUP_COL_GAP           10
+#define POPUP_PADDING           6
+#define POPUP_ROW_PAD_X         3    /* horizontal padding inside each row */
+#define POPUP_ROW_PAD_Y         3    /* vertical padding inside each row   */
+#define POPUP_ROW_GAP           3    /* gap between rows (vertical layout) */
+#define POPUP_COL_GAP           12   /* gap between columns (horizontal)   */
 #define POPUP_SECTION_GAP       6
+#define POPUP_LABEL_GAP         5    /* gap between index label and text   */
 #define POPUP_DEFAULT_FONT_SIZE 11
 
 /* ── Configuration ──────────────────────────────────────────────────── */
@@ -48,23 +49,52 @@ typedef enum {
     POPUP_LAYOUT_HORIZONTAL,
 } PopupLayoutMode;
 
+/**
+ * Per-channel color customisation for one theme variant (light or dark).
+ * Loaded from [display.colors.light] or [display.colors.dark] in typio.toml.
+ * Each "has_*" flag is set when the user supplied that color explicitly;
+ * unset channels fall back to the built-in palette for that variant.
+ */
+typedef struct {
+    bool   has_bg;         double bg_r, bg_g, bg_b, bg_a;
+    bool   has_border;     double border_r, border_g, border_b, border_a;
+    bool   has_text;       double text_r, text_g, text_b;
+    bool   has_muted;      double muted_r, muted_g, muted_b;
+    bool   has_preedit;    double preedit_r, preedit_g, preedit_b;
+    bool   has_selection;  double selection_r, selection_g, selection_b, selection_a;
+    bool   has_sel_text;   double sel_text_r, sel_text_g, sel_text_b;
+} PopupThemeVariant;
+
 typedef struct {
     TypioCandidatePopupThemeMode theme_mode;
     PopupLayoutMode              layout_mode;
     int                          font_size;
     bool                         mode_indicator;
-    char                         font_desc[64];     /* candidates */
-    char                         aux_font_desc[64]; /* preedit + mode label */
+    char                         font_desc[96];     /* candidates */
+    char                         aux_font_desc[96]; /* preedit + mode label */
+    char                         font_family[80];   /* font family name      */
+    PopupThemeVariant            light_custom;  /* user overrides for light mode */
+    PopupThemeVariant            dark_custom;   /* user overrides for dark mode  */
 } PopupConfig;
 
 /* ── Per-row geometry ───────────────────────────────────────────────── */
 
 typedef struct {
-    PangoLayout *layout;   /* borrowed from PopupPangoCtx; do NOT free here */
-    int text_w, text_h;    /* measured text size (logical px)               */
-    int x, y;              /* row background rect origin                    */
-    int w, h;              /* row background rect size                      */
-    int text_x, text_y;   /* text draw origin within the row               */
+    /* Both layouts borrowed from PopupPangoCtx; do NOT free here */
+    PangoLayout *label_layout; /* index label (e.g. "1", "a")              */
+    PangoLayout *layout;       /* candidate text (e.g. "的  comment")      */
+
+    int label_w, label_h;  /* label width + visible ink height (px)         */
+    int text_w,  text_h;   /* candidate width + visible ink height (px)     */
+
+    int x, y;              /* row background rect origin (logical px)       */
+    int w, h;              /* row background rect size (logical px)         */
+
+    int label_x, label_y;  /* label draw origin                             */
+    int text_x,  text_y;   /* candidate text draw origin                    */
+
+    int label_ink_y_offset; /* correction: -(label_ink_rect.y)              */
+    int text_ink_y_offset;  /* correction: -(text_ink_rect.y)               */
 } PopupRow;
 
 /* ── Geometry snapshot ──────────────────────────────────────────────── */
@@ -89,21 +119,33 @@ typedef struct {
 
     /* Saved for delta classification on next update */
     uint64_t    content_sig;
+    uint64_t    palette_sig;   /* FNV-1a hash of resolved_palette for change detection */
     char        preedit_text[256];
     char        mode_label[128];
     PopupConfig config;
-    const TypioCandidatePopupPalette *palette;
+
+    /* Owned copy of the effective palette (built-in preset + user overrides) */
+    TypioCandidatePopupPalette resolved_palette;
+    const TypioCandidatePopupPalette *palette;  /* always == &resolved_palette */
 } PopupGeometry;
 
 /* ── LRU layout cache ───────────────────────────────────────────────── */
 
 typedef struct {
-    uint64_t     key;          /* FNV-1a hash(formatted_text + font_desc) */
-    char         text[512];    /* formatted candidate text                 */
-    char         font_desc[64];
-    PangoLayout *layout;       /* owned by this entry                      */
-    int          pixel_w;
-    int          pixel_h;
+    uint64_t     key;              /* FNV-1a hash(label + text + font_desc)  */
+    char         label[64];        /* index label text (e.g. "1", "a")       */
+    char         text[512];        /* candidate text (e.g. "的  comment")    */
+    char         font_desc[96];
+    PangoLayout *label_layout;     /* owned: label portion                   */
+    PangoLayout *layout;           /* owned: candidate text portion          */
+    int          label_pixel_w;    /* label logical width                    */
+    int          label_pixel_h;    /* label logical height                   */
+    int          label_ink_y;      /* label ink rect Y offset               */
+    int          label_ink_h;      /* label ink rect height                 */
+    int          pixel_w;          /* candidate text logical width           */
+    int          pixel_h;          /* candidate text logical height (unused for sizing) */
+    int          ink_y;            /* ink rect Y offset from logical top     */
+    int          ink_h;            /* ink rect height (used for row sizing)  */
     uint32_t     lru_tick;
 } PopupLayoutEntry;
 
@@ -113,8 +155,8 @@ typedef struct {
     PangoContext         *ctx;
     PangoFontDescription *font;      /* main font, matched to config.font_desc     */
     PangoFontDescription *aux_font;  /* aux font, matched to config.aux_font_desc  */
-    char                  font_desc[64];
-    char                  aux_font_desc[64];
+    char                  font_desc[96];
+    char                  aux_font_desc[96];
     PopupLayoutEntry      entries[POPUP_LAYOUT_CACHE_CAP];
     uint32_t              tick;
 } PopupPangoCtx;
@@ -158,5 +200,14 @@ void popup_geometry_free(PopupGeometry *g);
 
 /** Load PopupConfig from the global TypioInstance config. */
 void popup_config_load(PopupConfig *cfg, TypioInstance *instance);
+
+/**
+ * Build the effective palette for @cfg by resolving the theme preset and
+ * applying any user-defined color overrides from [display.colors].
+ * The result is written into @out_palette.
+ */
+void popup_config_build_palette(const PopupConfig *cfg,
+                                 TypioCandidatePopupThemeCache *cache,
+                                 TypioCandidatePopupPalette *out_palette);
 
 #endif /* TYPIO_WL_CANDIDATE_POPUP_LAYOUT_H */
