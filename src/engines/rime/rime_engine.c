@@ -7,6 +7,7 @@
 
 #include <rime_api.h>
 
+#include <dirent.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
@@ -161,6 +162,63 @@ static bool typio_rime_ensure_dir(const char *path) {
 static bool typio_rime_path_exists(const char *path) {
     struct stat st;
     return path && stat(path, &st) == 0;
+}
+
+static bool typio_rime_has_yaml_suffix(const char *name) {
+    const char *suffix;
+
+    if (!name) {
+        return false;
+    }
+
+    suffix = strrchr(name, '.');
+    return suffix && strcmp(suffix, ".yaml") == 0;
+}
+
+static void typio_rime_invalidate_generated_yaml(TypioRimeState *state) {
+    char *build_dir;
+    DIR *dir;
+    struct dirent *entry;
+
+    if (!state || !state->config.user_data_dir) {
+        return;
+    }
+
+    build_dir = typio_path_join(state->config.user_data_dir, "build");
+    if (!build_dir) {
+        return;
+    }
+
+    dir = opendir(build_dir);
+    if (!dir) {
+        free(build_dir);
+        return;
+    }
+
+    while ((entry = readdir(dir)) != nullptr) {
+        char *path;
+
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        if (!typio_rime_has_yaml_suffix(entry->d_name)) {
+            continue;
+        }
+
+        path = typio_path_join(build_dir, entry->d_name);
+        if (!path) {
+            continue;
+        }
+
+        if (unlink(path) != 0 && errno != ENOENT) {
+            typio_log_warning("Failed to invalidate generated Rime YAML: %s", path);
+        }
+        free(path);
+    }
+
+    closedir(dir);
+    free(build_dir);
 }
 
 static TypioResult typio_rime_load_config(TypioEngine *engine,
@@ -878,6 +936,12 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
     }
 
     if (typio_instance_rime_deploy_requested(engine->instance)) {
+        /*
+         * librime tracks source changes with second-resolution timestamps.
+         * A user can rewrite default.custom.yaml twice within one second,
+         * so explicit deploy must invalidate generated YAML to force rebuild.
+         */
+        typio_rime_invalidate_generated_yaml(state);
         if (!typio_rime_run_maintenance(state, true)) {
             return TYPIO_ERROR;
         }

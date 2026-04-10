@@ -189,6 +189,7 @@ TEST(load_and_compose) {
     char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
     char config_dir[1024];
     char data_dir[1024];
+    char state_dir[1024];
     char config_path[1024];
     TypioInstanceConfig config = {};
     CaptureState capture = {};
@@ -197,19 +198,22 @@ TEST(load_and_compose) {
 
     ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", temp_root) < (int)sizeof(config_dir));
     ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) < (int)sizeof(data_dir));
+    ASSERT(snprintf(state_dir, sizeof(state_dir), "%s/state", temp_root) < (int)sizeof(state_dir));
     ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) < (int)sizeof(config_path));
 
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
+    ASSERT(ensure_dir(state_dir));
     ASSERT(write_file(config_path,
-                      "default_engine = \"basic\"\n"
+                      "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
                       "schema = \"luna_pinyin\"\n"));
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;
+    config.state_dir = state_dir;
     config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
-    config.default_engine = "basic";
+    config.default_engine = "rime";
 
     TypioInstance *instance = typio_instance_new_with_config(&config);
     ASSERT_NOT_NULL(instance);
@@ -256,6 +260,7 @@ TEST(switch_to_rime_first_shift_toggles_latin_mode) {
     char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
     char config_dir[1024];
     char data_dir[1024];
+    char state_dir[1024];
     char config_path[1024];
     TypioInstanceConfig config = {};
     CaptureState capture = {};
@@ -265,10 +270,12 @@ TEST(switch_to_rime_first_shift_toggles_latin_mode) {
     ASSERT_NOT_NULL(mkdtemp(temp_root));
     ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", temp_root) < (int)sizeof(config_dir));
     ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) < (int)sizeof(data_dir));
+    ASSERT(snprintf(state_dir, sizeof(state_dir), "%s/state", temp_root) < (int)sizeof(state_dir));
     ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) < (int)sizeof(config_path));
 
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
+    ASSERT(ensure_dir(state_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"basic\"\n"
                       "[engines.rime]\n"
@@ -276,6 +283,7 @@ TEST(switch_to_rime_first_shift_toggles_latin_mode) {
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;
+    config.state_dir = state_dir;
     config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
     config.default_engine = "basic";
 
@@ -313,6 +321,7 @@ TEST(switch_back_to_rime_first_shift_toggles_latin_mode) {
     char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
     char config_dir[1024];
     char data_dir[1024];
+    char state_dir[1024];
     char config_path[1024];
     TypioInstanceConfig config = {};
     CaptureState capture = {};
@@ -322,10 +331,12 @@ TEST(switch_back_to_rime_first_shift_toggles_latin_mode) {
     ASSERT_NOT_NULL(mkdtemp(temp_root));
     ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", temp_root) < (int)sizeof(config_dir));
     ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) < (int)sizeof(data_dir));
+    ASSERT(snprintf(state_dir, sizeof(state_dir), "%s/state", temp_root) < (int)sizeof(state_dir));
     ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) < (int)sizeof(config_path));
 
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
+    ASSERT(ensure_dir(state_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
@@ -333,6 +344,7 @@ TEST(switch_back_to_rime_first_shift_toggles_latin_mode) {
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;
+    config.state_dir = state_dir;
     config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
     config.default_engine = "rime";
 
@@ -371,6 +383,7 @@ TEST(refocus_preserves_latin_mode) {
     char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
     char config_dir[1024];
     char data_dir[1024];
+    char state_dir[1024];
     char config_path[1024];
     TypioInstanceConfig config = {};
     CaptureState capture = {};
@@ -383,10 +396,12 @@ TEST(refocus_preserves_latin_mode) {
     ASSERT_NOT_NULL(mkdtemp(temp_root));
     ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", temp_root) < (int)sizeof(config_dir));
     ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) < (int)sizeof(data_dir));
+    ASSERT(snprintf(state_dir, sizeof(state_dir), "%s/state", temp_root) < (int)sizeof(state_dir));
     ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) < (int)sizeof(config_path));
 
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
+    ASSERT(ensure_dir(state_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
@@ -394,6 +409,7 @@ TEST(refocus_preserves_latin_mode) {
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;
+    config.state_dir = state_dir;
     config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
     config.default_engine = "rime";
 
@@ -442,6 +458,7 @@ TEST(engine_switch_preserves_latin_mode_within_context) {
     char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
     char config_dir[1024];
     char data_dir[1024];
+    char state_dir[1024];
     char config_path[1024];
     TypioInstanceConfig config = {};
     CaptureState capture = {};
@@ -454,10 +471,12 @@ TEST(engine_switch_preserves_latin_mode_within_context) {
     ASSERT_NOT_NULL(mkdtemp(temp_root));
     ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", temp_root) < (int)sizeof(config_dir));
     ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) < (int)sizeof(data_dir));
+    ASSERT(snprintf(state_dir, sizeof(state_dir), "%s/state", temp_root) < (int)sizeof(state_dir));
     ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) < (int)sizeof(config_path));
 
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
+    ASSERT(ensure_dir(state_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
@@ -465,6 +484,7 @@ TEST(engine_switch_preserves_latin_mode_within_context) {
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;
+    config.state_dir = state_dir;
     config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
     config.default_engine = "rime";
 
@@ -513,6 +533,7 @@ TEST(selection_navigation_only_updates_candidates) {
     char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
     char config_dir[1024];
     char data_dir[1024];
+    char state_dir[1024];
     char config_path[1024];
     TypioInstanceConfig config = {};
     CaptureState capture = {};
@@ -526,10 +547,12 @@ TEST(selection_navigation_only_updates_candidates) {
     ASSERT_NOT_NULL(mkdtemp(temp_root));
     ASSERT(snprintf(config_dir, sizeof(config_dir), "%s/config", temp_root) < (int)sizeof(config_dir));
     ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) < (int)sizeof(data_dir));
+    ASSERT(snprintf(state_dir, sizeof(state_dir), "%s/state", temp_root) < (int)sizeof(state_dir));
     ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) < (int)sizeof(config_path));
 
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
+    ASSERT(ensure_dir(state_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
@@ -537,6 +560,7 @@ TEST(selection_navigation_only_updates_candidates) {
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;
+    config.state_dir = state_dir;
     config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
     config.default_engine = "rime";
 
@@ -592,6 +616,7 @@ TEST(deploy_rime_config_rebuilds_generated_yaml) {
     char temp_root[] = "/tmp/typio-rime-test-XXXXXX";
     char config_dir[1024];
     char data_dir[1024];
+    char state_dir[1024];
     char rime_dir[1024];
     char config_path[1024];
     char custom_path[1024];
@@ -602,6 +627,8 @@ TEST(deploy_rime_config_rebuilds_generated_yaml) {
            (int)sizeof(config_dir));
     ASSERT(snprintf(data_dir, sizeof(data_dir), "%s/data", temp_root) <
            (int)sizeof(data_dir));
+    ASSERT(snprintf(state_dir, sizeof(state_dir), "%s/state", temp_root) <
+           (int)sizeof(state_dir));
     ASSERT(snprintf(rime_dir, sizeof(rime_dir), "%s/rime", data_dir) <
            (int)sizeof(rime_dir));
     ASSERT(snprintf(config_path, sizeof(config_path), "%s/typio.toml", config_dir) <
@@ -611,6 +638,7 @@ TEST(deploy_rime_config_rebuilds_generated_yaml) {
 
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
+    ASSERT(ensure_dir(state_dir));
     ASSERT(ensure_dir(rime_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
@@ -623,6 +651,7 @@ TEST(deploy_rime_config_rebuilds_generated_yaml) {
 
     config.config_dir = config_dir;
     config.data_dir = data_dir;
+    config.state_dir = state_dir;
     config.engine_dir = TYPIO_TEST_RIME_ENGINE_DIR;
     config.default_engine = "rime";
 
