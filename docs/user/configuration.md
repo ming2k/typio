@@ -30,6 +30,7 @@ Typical full example:
 
 ```toml
 default_engine = "rime"
+default_voice_engine = "whisper"
 
 [engines.rime]
 # shared_data_dir = "/usr/share/rime-data"
@@ -38,9 +39,13 @@ default_engine = "rime"
 [engines.mozc]
 # server_path = "/usr/lib/mozc/mozc_server"
 
-[whisper]
+[engines.whisper]
 language = "zh"
 model = "base"
+
+# [engines.sherpa-onnx]
+# language = "auto"
+# model = "sensevoice-small"
 ```
 
 The repository ships [`data/typio.toml.example`](../data/typio.toml.example)
@@ -51,6 +56,7 @@ as a starting point.
 Top level:
 
 - `default_engine`
+- `default_voice_engine`
 
 Display section: `[display]`
 
@@ -68,10 +74,22 @@ Mozc section: `[engines.mozc]`
 
 - `server_path`
 
-Whisper section: `[whisper]`
+Whisper section: `[engines.whisper]`
 
 - `language`
 - `model`
+
+Sherpa-ONNX section: `[engines.sherpa-onnx]`
+
+- `language`
+- `model`
+
+`default_voice_engine` selects the active speech-recognition backend. Typio
+keeps voice engines separate from keyboard engines, so changing
+`default_voice_engine` does not replace the active keyboard engine.
+
+Voice backend and model reloads happen in the background after config reload,
+so the daemon stays responsive while a replacement model is loaded.
 
 `popup_theme = "auto"` is best-effort. Typio does not get a theme directly
 from the Wayland input-method protocol, so it infers light/dark preference
@@ -81,11 +99,15 @@ and KDE color-scheme hints.
 For Rime, `shared_data_dir` and `user_data_dir` support:
 
 - `~` at the start of the path
+- `$VAR`
+- `${VAR}`
 
 The active Rime schema is remembered in XDG state and changed through Typio's
 runtime controls. It is no longer configured in `typio.toml`.
-- `$VAR`
-- `${VAR}`
+
+If you edit Rime source files under `user_data_dir` directly, such as
+`default.custom.yaml`, run `typio-client rime deploy` or use the control-panel
+deploy action to rebuild generated `build/*.yaml` artifacts.
 
 ## CLI Overrides
 

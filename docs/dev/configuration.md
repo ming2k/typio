@@ -105,6 +105,19 @@ engine to `reload_config`, and fires the `config_reloaded_callback`.  The
 Wayland frontend registers this callback to refresh shortcuts, voice, and
 the status bus.
 
+The callback boundary means Typio accepted the new config and refreshed the
+runtime pipeline. It does not require every optional subsystem to finish heavy
+work synchronously. In particular, voice backends may continue loading a
+replacement model on a background thread after `reload_config` returns.
+
+### 8. Explicit Rime Deploy
+
+`typio_instance_deploy_rime_config` is the manual rebuild path for out-of-band
+Rime edits under `user_data_dir`, such as `default.custom.yaml`. Unlike normal
+config reload, this path forces librime maintenance and invalidates generated
+`build/*.yaml` artifacts first so rapid successive edits still rebuild even if
+filesystem timestamps land in the same second.
+
 ## Schema Table Structure
 
 Each `TypioConfigField` entry contains:

@@ -96,7 +96,7 @@ whenever the engine's mode changes.
 | `ActivateEngine` | `s -> ()` | Switch to named keyboard engine; saves to config |
 | `NextEngine` | `() -> ()` | Cycle to the next keyboard engine (same as Ctrl+Shift) |
 | `SetRimeSchema` | `s -> ()` | Set the active Rime schema and reload |
-| `DeployRimeConfig` | `() -> ()` | Rebuild generated Rime config artifacts for the active Rime engine |
+| `DeployRimeConfig` | `() -> ()` | Rebuild generated Rime config artifacts for out-of-band edits under the active Rime user data directory |
 | `SetConfigText` | `s -> ()` | Replace entire config from text |
 | `ReloadConfig` | `() -> ()` | Reload config from disk |
 | `Stop` | `() -> ()` | Shut down the daemon |
@@ -148,6 +148,10 @@ typio-client status             # show server status summary
 typio-client stop               # stop the daemon
 typio-client version            # show server version
 ```
+
+`DeployRimeConfig` is the explicit rebuild path for edits that bypass
+`typio.toml`, such as rewriting `default.custom.yaml` inside the Rime user data
+directory.
 
 ## Implementation Notes
 

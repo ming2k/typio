@@ -13,6 +13,7 @@ Main lifecycle and ownership object.
 typedef struct TypioInstanceConfig {
     const char *config_dir;
     const char *data_dir;
+    const char *state_dir;
     const char *engine_dir;
     const char *default_engine;
     TypioLogCallback log_callback;
@@ -32,11 +33,15 @@ TypioInputContext *typio_instance_get_focused_context(TypioInstance *instance);
 
 const char *typio_instance_get_config_dir(TypioInstance *instance);
 const char *typio_instance_get_data_dir(TypioInstance *instance);
+const char *typio_instance_get_state_dir(TypioInstance *instance);
 
 TypioResult typio_instance_reload_config(TypioInstance *instance);
 TypioResult typio_instance_save_config(TypioInstance *instance);
 char *typio_instance_get_config_text(TypioInstance *instance);
 TypioResult typio_instance_set_config_text(TypioInstance *instance, const char *content);
+char *typio_instance_dup_rime_schema(TypioInstance *instance);
+TypioResult typio_instance_set_rime_schema(TypioInstance *instance, const char *schema);
+TypioResult typio_instance_deploy_rime_config(TypioInstance *instance);
 
 void typio_instance_set_config_reloaded_callback(TypioInstance *instance,
                                                  TypioConfigReloadedCallback callback,
@@ -46,6 +51,10 @@ void typio_instance_set_config_reloaded_callback(TypioInstance *instance,
 `TypioConfigReloadedCallback` fires after config reload succeeds and the active
 keyboard engine has been resynchronized. Subsystems such as shortcuts, voice,
 and the status bus use this hook to stay aligned.
+
+Voice backends may finish their own model reload asynchronously after the
+callback returns. The callback still marks the point where Typio has accepted
+the new config and kicked the runtime refresh path.
 
 ### `TypioInputContext`
 

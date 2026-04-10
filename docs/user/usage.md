@@ -106,6 +106,10 @@ typio-client version            # show server version
 typio-client help               # show help
 ```
 
+Use `typio-client rime deploy` after editing Rime source files under Typio's
+user data directory, such as `default.custom.yaml`, so librime rebuilds the
+generated `build/*.yaml` files before the next composition session.
+
 ## GTK4 Control Panel
 
 If Typio was built with `-DBUILD_CONTROL_PANEL=ON`, the build tree also
@@ -137,6 +141,10 @@ The control panel follows an instant-apply model:
 - successful saves are silent
 - temporary retries are silent
 - only real save failures surface a short inline error message
+
+Voice backend and model changes reload asynchronously in the daemon. The UI and
+keyboard path stay responsive while Typio loads the replacement speech model in
+the background.
 
 This means there is no global `Apply` / `Cancel` flow in the current UI.
 
@@ -183,6 +191,11 @@ Popup colors can be forced under `[display]` with `popup_theme = "light"` or
 hints when available.
 
 After installation, `typio --list` will show `rime` automatically if the plugin was installed into the configured engine directory.
+
+If you edit Rime files directly under Typio's user data directory, use
+`typio-client rime deploy` or the control panel's deploy action so Typio
+regenerates the compiled `build/*.yaml` artifacts before expecting the changes
+to take effect.
 
 ## Runtime Expectations
 

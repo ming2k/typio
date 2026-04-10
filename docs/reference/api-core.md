@@ -10,6 +10,7 @@ Main lifecycle and ownership object.
 typedef struct TypioInstanceConfig {
     const char *config_dir;
     const char *data_dir;
+    const char *state_dir;
     const char *engine_dir;
     const char *default_engine;
     TypioLogCallback log_callback;
@@ -27,8 +28,12 @@ void typio_instance_destroy_context(TypioInstance *instance, TypioInputContext *
 TypioInputContext *typio_instance_get_focused_context(TypioInstance *instance);
 const char *typio_instance_get_config_dir(TypioInstance *instance);
 const char *typio_instance_get_data_dir(TypioInstance *instance);
+const char *typio_instance_get_state_dir(TypioInstance *instance);
 TypioResult typio_instance_reload_config(TypioInstance *instance);
 TypioResult typio_instance_save_config(TypioInstance *instance);
+char *typio_instance_dup_rime_schema(TypioInstance *instance);
+TypioResult typio_instance_set_rime_schema(TypioInstance *instance, const char *schema);
+TypioResult typio_instance_deploy_rime_config(TypioInstance *instance);
 ```
 
 ## `TypioInputContext`
