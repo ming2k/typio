@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.2] - 2026-04-10
+
+### Changed
+
+- **Async voice engine reloads**: Whisper and Sherpa-ONNX config reloads now
+  load replacement models on a background thread and hot-swap them into a
+  proxy backend, avoiding synchronous model teardown and reload stalls on the
+  main event loop.
+
+### Fixed
+
+- **Rime deploy rebuild reliability**: explicit Rime deployment now invalidates
+  generated `build/*.yaml` artifacts before maintenance so rapid successive
+  edits to `default.custom.yaml` within the same second still rebuild the
+  compiled config.
+
 ## [2.7.1] - 2026-04-09
 
 ### Fixed
