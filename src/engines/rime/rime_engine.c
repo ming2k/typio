@@ -54,6 +54,7 @@ typedef struct TypioRimeState {
     TypioRimeConfig config;
     bool initialized;
     bool maintenance_done;
+    uint32_t deploy_id;
 } TypioRimeState;
 
 typedef struct TypioRimeSession {
@@ -61,6 +62,7 @@ typedef struct TypioRimeSession {
     RimeSessionId session_id;
     bool ascii_mode_known;
     bool ascii_mode;
+    uint32_t deploy_id;
 } TypioRimeSession;
 
 static const TypioEngineMode typio_rime_mode_chinese = {
@@ -290,6 +292,8 @@ static bool typio_rime_run_maintenance(TypioRimeState *state, bool full_check) {
 
     typio_log_info("Rime deployment started (%s)", sync ? "blocking" : "non-blocking");
 
+    state->deploy_id++;
+
     if (!state->api->start_maintenance(full_check ? True : False)) {
         typio_log_error("Rime deployment failed to start");
         return false;
@@ -449,14 +453,16 @@ static TypioRimeSession *typio_rime_get_session(TypioEngine *engine,
     session = typio_input_context_get_property(ctx, TYPIO_RIME_SESSION_KEY);
     if (session &&
         (!state->api->find_session || state->api->find_session(session->session_id))) {
-        /*
-         * If we have a session but we just finished a maintenance/deployment
-         * cycle, the old session is stale. find_session might still return true
-         * for a moment, but we should force recreation if maintenance_done
-         * was just toggled. In Typio, reload_config handles invalidation for
-         * explicit deploys, but auto-deploys on startup also need cleanup.
+        if (session->deploy_id == state->deploy_id) {
+            return session;
+        }
+
+        /* 
+         * Deployment happened; current session is stale. Clear it from the
+         * context so we create a new one below.
          */
-        return session;
+        typio_input_context_set_property(ctx, TYPIO_RIME_SESSION_KEY, NULL, NULL);
+        session = NULL;
     }
 
     if (!create) {
@@ -474,6 +480,7 @@ static TypioRimeSession *typio_rime_get_session(TypioEngine *engine,
     }
 
     session->state = state;
+    session->deploy_id = state->deploy_id;
     session->session_id = state->api->create_session ? state->api->create_session() : 0;
     if (session->session_id == 0) {
         free(session);
@@ -826,9 +833,6 @@ static void typio_rime_destroy(TypioEngine *engine) {
         return;
     }
 
-    if (state->initialized && state->api && state->api->cleanup_stale_sessions) {
-        state->api->cleanup_stale_sessions();
-    }
     if (state->initialized && state->api && state->api->finalize) {
         state->api->finalize();
     }
@@ -977,10 +981,9 @@ static void typio_rime_apply_runtime_config(TypioEngine *engine) {
     }
 
     /*
-     * Use create=true: after a deploy, cleanup_stale_sessions() has
-     * invalidated the old session, so find_session returns false and
-     * get_session recreates it fresh with the new compiled data.
-     * For a plain config reload there is no invalidation and the existing
+     * Use create=true: after a deploy, the deploy_id mismatch causes
+     * get_session to recreate it fresh with the new compiled data.
+     * For a plain config reload there is no deploy_id change and the existing
      * valid session is returned as before.
      */
     session = typio_rime_get_session(engine, ctx, true);
@@ -1028,9 +1031,6 @@ static TypioResult typio_rime_reload_config(TypioEngine *engine) {
          * recreated on their next focus_in; the focused context session is
          * recreated below by apply_runtime_config (which uses create=true).
          */
-        if (state->api->cleanup_stale_sessions) {
-            state->api->cleanup_stale_sessions();
-        }
     }
 
     schema = typio_instance_dup_rime_schema(engine->instance);

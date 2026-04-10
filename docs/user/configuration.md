@@ -63,7 +63,9 @@ Display section: `[display]`
 - `popup_theme` — `"auto"`, `"light"`, or `"dark"` (default: `"auto"`)
   - `"auto"` infers the preference from desktop settings (GTK dark theme, KDE color scheme, etc.)
 - `candidate_layout` — `"horizontal"` or `"vertical"` (default: `"vertical"`)
-- `font_size` — popup text size, 6–72 (default: `11`)
+- `font_size` — popup text size, 6–72 (default: `11`). Candidate index labels are
+  automatically rendered at ~80% of this size so they read as secondary hints rather
+  than competing with the candidate text.
 - `font_family` — font family name (default: `"Sans"`); e.g. `"Noto Sans CJK SC"`
 - `popup_mode_indicator` — show engine mode label in popup (default: `true`)
 

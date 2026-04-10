@@ -72,8 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Rime hot-reload after deploy**: `typio-client rime deploy` now takes
   effect immediately without restarting Typio. After maintenance completes,
-  `cleanup_stale_sessions()` invalidates all existing librime sessions so
-  they are transparently recreated with the newly compiled data on next use.
+  a `deploy_id` increment triggers transparent session recreation on next use,
+  ensuring all existing contexts pick up the newly compiled Rime data.
 
 ## [2.6.3] - 2026-04-06
 

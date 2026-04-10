@@ -151,7 +151,8 @@ typio-client version            # show server version
 
 `DeployRimeConfig` is the explicit rebuild path for edits that bypass
 `typio.toml`, such as rewriting `default.custom.yaml` inside the Rime user data
-directory.
+directory. After deployment finishes, Typio transparently recreates active Rime
+sessions to pick up the changes on the next keystroke.
 
 ## Implementation Notes
 

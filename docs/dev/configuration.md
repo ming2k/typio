@@ -118,6 +118,13 @@ config reload, this path forces librime maintenance and invalidates generated
 `build/*.yaml` artifacts first so rapid successive edits still rebuild even if
 filesystem timestamps land in the same second.
 
+After deployment completes, the engine increments a internal `deploy_id`. All
+existing Rime sessions (which are stored per-input-context) track the
+`deploy_id` at the time of their creation. On the next interaction, the engine
+detects the mismatch, transparently destroys the stale librime session, and
+recreates it using the newly compiled Rime data. This ensures that changes take
+effect immediately in all open applications without requiring a Typio restart.
+
 ## Schema Table Structure
 
 Each `TypioConfigField` entry contains:
