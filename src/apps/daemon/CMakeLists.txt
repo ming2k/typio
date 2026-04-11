@@ -18,6 +18,7 @@ set(TYPIO_DAEMON_LIBRARIES typio-core dl)
 
 # Wayland frontend support
 if(HAVE_WAYLAND)
+    pkg_check_modules(CAIRO_PANGO REQUIRED cairo pangocairo)
     # Generate protocol code
     wayland_generate_protocol(
         PROTOCOL_XML ${CMAKE_SOURCE_DIR}/protocols/input-method-unstable-v2.xml
@@ -74,18 +75,18 @@ if(HAVE_WAYLAND)
     list(APPEND TYPIO_DAEMON_INCLUDE_DIRS
         ${CMAKE_CURRENT_BINARY_DIR}/wayland-protocols
         ${CMAKE_CURRENT_SOURCE_DIR}/wayland
+        ${CAIRO_PANGO_INCLUDE_DIRS}
     )
 
     list(APPEND TYPIO_DAEMON_SYSTEM_INCLUDE_DIRS
-        ${CAIRO_PANGO_INCLUDE_DIRS}
         ${WAYLAND_CLIENT_INCLUDE_DIRS}
         ${XKBCOMMON_INCLUDE_DIRS}
     )
 
     list(APPEND TYPIO_DAEMON_LIBRARIES
-        ${CAIRO_PANGO_LIBRARIES}
         ${WAYLAND_CLIENT_LIBRARIES}
         ${XKBCOMMON_LIBRARIES}
+        ${CAIRO_PANGO_LIBRARIES}
         pthread
     )
 endif()
@@ -108,6 +109,7 @@ endif()
 
 # System tray support
 if(HAVE_SYSTRAY)
+    pkg_check_modules(CAIRO REQUIRED cairo)
     list(APPEND TYPIO_DAEMON_SOURCES
         tray/icon_pixmap.c
         tray/bus.c
@@ -116,6 +118,11 @@ if(HAVE_SYSTRAY)
 
     list(APPEND TYPIO_DAEMON_INCLUDE_DIRS
         ${CMAKE_CURRENT_SOURCE_DIR}/tray
+        ${CAIRO_INCLUDE_DIRS}
+    )
+
+    list(APPEND TYPIO_DAEMON_LIBRARIES
+        ${CAIRO_LIBRARIES}
     )
 endif()
 

@@ -25,13 +25,11 @@ static bool scaled(int logical, int scale, int *physical) {
 
 /* ── Low-level drawing ──────────────────────────────────────────────── */
 
-static void draw_layout(cairo_t *cr, PangoLayout *layout,
-                         double x, double y,
+static void draw_layout(cairo_t *cr, PangoLayout *layout, double x, double y,
                          double r, double g, double b) {
     if (!layout) return;
-    pango_cairo_update_layout(cr, layout);
-    cairo_move_to(cr, x, y);
     cairo_set_source_rgb(cr, r, g, b);
+    cairo_move_to(cr, x, y);
     pango_cairo_show_layout(cr, layout);
 }
 
@@ -54,9 +52,7 @@ static void draw_row(cairo_t *cr, const PopupRow *row, bool selected,
         draw_layout(cr, row->layout, row->text_x, row->text_y,
                     p->selection_text_r, p->selection_text_g, p->selection_text_b);
     } else {
-        /* Label (index) in muted color; candidate text in primary text color.
-         * This creates clear visual hierarchy: the number is a secondary hint,
-         * the candidate character is the primary action target. */
+        /* Label (index) in muted color; candidate text in primary text color. */
         draw_layout(cr, row->label_layout, row->label_x, row->label_y,
                     p->muted_r, p->muted_g, p->muted_b);
         draw_layout(cr, row->layout, row->text_x, row->text_y,
@@ -65,16 +61,14 @@ static void draw_row(cairo_t *cr, const PopupRow *row, bool selected,
 }
 
 static void draw_mode_label(cairo_t *cr, const PopupGeometry *g,
-                              const TypioCandidatePopupPalette *p) {
+                          const TypioCandidatePopupPalette *p) {
     if (!g->mode_layout) return;
 
     if (g->mode_divider_y >= 0) {
-        cairo_set_source_rgba(cr, p->border_r, p->border_g,
-                              p->border_b, p->border_a * 0.5);
-        cairo_move_to(cr, POPUP_PADDING, g->mode_divider_y + 0.5);
-        cairo_line_to(cr, g->popup_w - POPUP_PADDING, g->mode_divider_y + 0.5);
-        cairo_set_line_width(cr, 1.0);
-        cairo_stroke(cr);
+        cairo_set_source_rgba(cr, p->border_r, p->border_g, p->border_b, p->border_a * 0.5);
+        cairo_rectangle(cr, POPUP_PADDING, g->mode_divider_y + 0.5,
+                        g->popup_w - 2 * POPUP_PADDING, 1.0);
+        cairo_fill(cr);
     }
 
     draw_layout(cr, g->mode_layout,
@@ -291,12 +285,12 @@ bool popup_paint_aux(const PopupPaintTarget *target,
     if (old_geom->mode_layout && old_geom->mode_w > 0 && old_geom->mode_h > 0) {
         cairo_set_source_rgba(cr, p->bg_r, p->bg_g, p->bg_b, p->bg_a);
         cairo_rectangle(cr, old_geom->mode_x, old_geom->mode_y,
-                         old_geom->mode_w, old_geom->mode_h);
+                        old_geom->mode_w, old_geom->mode_h);
         cairo_fill(cr);
         /* Erase divider line too if present */
         if (old_geom->mode_divider_y >= 0) {
-            cairo_rectangle(cr, POPUP_PADDING, old_geom->mode_divider_y,
-                             new_geom->popup_w - POPUP_PADDING * 2, 1);
+            cairo_rectangle(cr, POPUP_PADDING, (double)old_geom->mode_divider_y,
+                            (double)(new_geom->popup_w - POPUP_PADDING * 2), 1.0);
             cairo_fill(cr);
         }
     }
