@@ -103,19 +103,18 @@ Installed artifacts:
 
 ## Documentation
 
-- [Documentation Index](docs/README.md)
-- [User Installation](docs/user/installation.md)
-- [User Configuration](docs/user/configuration.md)
-- [User Usage](docs/user/usage.md)
-- [Troubleshooting](docs/user/troubleshooting.md)
-- [Developer Building Guide](docs/dev/building.md)
-- [Architecture](docs/dev/architecture.md)
-- [Developer Maintenance Manual](docs/dev/maintenance.md)
-- [Developer Timing Model](docs/dev/timing-model.md)
-- [Wayland Runtime Diagnostics](docs/user/troubleshooting.md#wayland-runtime-diagnostics)
-- [Control Surfaces](docs/dev/control-surfaces.md)
-- [Creating Engines](docs/dev/creating-engines.md)
-- [D-Bus Interface Reference](docs/reference/dbus-interface.md)
+- [User Installation](docs/installation.md)
+- [User Configuration](docs/configuration.md)
+- [User Usage](docs/usage.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Developer Guide](docs/development.md)
+- [Architecture](docs/architecture.md)
+- [Developer Maintenance Manual](docs/maintenance.md)
+- [Developer Timing Model](docs/timing-model.md)
+- [Wayland Runtime Diagnostics](docs/troubleshooting.md#wayland-runtime-diagnostics)
+- [Control Surfaces](docs/control-surfaces.md)
+- [Creating Engines](docs/creating-engines.md)
+- [D-Bus Interface Reference](docs/dbus-interface.md)
 
 ## Source Layout
 
