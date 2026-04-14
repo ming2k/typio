@@ -1,3 +1,10 @@
+## [3.0.0] - 2026-04-15
+- Unified Typio CLI (daemon and client modes)
+- Replaced Cairo/Pango rendering backend with Skia
+- Modernized candidate UI with nested rounded corners and improved typography
+- Project structure restructure: consolidated app components into src/apps/typio
+- Production-grade build system hardening (ASan/UBSan)
+
 - Release version 2.9.0
 - Introduce Skia backend
 - Release version 2.8.0
