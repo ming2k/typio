@@ -152,7 +152,7 @@ should prefer that runtime property for display state when appropriate. See
 1. Add one `TypioConfigField` entry to `schema_fields[]` in
    `config_schema.c`.
 2. If it should appear in `typio-control`, set the `ui_*` fields.
-3. Update `docs/user/configuration.md` with the user-facing description.
+3. Update `docs/configuration.md` with the user-facing description.
 4. No other code changes are needed for the field to be parsed, defaulted,
    serialised, and exposed over D-Bus.
 

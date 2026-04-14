@@ -17,7 +17,7 @@
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
-#define POPUP_LAYOUT_CACHE_CAP  64   /* LRU cache capacity (entries)     */
+#define POPUP_LAYOUT_CACHE_CAP  128  /* LRU cache capacity (entries)     */
 #define POPUP_MAX_ROWS          16   /* max candidates shown per page     */
 #define POPUP_MIN_WIDTH         220  /* minimum popup width (logical px)  */
 #define POPUP_PAD_X             10
@@ -63,18 +63,22 @@ typedef struct {
 /* ── Per-row geometry ───────────────────────────────────────────────── */
 
 typedef struct {
-    /* Both layouts borrowed from PopupSkiaCtx; do NOT free here */
+    /* All four layouts borrowed from PopupSkiaCtx; do NOT free here.
+     * _sel variants carry the selection-text colour and are used when
+     * this row is the highlighted candidate. */
     TypioTextLayout *label_layout;
     TypioTextLayout *layout;
+    TypioTextLayout *label_layout_sel;
+    TypioTextLayout *layout_sel;
 
     int label_w, label_h;
     int text_w,  text_h;
 
-    int x, y;
-    int w, h;
+    int   x, y;   /* pixel-aligned row bounds (for damage regions / fills) */
+    int   w, h;
 
-    int label_x, label_y;
-    int text_x,  text_y;
+    float label_x, label_y;   /* subpixel-accurate paint origins */
+    float text_x,  text_y;
 
     float label_ink_y_offset;
     float text_ink_y_offset;
@@ -88,12 +92,12 @@ typedef struct {
 
     /* Preedit — owned by this geometry (may be NULL) */
     TypioTextLayout *preedit_layout;
-    int          pre_x, pre_y;
+    float        pre_x, pre_y;   /* subpixel-accurate */
     int          pre_w, pre_h;
 
     /* Mode label — owned by this geometry (may be NULL) */
     TypioTextLayout *mode_layout;
-    int          mode_x, mode_y;
+    float        mode_x, mode_y; /* subpixel-accurate */
     int          mode_w, mode_h;
     int          mode_divider_y; /* -1 if no divider */
 
@@ -114,6 +118,8 @@ typedef struct {
 
 typedef struct {
     uint64_t     key;
+    uint32_t     label_color_packed;    /* ARGB8888, part of cache identity */
+    uint32_t     text_color_packed;
     char         label[64];
     char         text[512];
     char         label_font_desc[96];

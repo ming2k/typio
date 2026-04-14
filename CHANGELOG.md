@@ -1,20 +1,44 @@
-## [3.0.0] - 2026-04-15
-- Unified Typio CLI (daemon and client modes)
-- Replaced Cairo/Pango rendering backend with Skia
-- Modernized candidate UI with nested rounded corners and improved typography
-- Project structure restructure: consolidated app components into src/apps/typio
-- Production-grade build system hardening (ASan/UBSan)
-
-- Release version 2.9.0
-- Introduce Skia backend
-- Release version 2.8.0
-- fix(rime): replace non-existent cleanup_stale_sessions with deploy_id tracking
-- Optimize hot path memory allocation and fix compilation warnings# Changelog
+# Changelog
 
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [3.0.1] - 2026-04-15
+
+### Fixed
+
+- **Candidate popup text rendering on 1080p**: Text positions are now stored and
+  passed as floats throughout the layout and paint pipeline, preserving subpixel
+  glyph placement that was previously lost to integer truncation.
+- **Candidate popup colour compositing**: Removed `saveLayer`/`kSrcIn` blend
+  used to recolour paragraph glyphs at paint time. Text colour is now baked into
+  each `TextStyle` at layout-creation time, restoring Skia's direct AA path and
+  eliminating an unnecessary off-screen compositing pass.
+- **LRU layout cache**: Cache identity now includes the text colour so that
+  unselected and selected colour variants of the same candidate text are stored
+  as distinct entries. Cache capacity raised from 64 to 128 entries to
+  accommodate the two variants per candidate row.
+
+## [3.0.0] - 2026-04-15
+
+### Added
+
+- **Unified CLI**: `typio daemon` and `typio client` modes consolidated into a
+  single binary with a shared command-line interface.
+- **Skia rendering backend**: Replaced Cairo/Pango with Skia for candidate popup
+  painting, enabling hardware-accelerated rendering and richer typography.
+- **Modernized candidate UI**: Nested rounded corners, improved baseline
+  alignment, and refined typography for the candidate popup.
+
+### Changed
+
+- **Project structure**: Consolidated app components into `src/apps/typio`.
+
+### Fixed
+
+- **Build system hardening**: ASan/UBSan enabled for development builds.
 
 ## [2.9.0] - 2026-04-12
 

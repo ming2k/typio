@@ -82,7 +82,7 @@ changes alone.
 
 The list above is intentionally abbreviated to the most commonly useful entry
 points. For the full interface specification, see the
-[D-Bus Interface Reference](../reference/dbus-interface.md).
+[D-Bus Interface Reference](dbus-interface.md).
 
 ## Typio CLI (`typio`)
 

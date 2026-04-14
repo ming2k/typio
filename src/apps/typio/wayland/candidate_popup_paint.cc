@@ -28,21 +28,14 @@ static bool scaled(int logical, int scale, int *physical) {
     return true;
 }
 
-/* Draw a paragraph with an explicit ink color, overriding the built-in TextStyle color.
- * We use saveLayer + drawPaint(kSrcIn) so the alpha mask from the paragraph is preserved
- * while replacing its RGB with the requested color. */
-static void draw_layout(SkCanvas *canvas, TypioTextLayout *layout, float x, float y,
-                         SkColor color) {
+/* Draw a paragraph at the given subpixel position.  The text colour was baked
+ * into the layout's TextStyle at creation time, so no colour override is needed
+ * and no off-screen layer is required — this keeps the full grayscale AA path
+ * active and preserves subpixel glyph positioning. */
+static void draw_layout(SkCanvas *canvas, TypioTextLayout *layout, float x, float y) {
     if (!layout) return;
     using namespace skia::textlayout;
-    Paragraph *para = (Paragraph *)layout;
-    canvas->saveLayer(nullptr, nullptr);
-    para->paint(canvas, x, y);
-    SkPaint recolor;
-    recolor.setColor(color);
-    recolor.setBlendMode(SkBlendMode::kSrcIn);
-    canvas->drawPaint(recolor);
-    canvas->restore();
+    ((Paragraph *)layout)->paint(canvas, x, y);
 }
 
 static void draw_row(SkCanvas *canvas, const PopupRow *row, bool selected,
@@ -60,19 +53,16 @@ static void draw_row(SkCanvas *canvas, const PopupRow *row, bool selected,
                          6.0f, 6.0f);
         canvas->drawRRect(rrect, paint);
 
-        SkColor sel = palette_color(p->selection_text_r, p->selection_text_g,
-                                     p->selection_text_b, 1.0);
-        draw_layout(canvas, row->label_layout, (float)row->label_x, (float)row->label_y, sel);
-        draw_layout(canvas, row->layout,       (float)row->text_x,  (float)row->text_y,  sel);
+        /* Use the pre-coloured selected-text layouts — no layer or blend needed. */
+        draw_layout(canvas, row->label_layout_sel, row->label_x, row->label_y);
+        draw_layout(canvas, row->layout_sel,       row->text_x,  row->text_y);
     } else {
         /* Clear background for this row in case we're redrawing over an old selection */
         paint.setColor(palette_color(p->bg_r, p->bg_g, p->bg_b, p->bg_a));
         canvas->drawRect(SkRect::MakeXYWH((float)row->x, (float)row->y, (float)row->w, (float)row->h), paint);
 
-        SkColor label_color = palette_color(p->muted_r, p->muted_g, p->muted_b, 1.0);
-        SkColor text_color  = palette_color(p->text_r,  p->text_g,  p->text_b,  1.0);
-        draw_layout(canvas, row->label_layout, (float)row->label_x, (float)row->label_y, label_color);
-        draw_layout(canvas, row->layout,       (float)row->text_x,  (float)row->text_y,  text_color);
+        draw_layout(canvas, row->label_layout, row->label_x, row->label_y);
+        draw_layout(canvas, row->layout,       row->text_x,  row->text_y);
     }
 }
 
@@ -89,8 +79,7 @@ static void draw_mode_label(SkCanvas *canvas, const PopupGeometry *g,
                                           (float)(g->popup_w - 2 * POPUP_PAD_X), 1.0f), paint);
     }
 
-    draw_layout(canvas, g->mode_layout, (float)g->mode_x, (float)g->mode_y,
-                palette_color(p->muted_r, p->muted_g, p->muted_b, 1.0));
+    draw_layout(canvas, g->mode_layout, g->mode_x, g->mode_y);
 }
 
 static sk_sp<SkSurface> wrap_buffer(TypioCandidatePopupBuffer *buf, int bw, int bh) {
@@ -160,8 +149,7 @@ bool popup_paint_full(const PopupPaintTarget *target,
 
     /* Preedit */
     if (geom->preedit_layout) {
-        draw_layout(canvas, geom->preedit_layout, (float)geom->pre_x, (float)geom->pre_y,
-                    palette_color(p->preedit_r, p->preedit_g, p->preedit_b, 1.0));
+        draw_layout(canvas, geom->preedit_layout, geom->pre_x, geom->pre_y);
     }
 
     /* Rows */
@@ -243,11 +231,11 @@ bool popup_paint_aux(const PopupPaintTarget *target,
     paint.setColor(palette_color(p->bg_r, p->bg_g, p->bg_b, p->bg_a));
 
     if (old_geom->preedit_layout && old_geom->pre_w > 0) {
-        canvas->drawRect(SkRect::MakeXYWH((float)old_geom->pre_x, (float)old_geom->pre_y,
+        canvas->drawRect(SkRect::MakeXYWH(old_geom->pre_x, old_geom->pre_y,
                                           (float)old_geom->pre_w, (float)old_geom->pre_h), paint);
     }
     if (old_geom->mode_layout && old_geom->mode_w > 0) {
-        canvas->drawRect(SkRect::MakeXYWH((float)old_geom->mode_x, (float)old_geom->mode_y,
+        canvas->drawRect(SkRect::MakeXYWH(old_geom->mode_x, old_geom->mode_y,
                                           (float)old_geom->mode_w, (float)old_geom->mode_h), paint);
         if (old_geom->mode_divider_y >= 0) {
             canvas->drawRect(SkRect::MakeXYWH((float)POPUP_PAD_X, (float)old_geom->mode_divider_y,
@@ -256,9 +244,7 @@ bool popup_paint_aux(const PopupPaintTarget *target,
     }
 
     if (new_geom->preedit_layout)
-        draw_layout(canvas, new_geom->preedit_layout,
-                    (float)new_geom->pre_x, (float)new_geom->pre_y,
-                    palette_color(p->preedit_r, p->preedit_g, p->preedit_b, 1.0));
+        draw_layout(canvas, new_geom->preedit_layout, new_geom->pre_x, new_geom->pre_y);
     draw_mode_label(canvas, new_geom, p);
 
     commit_buffer(target, buf, new_geom->scale, POPUP_PAD_X, 0,

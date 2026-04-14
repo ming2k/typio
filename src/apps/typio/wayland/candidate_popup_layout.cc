@@ -25,9 +25,20 @@ static uint64_t fnv1a(uint64_t h, const char *s) {
     return h;
 }
 
+/* Pack a TypioColor into a 32-bit ARGB value for cache key comparisons. */
+static uint32_t pack_color(TypioColor c) {
+    uint8_t a = (uint8_t)(c.a * 255.0f + 0.5f);
+    uint8_t r = (uint8_t)(c.r * 255.0f + 0.5f);
+    uint8_t g = (uint8_t)(c.g * 255.0f + 0.5f);
+    uint8_t b = (uint8_t)(c.b * 255.0f + 0.5f);
+    return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+}
+
 static uint64_t layout_cache_key(const char *label, const char *text,
                                   const char *label_font_desc,
-                                  const char *font_desc) {
+                                  const char *font_desc,
+                                  uint32_t label_color_packed,
+                                  uint32_t text_color_packed) {
     uint64_t h = 14695981039346656037ULL;
     h = fnv1a(h, label);
     h ^= 0x01ULL; h *= 1099511628211ULL;
@@ -36,6 +47,8 @@ static uint64_t layout_cache_key(const char *label, const char *text,
     h = fnv1a(h, label_font_desc);
     h ^= 0x55ULL; h *= 1099511628211ULL;
     h = fnv1a(h, font_desc);
+    h ^= (uint64_t)label_color_packed * 1099511628211ULL;
+    h ^= (uint64_t)text_color_packed  * 6364136223846793005ULL;
     return h;
 }
 
@@ -115,16 +128,22 @@ static PopupLayoutEntry *lru_get_or_create(PopupSkiaCtx *pc,
                                             const char *label,
                                             const char *text,
                                             const char *label_font_desc,
-                                            const char *font_desc) {
-    uint64_t key = layout_cache_key(label, text, label_font_desc, font_desc);
+                                            const char *font_desc,
+                                            TypioColor label_color,
+                                            TypioColor text_color) {
+    uint32_t lcp = pack_color(label_color);
+    uint32_t tcp = pack_color(text_color);
+    uint64_t key = layout_cache_key(label, text, label_font_desc, font_desc, lcp, tcp);
     size_t   lru_idx = 0;
     uint32_t lru_tick_min = UINT32_MAX;
-    
+
     pc->tick++;
 
     for (size_t i = 0; i < POPUP_LAYOUT_CACHE_CAP; ++i) {
         PopupLayoutEntry *e = &pc->entries[i];
         if (e->layout && e->key == key &&
+            e->label_color_packed == lcp &&
+            e->text_color_packed  == tcp &&
             strcmp(e->label, label) == 0 &&
             strcmp(e->text, text) == 0 &&
             strcmp(e->label_font_desc, label_font_desc) == 0 &&
@@ -139,23 +158,25 @@ static PopupLayoutEntry *lru_get_or_create(PopupSkiaCtx *pc,
     }
 
     PopupLayoutEntry *victim = &pc->entries[lru_idx];
-    if (victim->layout) pc->engine->vtable->free_layout(victim->layout);
+    if (victim->layout)       pc->engine->vtable->free_layout(victim->layout);
     if (victim->label_layout) pc->engine->vtable->free_layout(victim->label_layout);
-    
-    victim->key = key;
-    victim->lru_tick = pc->tick;
-    snprintf(victim->label, sizeof(victim->label), "%s", label);
-    snprintf(victim->text, sizeof(victim->text), "%s", text);
+
+    victim->key               = key;
+    victim->label_color_packed = lcp;
+    victim->text_color_packed  = tcp;
+    victim->lru_tick          = pc->tick;
+    snprintf(victim->label,           sizeof(victim->label),           "%s", label);
+    snprintf(victim->text,            sizeof(victim->text),            "%s", text);
     snprintf(victim->label_font_desc, sizeof(victim->label_font_desc), "%s", label_font_desc);
-    snprintf(victim->font_desc, sizeof(victim->font_desc), "%s", font_desc);
-    
-    victim->label_layout = pc->engine->vtable->create_layout(pc->engine, label, label_font_desc);
-    victim->layout = pc->engine->vtable->create_layout(pc->engine, text, font_desc);
-    
+    snprintf(victim->font_desc,       sizeof(victim->font_desc),       "%s", font_desc);
+
+    victim->label_layout = pc->engine->vtable->create_layout(pc->engine, label, label_font_desc, label_color);
+    victim->layout       = pc->engine->vtable->create_layout(pc->engine, text,  font_desc,       text_color);
+
     pc->engine->vtable->get_metrics(victim->label_layout, &victim->label_pixel_w, &victim->label_pixel_h);
-    pc->engine->vtable->get_metrics(victim->layout, &victim->pixel_w, &victim->pixel_h);
+    pc->engine->vtable->get_metrics(victim->layout,       &victim->pixel_w,       &victim->pixel_h);
     victim->label_pixel_baseline = pc->engine->vtable->get_baseline(victim->label_layout);
-    victim->pixel_baseline        = pc->engine->vtable->get_baseline(victim->layout);
+    victim->pixel_baseline       = pc->engine->vtable->get_baseline(victim->layout);
 
     return victim;
 }
@@ -207,21 +228,21 @@ static void compute_positions_vertical(PopupGeometry *g, int pre_h_used) {
         g->rows[i].x = POPUP_PAD_X;
         g->rows[i].y = y;
         g->rows[i].w = g->popup_w - POPUP_PAD_X * 2;
-        g->rows[i].label_x = g->rows[i].x + POPUP_ROW_PAD_X + h_offset;
-        g->rows[i].label_y = (int)label_top;
-        g->rows[i].text_x  = g->rows[i].x + POPUP_ROW_PAD_X + max_label_w + POPUP_LABEL_GAP + h_offset;
-        g->rows[i].text_y  = (int)text_top;
+        g->rows[i].label_x = (float)(g->rows[i].x + POPUP_ROW_PAD_X + h_offset);
+        g->rows[i].label_y = label_top;
+        g->rows[i].text_x  = (float)(g->rows[i].x + POPUP_ROW_PAD_X + max_label_w + POPUP_LABEL_GAP + h_offset);
+        g->rows[i].text_y  = text_top;
         y += g->rows[i].h;
         if (i + 1 < g->row_count) y += POPUP_ROW_GAP;
     }
 
-    g->pre_x = POPUP_PAD_X;
-    g->pre_y = POPUP_PAD_Y;
+    g->pre_x = (float)POPUP_PAD_X;
+    g->pre_y = (float)POPUP_PAD_Y;
 
     if (g->mode_layout && g->mode_h > 0) {
-        g->mode_x = g->popup_w - POPUP_PAD_X - g->mode_w;
+        g->mode_x = (float)(g->popup_w - POPUP_PAD_X - g->mode_w);
         g->mode_divider_y = g->popup_h - POPUP_PAD_Y - g->mode_h - POPUP_ROW_PAD_Y;
-        g->mode_y = g->popup_h - POPUP_PAD_Y - g->mode_h;
+        g->mode_y = (float)(g->popup_h - POPUP_PAD_Y - g->mode_h);
     } else {
         g->mode_divider_y = -1;
     }
@@ -263,19 +284,19 @@ static void compute_positions_horizontal(PopupGeometry *g, int pre_h_used) {
 
         g->rows[i].x = x;
         g->rows[i].y = y;
-        g->rows[i].label_x = x + POPUP_ROW_PAD_X;
-        g->rows[i].label_y = (int)label_top;
-        g->rows[i].text_x  = x + POPUP_ROW_PAD_X + g->rows[i].label_w + POPUP_LABEL_GAP;
-        g->rows[i].text_y  = (int)text_top;
+        g->rows[i].label_x = (float)(x + POPUP_ROW_PAD_X);
+        g->rows[i].label_y = label_top;
+        g->rows[i].text_x  = (float)(x + POPUP_ROW_PAD_X + g->rows[i].label_w + POPUP_LABEL_GAP);
+        g->rows[i].text_y  = text_top;
         x += g->rows[i].w + POPUP_COL_GAP;
     }
 
-    g->pre_x = POPUP_PAD_X;
-    g->pre_y = POPUP_PAD_Y;
+    g->pre_x = (float)POPUP_PAD_X;
+    g->pre_y = (float)POPUP_PAD_Y;
 
     if (g->mode_layout && g->mode_h > 0) {
-        g->mode_x = g->popup_w - POPUP_PAD_X - g->mode_w;
-        g->mode_y = y + POPUP_ROW_PAD_Y;
+        g->mode_x = (float)(g->popup_w - POPUP_PAD_X - g->mode_w);
+        g->mode_y = (float)(y + POPUP_ROW_PAD_Y);
         g->mode_divider_y = -1;
     } else {
         g->mode_divider_y = -1;
@@ -315,13 +336,32 @@ PopupGeometry *popup_geometry_compute(PopupSkiaCtx *pc,
     snprintf(g->preedit_text, sizeof(g->preedit_text), "%s", preedit_text ? preedit_text : "");
     snprintf(g->mode_label, sizeof(g->mode_label), "%s", mode_label ? mode_label : "");
 
+    /* Derive the four text colours we need from the palette. */
+    TypioColor label_color   = {(float)palette->muted_r,          (float)palette->muted_g,          (float)palette->muted_b,          1.0f};
+    TypioColor text_color    = {(float)palette->text_r,           (float)palette->text_g,           (float)palette->text_b,           1.0f};
+    TypioColor sel_color     = {(float)palette->selection_text_r, (float)palette->selection_text_g, (float)palette->selection_text_b, 1.0f};
+    TypioColor preedit_color = {(float)palette->preedit_r,        (float)palette->preedit_g,        (float)palette->preedit_b,        1.0f};
+    TypioColor muted_color   = label_color;
+
     for (size_t i = 0; i < candidates->count; ++i) {
         char label_buf[64], text_buf[512];
         format_candidate_parts(&candidates->candidates[i], i, label_buf, sizeof(label_buf), text_buf, sizeof(text_buf));
-        PopupLayoutEntry *entry = lru_get_or_create(pc, label_buf, text_buf, cfg->label_font_desc, cfg->font_desc);
-        
-        g->rows[i].label_layout = entry->label_layout;
-        g->rows[i].layout = entry->layout;
+
+        /* Unselected variant — muted label + normal text colour */
+        PopupLayoutEntry *entry = lru_get_or_create(pc, label_buf, text_buf,
+                                                     cfg->label_font_desc, cfg->font_desc,
+                                                     label_color, text_color);
+        /* Selected variant — both label and text use the selection-text colour */
+        PopupLayoutEntry *entry_sel = lru_get_or_create(pc, label_buf, text_buf,
+                                                         cfg->label_font_desc, cfg->font_desc,
+                                                         sel_color, sel_color);
+
+        g->rows[i].label_layout     = entry->label_layout;
+        g->rows[i].layout           = entry->layout;
+        g->rows[i].label_layout_sel = entry_sel->label_layout;
+        g->rows[i].layout_sel       = entry_sel->layout;
+
+        /* Sizing comes from the unselected entry (metrics are colour-independent). */
         g->rows[i].label_w = (int)entry->label_pixel_w;
         g->rows[i].label_h = (int)entry->label_pixel_h;
         g->rows[i].text_w  = (int)entry->pixel_w;
@@ -334,14 +374,14 @@ PopupGeometry *popup_geometry_compute(PopupSkiaCtx *pc,
     }
 
     if (preedit_text && preedit_text[0]) {
-        g->preedit_layout = pc->engine->vtable->create_layout(pc->engine, preedit_text, cfg->aux_font_desc);
+        g->preedit_layout = pc->engine->vtable->create_layout(pc->engine, preedit_text, cfg->aux_font_desc, preedit_color);
         float fw, fh;
         pc->engine->vtable->get_metrics(g->preedit_layout, &fw, &fh);
         g->pre_w = (int)fw; g->pre_h = (int)fh;
     }
 
     if (cfg->mode_indicator && mode_label && mode_label[0]) {
-        g->mode_layout = pc->engine->vtable->create_layout(pc->engine, mode_label, cfg->aux_font_desc);
+        g->mode_layout = pc->engine->vtable->create_layout(pc->engine, mode_label, cfg->aux_font_desc, muted_color);
         float fw, fh;
         pc->engine->vtable->get_metrics(g->mode_layout, &fw, &fh);
         g->mode_w = (int)fw; g->mode_h = (int)fh;
@@ -362,12 +402,16 @@ PopupGeometry *popup_geometry_update_aux(PopupSkiaCtx *pc,
     TypioTextLayout *new_preedit_layout = nullptr;
     TypioTextLayout *new_mode_layout = nullptr;
 
+    const TypioCandidatePopupPalette *p = base->palette;
+    TypioColor preedit_color = {(float)p->preedit_r, (float)p->preedit_g, (float)p->preedit_b, 1.0f};
+    TypioColor muted_color   = {(float)p->muted_r,   (float)p->muted_g,   (float)p->muted_b,   1.0f};
+
     if (preedit_text && preedit_text[0]) {
-        new_preedit_layout = pc->engine->vtable->create_layout(pc->engine, preedit_text, base->config.aux_font_desc);
+        new_preedit_layout = pc->engine->vtable->create_layout(pc->engine, preedit_text, base->config.aux_font_desc, preedit_color);
         pc->engine->vtable->get_metrics(new_preedit_layout, &new_pre_w, &new_pre_h);
     }
     if (base->config.mode_indicator && mode_label && mode_label[0]) {
-        new_mode_layout = pc->engine->vtable->create_layout(pc->engine, mode_label, base->config.aux_font_desc);
+        new_mode_layout = pc->engine->vtable->create_layout(pc->engine, mode_label, base->config.aux_font_desc, muted_color);
         pc->engine->vtable->get_metrics(new_mode_layout, &new_mode_w, &new_mode_h);
     }
 

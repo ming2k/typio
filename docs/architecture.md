@@ -202,7 +202,7 @@ Responsibilities:
 - reuse `typio-core` config and schema helpers where shared parsing logic is
   preferable to duplicating it in UI code
 
-See [D-Bus Interface Reference](../reference/dbus-interface.md) for the full
+See [D-Bus Interface Reference](dbus-interface.md) for the full
 protocol specification.
 
 ### Built-In `basic` Engine

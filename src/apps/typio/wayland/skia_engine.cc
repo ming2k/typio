@@ -21,7 +21,7 @@ typedef struct {
     sk_sp<SkUnicode> unicode;
 } SkiaEnginePriv;
 
-static TypioTextLayout *skia_create_layout(void *engine, const char *text, const char *font_desc) {
+static TypioTextLayout *skia_create_layout(void *engine, const char *text, const char *font_desc, TypioColor color) {
     SkiaEnginePriv *priv = (SkiaEnginePriv *)((TypioTextEngine *)engine)->priv;
 
     /* Parse font_desc: "Family [Style] Size" */
@@ -49,7 +49,11 @@ static TypioTextLayout *skia_create_layout(void *engine, const char *text, const
     size = size * (96.0f / 72.0f);
 
     TextStyle text_style;
-    text_style.setColor(SK_ColorBLACK);
+    text_style.setColor(SkColorSetARGB(
+        (uint8_t)(color.a * 255.0f + 0.5f),
+        (uint8_t)(color.r * 255.0f + 0.5f),
+        (uint8_t)(color.g * 255.0f + 0.5f),
+        (uint8_t)(color.b * 255.0f + 0.5f)));
     text_style.setFontFamilies({SkString(family)});
     text_style.setFontSize(size);
 
@@ -88,6 +92,7 @@ static TypioTextEngineVTable skia_engine_vtable = {
     .get_baseline  = skia_get_baseline,
     .free_layout   = skia_free_layout,
 };
+
 
 extern "C" TypioTextEngine *skia_engine_create() {
     TypioTextEngine *engine = (TypioTextEngine *)malloc(sizeof(TypioTextEngine));

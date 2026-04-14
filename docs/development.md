@@ -12,17 +12,28 @@
 
 ### Setting up Skia
 
-Typio now uses Skia for hardware-accelerated rendering. You must provide a compiled Skia library in `external/skia/out/Release/libskia.a`.
+Typio uses Skia for hardware-accelerated candidate popup rendering. Skia is included as a git submodule at `external/skia` and must be built before configuring CMake.
 
-1. Clone Skia into `external/skia`.
-2. Follow Skia's build instructions to produce a Release build with `is_official_build=true`.
-3. Ensure headers are available in `external/skia/include`.
+Quick start:
+
+```bash
+git submodule update --init external/skia
+cd external/skia
+python3 tools/git-sync-deps
+bin/gn gen out/Release --args='is_official_build=true is_debug=false is_component_build=false skia_use_vulkan=true skia_use_gl=false skia_use_harfbuzz=true skia_use_icu=true skia_use_libjpeg_turbo=false skia_use_libpng=false skia_use_libwebp=false skia_use_zlib=true skia_enable_pdf=false skia_enable_skottie=false skia_enable_svg=false skia_enable_ganesh=true skia_enable_graphite=true extra_cflags=["-DSK_VULKAN"]'
+ninja -C out/Release skia skparagraph skshaper skunicode_icu skunicode_core
+cd ../..
+```
+
+Typio links Skia statically. The five `.a` targets above are the only ones required.
+
+For a full explanation of each build argument, the static vs. dynamic linking decision, CMake integration details, and troubleshooting, see [Skia Linking Guide](skia-linking.md).
 
 Optional:
 
 - `librime` for `BUILD_RIME_ENGINE=ON`
 - `gtk4` for `BUILD_CONTROL_PANEL=ON`
-- `dbus-1` for `ENABLE_STATUS_BUS | ON | Enable the D-Bus runtime status/control interface (integrated into `typio`) |
+- `dbus-1` for `ENABLE_STATUS_BUS=ON`
 - `dbus-1` for `ENABLE_SYSTRAY=ON`
 
 ## Configure and Build
@@ -102,7 +113,7 @@ sudo cmake --install build --prefix /usr/local
 | `BUILD_TESTS` | `ON` | Build unit tests |
 | `BUILD_BASIC_ENGINE` | `ON` | Build the built-in basic keyboard engine |
 | `ENABLE_WAYLAND` | `ON` | Enable the Wayland frontend |
-| `ENABLE_STATUS_BUS | ON | Enable the D-Bus runtime status/control interface (integrated into `typio`) |
+| `ENABLE_STATUS_BUS` | `ON` | Enable the D-Bus runtime status/control interface (integrated into `typio`) |
 | `ENABLE_SYSTRAY` | `OFF` | Enable D-Bus StatusNotifierItem support |
 | `BUILD_RIME_ENGINE` | `OFF` | Build the optional `librime` engine plugin |
 

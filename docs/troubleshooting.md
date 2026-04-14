@@ -227,7 +227,7 @@ Interpret the most common bad combinations like this:
   safely forward to the focused client
 
 For the complete diagnostic meaning of these fields and the underlying timing
-model, see [Developer Timing Model](../dev/timing-model.md).
+model, see [Developer Timing Model](timing-model.md).
 
 If you report a timing or freeze problem, include both:
 

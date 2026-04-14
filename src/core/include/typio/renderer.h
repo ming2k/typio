@@ -22,7 +22,7 @@ typedef struct {
 } TypioCanvas;
 
 typedef struct {
-    TypioTextLayout *(*create_layout)(void *engine, const char *text, const char *font_desc);
+    TypioTextLayout *(*create_layout)(void *engine, const char *text, const char *font_desc, TypioColor color);
     void (*get_metrics)(TypioTextLayout *layout, float *out_w, float *out_h);
     float (*get_baseline)(TypioTextLayout *layout); /* alphabetic baseline from top of layout box */
     void (*free_layout)(TypioTextLayout *layout);
