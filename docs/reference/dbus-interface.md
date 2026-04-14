@@ -1,7 +1,7 @@
 # D-Bus Interface Reference
 
 Typio exposes a session-bus service for runtime control and introspection.
-Both `typio-client` and `typio-control` are built on this interface.
+Both the `typio` CLI and `typio-control` are built on this interface.
 
 ## Service
 
@@ -132,21 +132,21 @@ busctl --user call org.typio.InputMethod1 \
   /org/typio/InputMethod1 org.typio.InputMethod1 NextEngine
 ```
 
-### typio-client
+### typio CLI
 
 ```bash
-typio-client engine             # print active keyboard engine
-typio-client engine list        # list engines (* marks active)
-typio-client engine next        # cycle to next engine
-typio-client engine rime        # switch to rime
-typio-client rime schema        # print current Rime schema
-typio-client rime deploy        # rebuild generated Rime config files
-typio-client rime schema luna_pinyin # set Rime schema
-typio-client config reload      # reload config from disk
-typio-client config get         # print current config text
-typio-client status             # show server status summary
-typio-client stop               # stop the daemon
-typio-client version            # show server version
+typio engine             # print active keyboard engine
+typio engine list        # list engines (* marks active)
+typio engine next        # cycle to next engine
+typio engine rime        # switch to rime
+typio rime schema        # print current Rime schema
+typio rime deploy        # rebuild generated Rime config files
+typio rime schema luna_pinyin # set Rime schema
+typio config reload      # reload config from disk
+typio config get         # print current config text
+typio status             # show server status summary
+typio stop               # stop the daemon
+typio version            # show server version
 ```
 
 `DeployRimeConfig` is the explicit rebuild path for edits that bypass
@@ -158,7 +158,7 @@ sessions to pick up the changes on the next keystroke.
 
 - The server-side handler lives in `src/apps/daemon/status/status.c`.
 - Protocol constants are in `src/core/include/typio/dbus_protocol.h`.
-- `typio-client` source is in `src/apps/cli/main.c` — a pure D-Bus client
+- `typio` source is in `src/apps/cli/main.c` — a pure D-Bus client
   with no dependency on `typio-core`.
 - `typio-control` (GTK4) uses the same D-Bus interface via GDBusProxy.
 - The status bus integration test is in `tests/test_status_bus.c`.

@@ -6,7 +6,6 @@
 #include "candidate_popup_buffer.h"
 #include "utils/log.h"
 
-#include <cairo.h>
 #include <wayland-client.h>
 
 #include <errno.h>
@@ -76,7 +75,7 @@ bool typio_candidate_popup_buffer_create(TypioCandidatePopupBuffer *buffer,
 
     typio_candidate_popup_buffer_reset(buffer);
 
-    stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, width);
+    stride = width * 4;
     size = (size_t)stride * (size_t)height;
     fd = create_shm_file(size);
     if (fd < 0) {

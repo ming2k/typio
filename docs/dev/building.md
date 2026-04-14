@@ -2,18 +2,27 @@
 
 ## Required Dependencies
 
-- CMake 3.16+
-- C11 compiler
+- CMake 3.20+
+- C11 and C++17 compiler (GCC 9+ or Clang 10+)
 - `pkg-config`
 - `wayland-client`
 - `xkbcommon`
 - `wayland-scanner`
+- **Skia** (Must be built and placed in `external/skia`)
+
+### Setting up Skia
+
+Typio now uses Skia for hardware-accelerated rendering. You must provide a compiled Skia library in `external/skia/out/Release/libskia.a`.
+
+1. Clone Skia into `external/skia`.
+2. Follow Skia's build instructions to produce a Release build with `is_official_build=true`.
+3. Ensure headers are available in `external/skia/include`.
 
 Optional:
 
 - `librime` for `BUILD_RIME_ENGINE=ON`
 - `gtk4` for `BUILD_CONTROL_PANEL=ON`
-- `dbus-1` for `ENABLE_STATUS_BUS=ON`
+- `dbus-1` for `ENABLE_STATUS_BUS | ON | Enable the D-Bus runtime status/control interface (integrated into `typio`) |
 - `dbus-1` for `ENABLE_SYSTRAY=ON`
 
 ## Configure and Build
@@ -56,7 +65,7 @@ During development, run directly from the build tree without installing:
 Common build-tree outputs:
 
 - `./build/src/apps/daemon/typio`
-- `./build/src/apps/cli/typio-client`
+
 - `./build/src/apps/control/typio-control` when `BUILD_CONTROL_PANEL=ON`
 - `./build/engines/*.so` for plugin engines
 
@@ -93,7 +102,7 @@ sudo cmake --install build --prefix /usr/local
 | `BUILD_TESTS` | `ON` | Build unit tests |
 | `BUILD_BASIC_ENGINE` | `ON` | Build the built-in basic keyboard engine |
 | `ENABLE_WAYLAND` | `ON` | Enable the Wayland frontend |
-| `ENABLE_STATUS_BUS` | `ON` | Enable the D-Bus runtime status/control interface and build `typio-client` |
+| `ENABLE_STATUS_BUS | ON | Enable the D-Bus runtime status/control interface (integrated into `typio`) |
 | `ENABLE_SYSTRAY` | `OFF` | Enable D-Bus StatusNotifierItem support |
 | `BUILD_RIME_ENGINE` | `OFF` | Build the optional `librime` engine plugin |
 

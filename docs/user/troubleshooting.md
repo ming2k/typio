@@ -66,7 +66,7 @@ If edits under `~/.local/share/typio/rime` do not affect candidate behavior,
 switch to the `rime` engine and run:
 
 ```bash
-typio-client rime deploy
+typio rime deploy
 ```
 
 That asks the daemon to rerun librime deployment and regenerate
@@ -121,7 +121,7 @@ the leak.
 **Fix:** Restart the daemon to clear the accumulated file descriptors immediately:
 
 ```bash
-typio-client stop
+typio stop
 typio &
 ```
 

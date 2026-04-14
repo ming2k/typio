@@ -1,0 +1,19 @@
+[Unit]
+Description=Typio Input Method Daemon
+Documentation=man:typio(1)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+# 使用 simple 类型，确保它是常驻进程
+Type=simple
+# 替换为您系统的 bin 路径
+ExecStart=/usr/bin/typio daemon
+Restart=on-failure
+RestartSec=2s
+# 环境变量，确保符合 Wayland/Session 规范
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+
+[Install]
+WantedBy=graphical-session.target

@@ -2,12 +2,13 @@
 
 ## Requirements
 
-- CMake 3.16+
-- C11 compiler
+- CMake 3.20+
+- C11 and C++17 compiler
 - `pkg-config`
 - Wayland client development files
 - `xkbcommon` development files
 - `wayland-scanner`
+- **Skia** library and headers (placed in `external/skia`)
 - a Wayland compositor that exposes `zwp_input_method_manager_v2`
 - Wayland applications in that session must use a working `zwp_text_input_manager_v3` path
 

@@ -23,6 +23,7 @@
 #include "utils/log.h"
 
 #include <string.h>
+#include <stdio.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 static bool key_route_is_shift_keysym(uint32_t keysym) {

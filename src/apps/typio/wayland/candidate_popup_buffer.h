@@ -9,6 +9,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct wl_buffer;
 struct wl_shm;
 
@@ -32,5 +36,9 @@ TypioCandidatePopupBuffer *typio_candidate_popup_buffer_acquire(TypioCandidatePo
                                              size_t pool_size,
                                              struct wl_shm *shm,
                                              int width, int height);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TYPIO_WL_CANDIDATE_POPUP_BUFFER_H */

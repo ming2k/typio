@@ -13,6 +13,7 @@
 #include "utils/log.h"
 #include "utils/string.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -567,16 +568,27 @@ static void on_preedit_callback([[maybe_unused]] TypioInputContext *ctx,
      * fires, causing alternating popup rendering on every keystroke. */
 }
 
-static void on_candidate_callback(TypioInputContext *ctx,
+static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *ctx);
+
+static void on_candidate_callback([[maybe_unused]] TypioInputContext *ctx,
                                   [[maybe_unused]] const TypioCandidateList *candidates,
                                   void *user_data) {
-    TypioWlSession *session = user_data;
+    TypioWlSession *session = (TypioWlSession *)user_data;
 
-    if (!session) {
+    if (!session || !session->frontend) {
         return;
     }
 
-    update_wayland_text_ui(session, ctx);
+    /* Defer the heavy rendering and protocol commit to the event loop flush.
+     * This prevents rapid key repeats from blocking the Wayland message loop. */
+    session->frontend->popup_update_pending = true;
+}
+
+void typio_wl_session_flush_ui_update(TypioWlSession *session) {
+    if (!session || !session->ctx) {
+        return;
+    }
+    update_wayland_text_ui(session, session->ctx);
 }
 
 static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *ctx) {

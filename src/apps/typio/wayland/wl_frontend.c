@@ -9,6 +9,9 @@
 #include "wl_frontend_internal.h"
 #include "typio/typio.h"
 #include "utils/log.h"
+#ifdef HAVE_VOICE
+#include "../voice/voice_engine.h"
+#endif
 
 #include <wayland-client.h>
 #include <inttypes.h>
@@ -18,6 +21,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdio.h>
 
 /* Registry listener */
 static void registry_handle_global(void *data, struct wl_registry *registry,

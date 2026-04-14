@@ -1,4 +1,8 @@
-# Changelog
+- Release version 2.9.0
+- Introduce Skia backend
+- Release version 2.8.0
+- fix(rime): replace non-existent cleanup_stale_sessions with deploy_id tracking
+- Optimize hot path memory allocation and fix compilation warnings# Changelog
 
 All notable changes to this project will be documented in this file.
 

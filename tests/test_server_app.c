@@ -146,7 +146,7 @@ static TypioEngine *mock_voice_create(void) {
 }
 
 TEST(engine_change_preserves_dynamic_status_icon_for_tray) {
-    char root[] = "/tmp/typio-server-app-test-XXXXXX";
+    char root[] = "/tmp/typio-daemon-app-test-XXXXXX";
     TypioInstanceConfig config = {};
     TypioInstance *instance = create_temp_instance(root, &config);
     TypioEngineManager *manager;
@@ -178,7 +178,7 @@ TEST(engine_change_preserves_dynamic_status_icon_for_tray) {
 }
 
 TEST(engine_change_uses_static_icon_after_dynamic_engine) {
-    char root[] = "/tmp/typio-server-app-test-XXXXXX";
+    char root[] = "/tmp/typio-daemon-app-test-XXXXXX";
     TypioInstanceConfig config = {};
     TypioInstance *instance = create_temp_instance(root, &config);
     TypioEngineManager *manager;
@@ -210,7 +210,7 @@ TEST(engine_change_uses_static_icon_after_dynamic_engine) {
 }
 
 TEST(voice_engine_change_updates_tray_tooltip) {
-    char root[] = "/tmp/typio-server-app-test-XXXXXX";
+    char root[] = "/tmp/typio-daemon-app-test-XXXXXX";
     TypioInstanceConfig config = {};
     TypioInstance *instance = create_temp_instance(root, &config);
     TypioEngineManager *manager;
@@ -240,7 +240,7 @@ TEST(voice_engine_change_updates_tray_tooltip) {
 }
 
 TEST(app_init_removes_legacy_top_level_recent_logs) {
-    char root[] = "/tmp/typio-server-app-test-XXXXXX";
+    char root[] = "/tmp/typio-daemon-app-test-XXXXXX";
     char config_dir[1024];
     char data_dir[1024];
     char state_dir[1024];

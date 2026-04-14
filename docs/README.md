@@ -46,7 +46,7 @@ that meaning.
 
 - `typio-core`: instance, engine manager, input context, config, events, utilities
 - `typio`: Wayland daemon binary
-- `typio-client`: D-Bus CLI for controlling a running daemon
+- `typio`: Daemon and CLI interface for controlling the running service
 - `basic` engine: built-in keyboard engine that commits printable Unicode text
 - `rime` engine: default `librime`-backed plugin
 
@@ -61,6 +61,6 @@ The source tree is organized by stable product boundary:
   lives under `src/core/runtime/`, and internal support code lives under
   `src/core/utils/`.
 - `src/apps/`: executable programs
-  `src/apps/daemon/` builds `typio`, `src/apps/cli/` builds `typio-client`,
+  `src/apps/daemon/` builds `typio` (daemon and client),
   and `src/apps/control/` builds `typio-control`.
 - `src/engines/`: built-in and plugin engine implementations

@@ -15,7 +15,7 @@ Wayland compositor
         |                       |
         v                  +----+----+
    typio-core              |         |
-        |            typio-client  typio-control
+        |            typio (client) typio-control
    +----+------------------------------------------+
    |                                               |
 built-in basic engine                 external plugin engines
@@ -118,13 +118,13 @@ Within the Wayland daemon, responsibilities are intentionally split by layer:
   `zwp_input_popup_surface_v2`.  A `PopupDelta` classifier drives render-path
   selection (selection-only, aux-only, content, or style rebuild).
 - `candidate_popup_layout.c`
-  Owns text measurement and geometry computation.  A persistent `PopupPangoCtx`
-  holds a 64-entry LRU cache of `PangoLayout` objects keyed by formatted
+  Owns text measurement and geometry computation.  A persistent `PopupSkiaCtx`
+  holds a 64-entry LRU cache of `TypioTextLayout` objects keyed by formatted
   candidate text and font description, so layouts survive page changes and avoid
   repeated font shaping.  `PopupGeometry` is an immutable snapshot of all
   computed positions; the selected index is deliberately excluded from it.
 - `candidate_popup_paint.c`
-  Owns Cairo pixel rendering for all three render paths, each accepting a
+  Owns Skia pixel rendering for all three render paths, each accepting a
   `PopupGeometry*` rather than a long parameter list.
 - `key_route.c`
   Owns key-routing decisions. The current model separates final action
@@ -181,9 +181,9 @@ runtime-state authority, and control-surface binding rules live in:
 - [State Management](state-management.md)
 - [Control Surfaces](control-surfaces.md)
 
-### `typio-client`
+### `typio (client mode)`
 
-Located under `src/apps/cli/`.
+Implemented inside the `typio` executable alongside the daemon. It acts as a command-line interface (`typio engine`, `typio status`, etc.) that interacts with the running server using standard D-Bus method calls.
 
 Responsibilities:
 
@@ -198,7 +198,7 @@ Located under `src/apps/control/`.
 Responsibilities:
 
 - provide a GTK control panel for runtime state and persistent configuration
-- consume the same D-Bus surface as `typio-client`
+- consume the same D-Bus surface as the `typio` client
 - reuse `typio-core` config and schema helpers where shared parsing logic is
   preferable to duplicating it in UI code
 
@@ -351,12 +351,11 @@ auxiliary text positions for one page. The selected index is **not** part of the
 geometry; changing the selection never requires re-measuring text or recomputing
 positions.
 
-Text measurement and `PangoLayout` objects are owned by `PopupPangoCtx`, a
+Text measurement and `TypioTextLayout` objects are owned by `PopupSkiaCtx`, a
 persistent per-popup structure holding a 64-entry LRU cache. Cache entries are
 keyed by `FNV-1a(formatted_text + font_desc)`. Layouts are created directly
-from a `PangoContext` — no scratch Cairo surface is needed for measurement.
-`pango_cairo_update_layout()` is called during painting to adapt metrics to the
-scaled Cairo context.
+from Skia's `ParagraphBuilder` — no scratch drawing surface is needed for measurement.
+Metrics are resolved using `Paragraph::layout()` and painted onto an `SkCanvas`.
 
 On a typical page change, most candidate layouts are already in the cache
 because the user has seen those candidates in a previous session or because the

@@ -1,5 +1,7 @@
-# Bridge C calls to C++ Skia
-# This file is built with the project's C++ compiler.
+/*
+ * Bridge C calls to C++ Skia
+ * This file is built with the project's C++ compiler.
+ */
 
 #include "typio/renderer.h"
 #include "include/core/SkCanvas.h"
@@ -25,7 +27,10 @@ extern "C" {
     static void skia_draw_rect(void *canvas, float x, float y, float w, float h, TypioColor color) {
         SkiaCanvasPriv *priv = (SkiaCanvasPriv *)((TypioCanvas *)canvas)->priv;
         SkPaint paint;
-        paint.setColor(SkColorSetARGB(color.a * 255, color.r * 255, color.g * 255, color.b * 255));
+        paint.setColor(SkColorSetARGB((uint8_t)(color.a * 255.0f),
+                                      (uint8_t)(color.r * 255.0f),
+                                      (uint8_t)(color.g * 255.0f),
+                                      (uint8_t)(color.b * 255.0f)));
         paint.setStyle(SkPaint::kFill_Style);
         priv->canvas->drawRect(SkRect::MakeXYWH(x, y, w, h), paint);
     }

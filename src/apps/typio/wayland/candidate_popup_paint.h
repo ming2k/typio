@@ -1,6 +1,6 @@
 /**
  * @file candidate_popup_paint.h
- * @brief Cairo paint paths for the candidate popup.
+ * @brief Skia paint paths for the candidate popup.
  *
  * Three render paths, each taking a PopupGeometry snapshot:
  *

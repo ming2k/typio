@@ -9,6 +9,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum TypioCandidatePopupThemeMode {
     TYPIO_CANDIDATE_POPUP_THEME_AUTO = 0,  /* detect from desktop settings */
     TYPIO_CANDIDATE_POPUP_THEME_LIGHT,     /* always use built-in light    */
@@ -58,5 +62,9 @@ bool typio_parse_hex_color(const char *hex,
  * detection without comparing raw pointers.
  */
 uint64_t typio_candidate_popup_palette_hash(const TypioCandidatePopupPalette *p);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TYPIO_WL_CANDIDATE_POPUP_THEME_H */

@@ -84,29 +84,29 @@ The list above is intentionally abbreviated to the most commonly useful entry
 points. For the full interface specification, see the
 [D-Bus Interface Reference](../reference/dbus-interface.md).
 
-## `typio-client`
+## Typio CLI (`typio`)
 
-`typio-client` is a lightweight CLI that controls a running Typio daemon over
-D-Bus. It is built automatically when `ENABLE_STATUS_BUS=ON` (the default).
+The `typio` executable also acts as a lightweight CLI that controls a running daemon over
+D-Bus. Supported subcommands:
 
 ```bash
-typio-client engine             # print active keyboard engine
-typio-client engine list        # list engines (* marks active)
-typio-client engine next        # cycle to next engine
-typio-client engine rime        # switch to rime
-typio-client rime schema        # print current Rime schema
-typio-client rime deploy        # rebuild generated Rime config files
-typio-client rime schema luna_pinyin # set Rime schema
-typio-client config reload      # reload config from disk
-typio-client config get         # print current config text
-typio-client config set "..."   # replace config text
-typio-client status             # show server status summary
-typio-client stop               # stop the daemon
-typio-client version            # show server version
-typio-client help               # show help
+typio engine             # print active keyboard engine
+typio engine list        # list engines (* marks active)
+typio engine next        # cycle to next engine
+typio engine rime        # switch to rime
+typio rime schema        # print current Rime schema
+typio rime deploy        # rebuild generated Rime config files
+typio rime schema luna_pinyin # set Rime schema
+typio config reload      # reload config from disk
+typio config get         # print current config text
+typio config set "..."   # replace config text
+typio status             # show server status summary
+typio stop               # stop the daemon
+typio version            # show server version
+typio help               # show help
 ```
 
-Use `typio-client rime deploy` after editing Rime source files under Typio's
+Use `typio rime deploy` after editing Rime source files under Typio's
 user data directory, such as `default.custom.yaml`, so librime rebuilds the
 generated `build/*.yaml` files before the next composition session.
 
@@ -193,7 +193,7 @@ hints when available.
 After installation, `typio --list` will show `rime` automatically if the plugin was installed into the configured engine directory.
 
 If you edit Rime files directly under Typio's user data directory, use
-`typio-client rime deploy` or the control panel's deploy action so Typio
+`typio rime deploy` or the control panel's deploy action so Typio
 regenerates the compiled `build/*.yaml` artifacts before expecting the changes
 to take effect.
 

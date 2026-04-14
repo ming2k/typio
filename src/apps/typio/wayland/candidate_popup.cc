@@ -1,33 +1,6 @@
 /**
- * @file candidate_popup.c
- * @brief Wayland input-popup coordinator (redesigned).
- *
- * Architecture
- * ============
- *
- *  PopupDelta (enum)
- *    Classify every update into exactly one of:
- *      NONE       — nothing visible changed, skip rendering
- *      SELECTION  — only selected index changed; repaint two rows
- *      AUX        — only preedit/mode label changed; repaint aux area
- *      CONTENT    — candidate list changed (page navigation); full render
- *      STYLE      — font/theme/scale changed; full render + cache invalidation
- *
- *  PopupGeometry (immutable snapshot)
- *    Computed by popup_geometry_compute() in candidate_popup_layout.c.
- *    Does NOT contain `selected` — selection changes are rendered by
- *    referencing the geometry without recomputing it.
- *
- *  PopupPangoCtx (persistent, per-popup)
- *    A PangoContext + 64-entry LRU layout cache.  No scratch Cairo surfaces
- *    for measurement.  Candidate layouts survive page changes if the same
- *    text reappears.
- *
- *  Render paths
- *    SELECTION → popup_paint_selection  (2-row blit + repaint, ~1 ms)
- *    AUX       → popup_paint_aux        (aux-area blit + repaint)
- *    CONTENT   → popup_paint_full       (full repaint; fast with warm cache)
- *    STYLE     → cache invalidation + popup_paint_full
+ * @file candidate_popup.cc
+ * @brief Wayland input-popup coordinator (Skia version).
  */
 
 #include "wl_frontend_internal.h"
@@ -71,8 +44,8 @@ struct TypioWlCandidatePopup {
     TypioCandidatePopupBuffer  buffers[TYPIO_CANDIDATE_POPUP_BUFFER_COUNT];
     TypioCandidatePopupBuffer *last_committed;
 
-    /* Per-popup Pango context + LRU layout cache */
-    PopupPangoCtx pango;
+    /* Per-popup Skia engine context + LRU layout cache */
+    PopupSkiaCtx skia;
 
     /* Current computed geometry (owned; NULL if not yet rendered) */
     PopupGeometry *geom;
@@ -100,11 +73,11 @@ struct TypioWlCandidatePopup {
 /* ── Delta classification ───────────────────────────────────────────── */
 
 typedef enum {
-    POPUP_DELTA_NONE,       /* nothing changed                              */
-    POPUP_DELTA_SELECTION,  /* only selected index changed                  */
-    POPUP_DELTA_AUX,        /* only preedit / mode label changed            */
-    POPUP_DELTA_CONTENT,    /* candidate list content changed (page change) */
-    POPUP_DELTA_STYLE,      /* font, theme, or scale changed                */
+    POPUP_DELTA_NONE,
+    POPUP_DELTA_SELECTION,
+    POPUP_DELTA_AUX,
+    POPUP_DELTA_CONTENT,
+    POPUP_DELTA_STYLE,
 } PopupDelta;
 
 static PopupDelta classify_delta(const PopupGeometry *geom,
@@ -115,35 +88,28 @@ static PopupDelta classify_delta(const PopupGeometry *geom,
                                   uint64_t palette_sig,
                                   int scale,
                                   int new_selected) {
-    if (!geom) {
-        return POPUP_DELTA_CONTENT;  /* no prior geometry — full rebuild, but keep cache */
-    }
+    if (!geom) return POPUP_DELTA_CONTENT;
 
-    /* Style changes invalidate everything */
     if (geom->scale != scale ||
         geom->palette_sig != palette_sig ||
-        geom->config.theme_mode   != cfg->theme_mode   ||
-        geom->config.layout_mode  != cfg->layout_mode  ||
-        geom->config.font_size    != cfg->font_size     ||
+        geom->config.theme_mode != cfg->theme_mode ||
+        geom->config.layout_mode != cfg->layout_mode ||
+        geom->config.font_size != cfg->font_size ||
         geom->config.mode_indicator != cfg->mode_indicator ||
-        strcmp(geom->config.font_desc,     cfg->font_desc)     != 0 ||
+        strcmp(geom->config.font_desc, cfg->font_desc) != 0 ||
         strcmp(geom->config.aux_font_desc, cfg->aux_font_desc) != 0) {
         return POPUP_DELTA_STYLE;
     }
 
-    /* Content change: new page or different candidates */
     if (geom->content_sig != cands->content_signature ||
-        geom->row_count   != cands->count) {
+        geom->row_count != cands->count) {
         return POPUP_DELTA_CONTENT;
     }
 
-    /* Aux change: same candidates, different preedit or mode label */
-    const char *cur_pre  = preedit    ? preedit    : "";
+    const char *cur_pre = preedit ? preedit : "";
     const char *cur_mode = mode_label ? mode_label : "";
-    bool preedit_same = strcmp(geom->preedit_text, cur_pre)  == 0;
-    bool mode_same    = strcmp(geom->mode_label,   cur_mode) == 0;
-
-    if (!preedit_same || !mode_same) {
+    if (strcmp(geom->preedit_text, cur_pre) != 0 ||
+        strcmp(geom->mode_label, cur_mode) != 0) {
         return POPUP_DELTA_AUX;
     }
 
@@ -221,6 +187,15 @@ static const PopupConfig *get_config(TypioWlCandidatePopup *popup) {
     return &popup->config;
 }
 
+/* ── Geometry Free Helper ───────────────────────────────────────────── */
+
+static void skia_geometry_free(PopupSkiaCtx *pc, PopupGeometry *g) {
+    if (!g) return;
+    if (g->preedit_layout) pc->engine->vtable->free_layout(g->preedit_layout);
+    if (g->mode_layout) pc->engine->vtable->free_layout(g->mode_layout);
+    popup_geometry_free(g);
+}
+
 /* ── Surface hide ───────────────────────────────────────────────────── */
 
 static void hide_surface(TypioWlCandidatePopup *popup) {
@@ -233,7 +208,7 @@ static void hide_surface(TypioWlCandidatePopup *popup) {
     popup->last_committed = nullptr;
     popup->selected      = -1;
 
-    popup_geometry_free(popup->geom);
+    skia_geometry_free(&popup->skia, popup->geom);
     popup->geom = nullptr;
 }
 
@@ -259,7 +234,6 @@ static bool popup_render(TypioWlCandidatePopup *popup,
     t0  = typio_wl_monotonic_ms();
     cfg = get_config(popup);
 
-    /* Resolve preset + apply user color overrides into a local palette copy */
     popup_config_build_palette(cfg, &popup->theme_cache, &palette);
     pal_sig      = typio_candidate_popup_palette_hash(&palette);
     scale        = render_scale(popup);
@@ -275,7 +249,6 @@ static bool popup_render(TypioWlCandidatePopup *popup,
     delta = classify_delta(popup->geom, cands, preedit_text, mode_label,
                             cfg, pal_sig, scale, new_selected);
 
-    /* ── NONE: selection identical to what's already on screen ───────── */
     if (delta == POPUP_DELTA_SELECTION && new_selected == popup->selected) {
         delta = POPUP_DELTA_NONE;
     }
@@ -283,11 +256,9 @@ static bool popup_render(TypioWlCandidatePopup *popup,
     bool force_full_render = false;
 
     switch (delta) {
-
     case POPUP_DELTA_NONE:
         return true;
 
-    /* ── SELECTION: repaint two rows ─────────────────────────────────── */
     case POPUP_DELTA_SELECTION:
         delta_name = "selection";
         if (popup->last_committed) {
@@ -300,17 +271,12 @@ static bool popup_render(TypioWlCandidatePopup *popup,
                 popup->last_committed = used;
             }
         }
-        if (!ok) {
-            /* Fallback: full repaint */
-            delta_name = "selection→full";
-            force_full_render = true;
-        }
+        if (!ok) force_full_render = true;
         break;
 
-    /* ── AUX: repaint preedit / mode label only ──────────────────────── */
     case POPUP_DELTA_AUX: {
         delta_name = "aux";
-        PopupGeometry *new_geom = popup_geometry_update_aux(&popup->pango,
+        PopupGeometry *new_geom = popup_geometry_update_aux(&popup->skia,
                                                              popup->geom,
                                                              preedit_text,
                                                              mode_label);
@@ -319,73 +285,64 @@ static bool popup_render(TypioWlCandidatePopup *popup,
             ok = popup_paint_aux(&target, popup->geom, new_geom,
                                   popup->last_committed, &used);
             if (ok) {
-                popup_geometry_free(popup->geom);
+                skia_geometry_free(&popup->skia, popup->geom);
                 popup->geom           = new_geom;
                 popup->last_committed = used;
                 popup->visible        = true;
             } else {
-                popup_geometry_free(new_geom);
+                skia_geometry_free(&popup->skia, new_geom);
             }
         } else {
-            popup_geometry_free(new_geom);
+            skia_geometry_free(&popup->skia, new_geom);
         }
-        if (!ok) {
-            delta_name = "aux→full";
-            force_full_render = true;
-        }
+        if (!ok) force_full_render = true;
         break;
     }
 
-    /* ── CONTENT / STYLE / fallback: full render ─────────────────────── */
     case POPUP_DELTA_STYLE:
         delta_name = "style";
-        popup_pango_ctx_invalidate(&popup->pango);
+        popup_skia_ctx_invalidate(&popup->skia);
         force_full_render = true;
         break;
     case POPUP_DELTA_CONTENT:
         delta_name = "content";
         force_full_render = true;
         break;
-
-    } /* switch */
+    }
 
     if (force_full_render) {
-        PopupGeometry *new_geom = popup_geometry_compute(&popup->pango,
+        PopupGeometry *new_geom = popup_geometry_compute(&popup->skia,
                                                           cands,
                                                           preedit_text,
                                                           mode_label,
                                                           cfg, &palette, scale);
         if (!new_geom) {
-            typio_log(TYPIO_LOG_WARNING,
-                      "Popup: geometry computation failed");
+            typio_log(TYPIO_LOG_WARNING, "Popup: geometry computation failed");
             return false;
         }
 
         TypioCandidatePopupBuffer *used = nullptr;
         ok = popup_paint_full(&target, new_geom, new_selected, &used);
         if (ok) {
-            popup_geometry_free(popup->geom);
+            skia_geometry_free(&popup->skia, popup->geom);
             popup->geom           = new_geom;
             popup->selected       = new_selected;
             popup->last_committed = used;
             popup->visible        = true;
         } else {
-            popup_geometry_free(new_geom);
-            typio_log(TYPIO_LOG_WARNING,
-                      "Popup: paint_full failed; keeping previous frame");
+            skia_geometry_free(&popup->skia, new_geom);
+            typio_log(TYPIO_LOG_WARNING, "Popup: paint_full failed");
         }
     }
 
     t1 = typio_wl_monotonic_ms();
     if (ok && (t1 - t0) >= POPUP_SLOW_RENDER_MS) {
-        typio_log_debug(
-            "Popup slow render: %" PRIu64 "ms delta=%s candidates=%zu "
-            "selected=%d w=%d h=%d scale=%d sig=%" PRIu64,
-            t1 - t0, delta_name,
-            cands->count, new_selected,
-            popup->geom ? popup->geom->popup_w : 0,
-            popup->geom ? popup->geom->popup_h : 0,
-            scale, cands->content_signature);
+        typio_log_debug("Popup slow render: %" PRIu64 "ms delta=%s candidates=%zu "
+                        "selected=%d w=%d h=%d scale=%d sig=%" PRIu64,
+                        t1 - t0, delta_name, cands->count, new_selected,
+                        popup->geom ? popup->geom->popup_w : 0,
+                        popup->geom ? popup->geom->popup_h : 0,
+                        scale, cands->content_signature);
     }
 
     return ok;
@@ -396,7 +353,7 @@ static bool popup_render(TypioWlCandidatePopup *popup,
 static void on_text_input_rectangle(void *data,
                                      [[maybe_unused]] struct zwp_input_popup_surface_v2 *s,
                                      int32_t x, int32_t y, int32_t w, int32_t h) {
-    TypioWlCandidatePopup *popup = data;
+    TypioWlCandidatePopup *popup = (TypioWlCandidatePopup *)data;
     popup->text_input_x = x;
     popup->text_input_y = y;
     popup->text_input_w = w;
@@ -410,51 +367,43 @@ static const struct zwp_input_popup_surface_v2_listener popup_surface_listener =
 static void on_surface_enter(void *data,
                                [[maybe_unused]] struct wl_surface *surface,
                                struct wl_output *output) {
-    track_output(data, output);
+    track_output((TypioWlCandidatePopup *)data, output);
 }
 
 static void on_surface_leave(void *data,
                                [[maybe_unused]] struct wl_surface *surface,
                                struct wl_output *output) {
-    untrack_output(data, output);
+    untrack_output((TypioWlCandidatePopup *)data, output);
 }
 
 static const struct wl_surface_listener wl_surface_listener = {
     .enter = on_surface_enter,
     .leave = on_surface_leave,
+    .preferred_buffer_scale = nullptr,
+    .preferred_buffer_transform = nullptr,
 };
 
 /* ── Output tracking (refresh popup when scale changes) ─────────────── */
 
 static void refresh_visible(TypioWlCandidatePopup *popup) {
-    TypioInputContext *ctx;
-
-    if (!popup || !popup->visible || !popup->frontend ||
-        !popup->frontend->session) return;
-
-    ctx = popup->frontend->session->ctx;
+    if (!popup || !popup->visible || !popup->frontend || !popup->frontend->session) return;
+    TypioInputContext *ctx = popup->frontend->session->ctx;
     if (!ctx) return;
-
     typio_wl_text_ui_backend_update(popup->frontend->text_ui_backend, ctx);
 }
 
 static void track_output(TypioWlCandidatePopup *popup, struct wl_output *output) {
-    PopupOutputRef *r;
-
     if (!popup || !output || tracks_output(popup, output)) return;
-
-    r = calloc(1, sizeof(*r));
+    PopupOutputRef *r = (PopupOutputRef *)calloc(1, sizeof(*r));
     if (!r) return;
-
-    r->output          = output;
-    r->next            = popup->entered_outputs;
+    r->output = output;
+    r->next = popup->entered_outputs;
     popup->entered_outputs = r;
     refresh_visible(popup);
 }
 
 static void untrack_output(TypioWlCandidatePopup *popup, struct wl_output *output) {
     PopupOutputRef **link = &popup->entered_outputs;
-
     while (*link) {
         PopupOutputRef *r = *link;
         if (r->output == output) {
@@ -475,179 +424,80 @@ static void clear_outputs(TypioWlCandidatePopup *popup) {
     }
 }
 
-/* ── Ensure popup surface is created on demand ──────────────────────── */
-
 static bool ensure_created(TypioWlFrontend *frontend) {
-    TypioWlTextUiBackend *backend;
-
-    if (!frontend) return false;
-
-    backend = frontend->text_ui_backend;
-    if (!backend) return false;
-
-    if (backend->candidate_popup) {
-        return backend->candidate_popup->surface &&
-               backend->candidate_popup->popup_surface;
-    }
-
-    if (!frontend->compositor || !frontend->shm || !frontend->input_method) {
-        return false;
-    }
-
+    if (!frontend || !frontend->text_ui_backend) return false;
+    TypioWlTextUiBackend *backend = frontend->text_ui_backend;
+    if (backend->candidate_popup) return backend->candidate_popup->surface && backend->candidate_popup->popup_surface;
+    if (!frontend->compositor || !frontend->shm || !frontend->input_method) return false;
     backend->candidate_popup = typio_wl_candidate_popup_create(frontend);
-    if (!backend->candidate_popup) {
-        typio_log(TYPIO_LOG_WARNING,
-                  "Popup: failed to create popup surface; using inline candidates");
-        return false;
-    }
-
-    typio_log(TYPIO_LOG_DEBUG, "Popup: created surface on demand");
-    return true;
+    return backend->candidate_popup != nullptr;
 }
 
 /* ── Public API ─────────────────────────────────────────────────────── */
 
-TypioWlCandidatePopup *typio_wl_candidate_popup_create(TypioWlFrontend *frontend) {
-    TypioWlCandidatePopup *popup;
-
-    if (!frontend || !frontend->compositor ||
-        !frontend->shm || !frontend->input_method) return nullptr;
-
-    popup = calloc(1, sizeof(*popup));
+extern "C" TypioWlCandidatePopup *typio_wl_candidate_popup_create(TypioWlFrontend *frontend) {
+    if (!frontend || !frontend->compositor || !frontend->shm || !frontend->input_method) return nullptr;
+    TypioWlCandidatePopup *popup = (TypioWlCandidatePopup *)calloc(1, sizeof(*popup));
     if (!popup) return nullptr;
-
-    popup->frontend  = frontend;
-    popup->selected  = -1;
-
+    popup->frontend = frontend;
+    popup->selected = -1;
     popup->surface = wl_compositor_create_surface(frontend->compositor);
-    if (!popup->surface) {
-        free(popup);
-        return nullptr;
-    }
+    if (!popup->surface) { free(popup); return nullptr; }
     wl_surface_add_listener(popup->surface, &wl_surface_listener, popup);
-
-    popup->popup_surface = zwp_input_method_v2_get_input_popup_surface(
-        frontend->input_method, popup->surface);
-    if (!popup->popup_surface) {
-        wl_surface_destroy(popup->surface);
-        free(popup);
-        return nullptr;
-    }
-    zwp_input_popup_surface_v2_add_listener(popup->popup_surface,
-                                             &popup_surface_listener, popup);
-
-    popup_pango_ctx_init(&popup->pango);
-
-    typio_log(TYPIO_LOG_DEBUG, "Popup: surface initialised");
+    popup->popup_surface = zwp_input_method_v2_get_input_popup_surface(frontend->input_method, popup->surface);
+    if (!popup->popup_surface) { wl_surface_destroy(popup->surface); free(popup); return nullptr; }
+    zwp_input_popup_surface_v2_add_listener(popup->popup_surface, &popup_surface_listener, popup);
+    popup_skia_ctx_init(&popup->skia);
     return popup;
 }
 
-void typio_wl_candidate_popup_destroy(TypioWlCandidatePopup *popup) {
-    size_t i;
-
+extern "C" void typio_wl_candidate_popup_destroy(TypioWlCandidatePopup *popup) {
     if (!popup) return;
-
     hide_surface(popup);
-
-    popup_geometry_free(popup->geom);
-    popup->geom = nullptr;
-
-    popup_pango_ctx_free(&popup->pango);
-
-    for (i = 0; i < TYPIO_CANDIDATE_POPUP_BUFFER_COUNT; ++i) {
-        typio_candidate_popup_buffer_reset(&popup->buffers[i]);
-    }
-
+    skia_geometry_free(&popup->skia, popup->geom);
+    popup_skia_ctx_free(&popup->skia);
+    for (size_t i = 0; i < TYPIO_CANDIDATE_POPUP_BUFFER_COUNT; ++i) typio_candidate_popup_buffer_reset(&popup->buffers[i]);
     clear_outputs(popup);
-
-    if (popup->popup_surface) {
-        zwp_input_popup_surface_v2_destroy(popup->popup_surface);
-    }
-    if (popup->surface) {
-        wl_surface_destroy(popup->surface);
-    }
-
+    if (popup->popup_surface) zwp_input_popup_surface_v2_destroy(popup->popup_surface);
+    if (popup->surface) wl_surface_destroy(popup->surface);
     free(popup);
 }
 
-bool typio_wl_candidate_popup_update(TypioWlTextUiBackend *backend,
-                                      TypioInputContext *ctx) {
-    const TypioCandidateList *cands;
-    TypioWlFrontend          *frontend;
-    TypioWlCandidatePopup    *popup;
-    char                     *mode_label;
-    bool                      ok;
-
+extern "C" bool typio_wl_candidate_popup_update(TypioWlTextUiBackend *backend, TypioInputContext *ctx) {
     if (!backend || !backend->frontend || !ctx) return false;
-
-    frontend = backend->frontend;
-    if (!ensure_created(frontend)) return false;
-
-    popup = backend->candidate_popup;
-    cands = typio_input_context_get_candidates(ctx);
-
-    if (!cands || cands->count == 0) {
-        hide_surface(popup);
-        return true;
-    }
-
-    mode_label = build_mode_label(popup);
-    ok = popup_render(popup, cands, nullptr, mode_label);
+    if (!ensure_created(backend->frontend)) return false;
+    TypioWlCandidatePopup *popup = backend->candidate_popup;
+    const TypioCandidateList *cands = typio_input_context_get_candidates(ctx);
+    if (!cands || cands->count == 0) { hide_surface(popup); return true; }
+    char *mode_label = build_mode_label(popup);
+    bool ok = popup_render(popup, cands, nullptr, mode_label);
     free(mode_label);
-
-    if (!ok) {
-        typio_log(TYPIO_LOG_WARNING,
-                  "Popup: render failed; keeping previous frame");
-        return false;
-    }
-
-    typio_log(TYPIO_LOG_DEBUG, "Popup: rendered %zu candidates", cands->count);
-    return true;
+    return ok;
 }
 
-void typio_wl_candidate_popup_hide(TypioWlTextUiBackend *backend) {
+extern "C" void typio_wl_candidate_popup_hide(TypioWlTextUiBackend *backend) {
+    if (backend && backend->candidate_popup) hide_surface(backend->candidate_popup);
+}
+
+extern "C" bool typio_wl_candidate_popup_is_available(TypioWlTextUiBackend *backend) {
+    return backend && backend->candidate_popup && backend->candidate_popup->surface && backend->candidate_popup->popup_surface;
+}
+
+extern "C" void typio_wl_candidate_popup_invalidate_config(TypioWlTextUiBackend *backend) {
     if (!backend || !backend->candidate_popup) return;
-    hide_surface(backend->candidate_popup);
-}
-
-bool typio_wl_candidate_popup_is_available(TypioWlTextUiBackend *backend) {
-    return backend && backend->candidate_popup &&
-           backend->candidate_popup->surface &&
-           backend->candidate_popup->popup_surface;
-}
-
-void typio_wl_candidate_popup_invalidate_config(TypioWlTextUiBackend *backend) {
-    TypioWlCandidatePopup *popup;
-
-    if (!backend || !backend->candidate_popup) return;
-
-    popup = backend->candidate_popup;
+    TypioWlCandidatePopup *popup = backend->candidate_popup;
     popup->config_valid = false;
     memset(&popup->theme_cache, 0, sizeof(popup->theme_cache));
-
-    /* Invalidate the layout cache and geometry so the next render rebuilds */
-    popup_pango_ctx_invalidate(&popup->pango);
-    popup_geometry_free(popup->geom);
-    popup->geom           = nullptr;
+    popup_skia_ctx_invalidate(&popup->skia);
+    skia_geometry_free(&popup->skia, popup->geom);
+    popup->geom = nullptr;
     popup->last_committed = nullptr;
 }
 
-void typio_wl_candidate_popup_handle_output_change(TypioWlTextUiBackend *backend,
-                                                    struct wl_output *output) {
-    TypioWlCandidatePopup *popup;
-
-    if (!backend || !output) return;
-
-    popup = backend->candidate_popup;
-    if (!popup) return;
-
+extern "C" void typio_wl_candidate_popup_handle_output_change(TypioWlTextUiBackend *backend, struct wl_output *output) {
+    if (!backend || !output || !backend->candidate_popup) return;
+    TypioWlCandidatePopup *popup = backend->candidate_popup;
     if (!tracks_output(popup, output)) return;
-
-    if (!find_frontend_output(popup, output)) {
-        /* Output removed from frontend — stop tracking */
-        untrack_output(popup, output);
-    } else {
-        /* Output scale may have changed — refresh */
-        refresh_visible(popup);
-    }
+    if (!find_frontend_output(popup, output)) untrack_output(popup, output);
+    else refresh_visible(popup);
 }

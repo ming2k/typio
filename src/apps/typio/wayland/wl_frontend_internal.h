@@ -20,22 +20,30 @@
 #include "typio_build_config.h"
 
 #include <wayland-client.h>
+#include <pthread.h>
+#include <xkbcommon/xkbcommon.h>
+#include <stdio.h>
+#include <stdint.h>
+
 #include "input-method-unstable-v2-client-protocol.h"
 #include "virtual-keyboard-unstable-v1-client-protocol.h"
-#include <pthread.h>
-#include <stdatomic.h>
-#include <xkbcommon/xkbcommon.h>
-#include <stdint.h>
 
 #ifdef HAVE_STATUS_BUS
 #include "status/status.h"
 #endif
 #ifdef HAVE_SYSTRAY
-#include "tray.h"
+#include "tray/tray.h"
 #endif
 #ifdef HAVE_VOICE
 #include "voice/voice_service.h"
-#include "voice/voice_engine.h"
+#endif
+
+#ifdef __cplusplus
+#include <atomic>
+#define TYPIO_ATOMIC(t) std::atomic<t>
+#else
+#include <stdatomic.h>
+#define TYPIO_ATOMIC(t) _Atomic t
 #endif
 
 #ifdef __cplusplus
@@ -206,11 +214,11 @@ struct TypioWlFrontend {
     uint64_t virtual_keyboard_keymap_deadline_ms;
     uint64_t guard_reject_press_streak;
     uint64_t guard_reject_press_window_start_ms;
-    _Atomic uint64_t watchdog_heartbeat_ms;
-    _Atomic uint64_t watchdog_stage_since_ms;
-    _Atomic bool watchdog_stop;
-    _Atomic bool watchdog_armed;
-    _Atomic int watchdog_loop_stage;
+    TYPIO_ATOMIC(uint64_t) watchdog_heartbeat_ms;
+    TYPIO_ATOMIC(uint64_t) watchdog_stage_since_ms;
+    TYPIO_ATOMIC(bool) watchdog_stop;
+    TYPIO_ATOMIC(bool) watchdog_armed;
+    TYPIO_ATOMIC(int) watchdog_loop_stage;
     pthread_t watchdog_thread;
     bool watchdog_thread_started;
     TypioKeyTrackState key_states[TYPIO_WL_MAX_TRACKED_KEYS];
@@ -290,6 +298,7 @@ TypioWlSession *typio_wl_session_create(TypioWlFrontend *frontend);
 void typio_wl_session_destroy(TypioWlSession *session);
 void typio_wl_session_reset(TypioWlSession *session);
 void typio_wl_session_apply_pending(TypioWlSession *session);
+void typio_wl_session_flush_ui_update(TypioWlSession *session);
 
 /* Keyboard functions (wl_keyboard.c) */
 TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend);

@@ -3,6 +3,10 @@
 
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct wl_output;
 
 typedef struct TypioInputContext TypioInputContext;
@@ -19,5 +23,9 @@ bool typio_wl_text_ui_backend_is_available(TypioWlTextUiBackend *backend);
 void typio_wl_text_ui_backend_invalidate_config(TypioWlTextUiBackend *backend);
 void typio_wl_text_ui_backend_handle_output_change(TypioWlTextUiBackend *backend,
                                                    struct wl_output *output);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TYPIO_WL_TEXT_UI_BACKEND_H */

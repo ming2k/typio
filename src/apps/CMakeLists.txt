@@ -1,8 +1,4 @@
-add_subdirectory(daemon)
-
-if(ENABLE_STATUS_BUS)
-    add_subdirectory(cli)
-endif()
+add_subdirectory(typio)
 
 if(BUILD_CONTROL_PANEL)
     add_subdirectory(control)

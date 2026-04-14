@@ -2,6 +2,7 @@
 
 set(TYPIO_DAEMON_SOURCES
     main.c
+    client_main.c
     app.c
     cli.c
     notify/health.c
@@ -18,7 +19,6 @@ set(TYPIO_DAEMON_LIBRARIES typio-core dl)
 
 # Wayland frontend support
 if(HAVE_WAYLAND)
-    pkg_check_modules(CAIRO_PANGO REQUIRED cairo pangocairo)
     # Generate protocol code
     wayland_generate_protocol(
         PROTOCOL_XML ${CMAKE_SOURCE_DIR}/protocols/input-method-unstable-v2.xml
@@ -45,10 +45,12 @@ if(HAVE_WAYLAND)
         wayland/modifier_policy.c
         wayland/wl_event_loop.c
         wayland/wl_runtime_config.c
-        wayland/candidate_popup.c
+        wayland/candidate_popup.cc
         wayland/candidate_popup_buffer.c
-        wayland/candidate_popup_layout.c
-        wayland/candidate_popup_paint.c
+        wayland/candidate_popup_layout.cc
+        wayland/candidate_popup_paint.cc
+        wayland/skia_backend.cc
+        wayland/skia_engine.cc
         wayland/candidate_popup_theme.c
         wayland/repeat_guard.c
         wayland/shortcut_chord.c
@@ -66,7 +68,7 @@ if(HAVE_WAYLAND)
         ${VIRTUAL_KEYBOARD_PROTOCOL_SOURCES}
     )
 
-    add_custom_target(typio-daemon-protocols
+    add_custom_target(typio-protocols
         DEPENDS
             ${INPUT_METHOD_PROTOCOL_SOURCES}
             ${VIRTUAL_KEYBOARD_PROTOCOL_SOURCES}
@@ -75,7 +77,6 @@ if(HAVE_WAYLAND)
     list(APPEND TYPIO_DAEMON_INCLUDE_DIRS
         ${CMAKE_CURRENT_BINARY_DIR}/wayland-protocols
         ${CMAKE_CURRENT_SOURCE_DIR}/wayland
-        ${CAIRO_PANGO_INCLUDE_DIRS}
     )
 
     list(APPEND TYPIO_DAEMON_SYSTEM_INCLUDE_DIRS
@@ -86,7 +87,6 @@ if(HAVE_WAYLAND)
     list(APPEND TYPIO_DAEMON_LIBRARIES
         ${WAYLAND_CLIENT_LIBRARIES}
         ${XKBCOMMON_LIBRARIES}
-        ${CAIRO_PANGO_LIBRARIES}
         pthread
     )
 endif()
@@ -109,20 +109,14 @@ endif()
 
 # System tray support
 if(HAVE_SYSTRAY)
-    pkg_check_modules(CAIRO REQUIRED cairo)
     list(APPEND TYPIO_DAEMON_SOURCES
-        tray/icon_pixmap.c
+        tray/icon_pixmap.cc
         tray/bus.c
         tray/sni.c
     )
 
     list(APPEND TYPIO_DAEMON_INCLUDE_DIRS
         ${CMAKE_CURRENT_SOURCE_DIR}/tray
-        ${CAIRO_INCLUDE_DIRS}
-    )
-
-    list(APPEND TYPIO_DAEMON_LIBRARIES
-        ${CAIRO_LIBRARIES}
     )
 endif()
 
@@ -167,27 +161,29 @@ if(HAVE_SHERPA_ONNX)
     list(APPEND TYPIO_DAEMON_LIBRARIES ${SHERPA_ONNX_LINK_LIBRARIES})
 endif()
 
-add_executable(typio-server ${TYPIO_DAEMON_SOURCES})
+add_executable(typio ${TYPIO_DAEMON_SOURCES})
 
-target_include_directories(typio-server PRIVATE ${TYPIO_DAEMON_INCLUDE_DIRS})
-target_include_directories(typio-server SYSTEM PRIVATE ${TYPIO_DAEMON_SYSTEM_INCLUDE_DIRS})
+include(${CMAKE_SOURCE_DIR}/cmake/skia.cmake)
+
+target_include_directories(typio PRIVATE ${TYPIO_DAEMON_INCLUDE_DIRS})
+target_include_directories(typio SYSTEM PRIVATE ${TYPIO_DAEMON_SYSTEM_INCLUDE_DIRS})
 
 if(HAVE_WHISPER AND WHISPER_LIBRARY_DIRS)
-    target_link_directories(typio-server PRIVATE ${WHISPER_LIBRARY_DIRS})
+    target_link_directories(typio PRIVATE ${WHISPER_LIBRARY_DIRS})
 endif()
 
 if(HAVE_SHERPA_ONNX AND SHERPA_ONNX_PREFIX)
-    target_link_directories(typio-server PRIVATE "${SHERPA_ONNX_PREFIX}/lib")
+    target_link_directories(typio PRIVATE "${SHERPA_ONNX_PREFIX}/lib")
 endif()
 
-target_link_libraries(typio-server PRIVATE ${TYPIO_DAEMON_LIBRARIES})
+target_link_libraries(typio PRIVATE ${TYPIO_DAEMON_LIBRARIES})
 
-set_target_properties(typio-server PROPERTIES
+set_target_properties(typio PROPERTIES
     OUTPUT_NAME "typio"
     BUILD_RPATH "${CMAKE_BINARY_DIR}/src/core"
     INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
 )
 
-install(TARGETS typio-server
+install(TARGETS typio
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

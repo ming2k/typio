@@ -143,7 +143,7 @@ The active Rime schema is remembered in XDG state and changed through Typio's
 runtime controls. It is no longer configured in `typio.toml`.
 
 If you edit Rime source files under `user_data_dir` directly, such as
-`default.custom.yaml`, run `typio-client rime deploy` or use the control-panel
+`default.custom.yaml`, run `typio rime deploy` or use the control-panel
 deploy action to rebuild generated `build/*.yaml` artifacts.
 
 ## CLI Overrides

@@ -3,6 +3,7 @@
  * @brief typio-client — D-Bus CLI for controlling a running Typio server
  */
 
+#include "client_main.h"
 #include "typio/dbus_protocol.h"
 
 #include <dbus/dbus.h>
@@ -463,6 +464,7 @@ static int cmd_version(DBusConnection *conn) {
 static void print_help(const char *prog) {
     printf("Usage: %s <command> [args...]\n\n", prog);
     printf("Commands:\n");
+    printf("  daemon                   Start the Typio background service\n");
     printf("  engine [list|next|NAME]  Query or switch keyboard engine\n");
     printf("  rime [schema|deploy]     Query, deploy, or set Rime schema\n");
     printf("  config <reload|get|set>  Manage configuration\n");
@@ -472,7 +474,7 @@ static void print_help(const char *prog) {
     printf("  help                     Show this help message\n");
 }
 
-int main(int argc, char *argv[]) {
+int client_main(int argc, char *argv[]) {
     DBusConnection *conn;
     int rc;
 

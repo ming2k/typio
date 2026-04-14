@@ -26,22 +26,22 @@ typedef struct TypioWlLoopAuxFds {
 } TypioWlLoopAuxFds;
 
 static void event_loop_flush_pending_popup(TypioWlFrontend *frontend) {
-    if (!frontend) {
+    if (!frontend || !frontend->session) {
         return;
     }
 
     if (!typio_wl_text_ui_should_flush_popup_update(
             frontend->popup_update_pending,
-            frontend->session != nullptr,
-            frontend->session && frontend->session->ctx,
-            frontend->session && frontend->session->ctx &&
+            true,
+            frontend->session->ctx != nullptr,
+            frontend->session->ctx &&
                 typio_input_context_is_focused(frontend->session->ctx))) {
         return;
     }
 
     typio_wl_frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_POPUP_UPDATE);
-    frontend->popup_update_pending = false;
-    typio_wl_text_ui_backend_update(frontend->text_ui_backend, frontend->session->ctx);
+    /* Note: popup_update_pending is cleared inside update_wayland_text_ui -> typio_wl_session_flush_ui_update */
+    typio_wl_session_flush_ui_update(frontend->session);
     typio_wl_frontend_watchdog_heartbeat(frontend);
     typio_wl_frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
 }

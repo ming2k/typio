@@ -317,7 +317,11 @@ void typio_engine_manager_free(TypioEngineManager *manager) {
     free(manager->entries);
 
     free(manager->name_list);
-    free(manager->ordered_keyboard_list);
+    
+    /* Just free the array, entries owned by manager */
+    if (manager->ordered_keyboard_list) {
+        free(manager->ordered_keyboard_list);
+    }
     free(manager->recent_primary_name);
     free(manager->recent_secondary_name);
     free(manager);
@@ -637,6 +641,14 @@ const char **typio_engine_manager_list_by_type(TypioEngineManager *manager,
     return filtered;
 }
 
+void engine_manager_reset_ordered_list(TypioEngineManager *manager) {
+    if (manager->ordered_keyboard_list) {
+        free(manager->ordered_keyboard_list);
+        manager->ordered_keyboard_list = NULL;
+    }
+    manager->ordered_keyboard_list_size = 0;
+}
+
 const char **typio_engine_manager_list_ordered_keyboards(TypioEngineManager *manager,
                                                           size_t *count) {
     TypioConfig *config;
@@ -650,9 +662,7 @@ const char **typio_engine_manager_list_ordered_keyboards(TypioEngineManager *man
         return nullptr;
     }
 
-    free(manager->ordered_keyboard_list);
-    manager->ordered_keyboard_list = NULL;
-    manager->ordered_keyboard_list_size = 0;
+    engine_manager_reset_ordered_list(manager);
 
     for (size_t i = 0; i < manager->entry_count; ++i) {
         if (manager->entries[i]->info->type == TYPIO_ENGINE_TYPE_KEYBOARD) {
