@@ -101,8 +101,39 @@ static PopupDelta classify_delta(const PopupGeometry *geom,
         return POPUP_DELTA_STYLE;
     }
 
-    if (geom->content_sig != cands->content_signature ||
-        geom->row_count != cands->count) {
+    if (geom->content_sig != cands->content_signature) {
+        /* If count changed, it's a full content change. */
+        if (geom->row_count != cands->count) {
+            return POPUP_DELTA_CONTENT;
+        }
+
+        /* 
+         * Optimization for Rime dynamic comments: if only the newly selected 
+         * candidate has different text/comment/label, and everything else matches 
+         * the current geometry, we can treat it as a selection change that also 
+         * needs a content refresh for the new row.
+         *
+         * Note: this assumes we can trust the caller's 'new_selected' index.
+         */
+        if (new_selected >= 0 && (size_t)new_selected < cands->count) {
+            bool others_match = true;
+            for (size_t i = 0; i < cands->count; ++i) {
+                if ((int)i == new_selected) continue;
+                
+                /* This is a bit expensive but still much cheaper than a full Skia layout/render cycle 
+                 * for the whole window. We use the content_signature of individual rows if we had them,
+                 * but for now we just do nothing and fall back to full content update if we are unsure.
+                 */
+                 others_match = false; 
+                 break;
+            }
+            
+            /* Actually, without per-row signatures in the core API, we can't easily 
+             * prove only one row changed here without a lot of string work. 
+             * Let's stick to the safe path for now but mark it for future core improvement. 
+             */
+        }
+
         return POPUP_DELTA_CONTENT;
     }
 

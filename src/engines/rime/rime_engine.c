@@ -545,10 +545,6 @@ static bool typio_rime_is_selection_only_change(const RimeContext *rime_context,
         return false;
     }
 
-    if (rime_context->menu.highlighted_candidate_index == current->selected) {
-        return false;
-    }
-
     /* Verify candidate texts actually match.  This is O(n) string comparisons
      * but n is the page size (typically 5–10) and strcmp short-circuits. */
     const size_t select_keys_len = rime_context->menu.select_keys ? strlen(rime_context->menu.select_keys) : 0;
