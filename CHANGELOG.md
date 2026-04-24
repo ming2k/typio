@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.3] - 2026-04-24
+
+### Fixed
+
+- **Rendering pipeline stability**: Replaced per-frame Vulkan offscreen surface
+  creation with a persistent surface stored in `PopupRenderCtx`.  This eliminates
+  per-frame Graphics Pipeline reconstruction and the associated
+  `vkDeviceWaitIdle` / `vkQueueWaitIdle` storms that previously caused 5-second
+  GPU stalls, system-wide卡顿, and watchdog-forced process termination.
+- **Font fallback for missing glyphs**: `flux_renderer.c` now caches fontconfig
+  results and `fx_font` objects, and implements a fallback path via `FcCharSet`
+  when the primary font lacks glyphs for the input text.  This fixes CJK and
+  symbol characters rendering as tofu blocks.
+- **Text gamma correction**: Added `pow(alpha, 1.0/2.2)` to the Flux text
+  fragment shader so glyph coverage blends perceptually rather than in linear
+  space, correcting text that appeared too thin.
+- **Documentation**: Updated `docs/architecture.md` to reflect that all popup
+  paint paths now perform full redraws over the persistent Vulkan surface.
+
 ## [3.0.2] - 2026-04-18
 
 ### Fixed
@@ -23,10 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Candidate popup text rendering on 1080p**: Text positions are now stored and
   passed as floats throughout the layout and paint pipeline, preserving subpixel
   glyph placement that was previously lost to integer truncation.
-- **Candidate popup colour compositing**: Removed `saveLayer`/`kSrcIn` blend
+- **Candidate popup colour compositing**: Removed the old off-screen blend path
   used to recolour paragraph glyphs at paint time. Text colour is now baked into
-  each `TextStyle` at layout-creation time, restoring Skia's direct AA path and
-  eliminating an unnecessary off-screen compositing pass.
+  layout creation, eliminating an unnecessary compositing pass.
 - **LRU layout cache**: Cache identity now includes the text colour so that
   unselected and selected colour variants of the same candidate text are stored
   as distinct entries. Cache capacity raised from 64 to 128 entries to
@@ -38,8 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Unified CLI**: `typio daemon` and `typio client` modes consolidated into a
   single binary with a shared command-line interface.
-- **Skia rendering backend**: Replaced Cairo/Pango with Skia for candidate popup
-  painting, enabling hardware-accelerated rendering and richer typography.
+- **Flux rendering backend**: Replaced Cairo/Pango with Flux for candidate popup
+  painting, enabling Vulkan-backed rendering and richer typography.
 - **Modernized candidate UI**: Nested rounded corners, improved baseline
   alignment, and refined typography for the candidate popup.
 
@@ -55,7 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Skia backend**: Added experimental Skia rendering backend as an alternative to Cairo for candidate popup painting, enabling hardware-accelerated Vulkan rendering.
+- **Flux backend**: Added experimental Flux rendering backend as an alternative
+  to Cairo for candidate popup painting, enabling Vulkan-backed rendering.
 
 ## [2.8.0] - 2026-04-11
 

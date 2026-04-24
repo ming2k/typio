@@ -104,6 +104,7 @@ Installed artifacts:
 ## Documentation
 
 - [User Installation](docs/installation.md)
+- [Testing Locally](docs/testing.md)
 - [User Configuration](docs/configuration.md)
 - [User Usage](docs/usage.md)
 - [Troubleshooting](docs/troubleshooting.md)

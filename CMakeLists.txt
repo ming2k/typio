@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(typio VERSION 3.0.1 LANGUAGES C CXX)
+project(typio VERSION 3.0.3 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -176,6 +176,7 @@ configure_file(
     @ONLY
 )
 
+add_subdirectory(external/flux)
 add_subdirectory(src/core)
 add_subdirectory(src/engines)
 add_subdirectory(src/apps)

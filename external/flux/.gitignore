@@ -1,0 +1,24 @@
+# Meson / Ninja
+build/
+subprojects/
+*.inc
+*.spv
+
+# Compiled Objects
+*.o
+*.so
+*.a
+
+# Editor/OS artifacts
+.codex
+.claude/
+.vscode/
+.idea/
+.DS_Store
+*~
+*.swp
+tags
+TAGS
+
+# Optional compile commands
+compile_commands.json

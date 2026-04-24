@@ -49,8 +49,7 @@ if(HAVE_WAYLAND)
         wayland/candidate_popup_buffer.c
         wayland/candidate_popup_layout.cc
         wayland/candidate_popup_paint.cc
-        wayland/skia_backend.cc
-        wayland/skia_engine.cc
+        wayland/flux_renderer.c
         wayland/candidate_popup_theme.c
         wayland/repeat_guard.c
         wayland/shortcut_chord.c
@@ -87,6 +86,9 @@ if(HAVE_WAYLAND)
     list(APPEND TYPIO_DAEMON_LIBRARIES
         ${WAYLAND_CLIENT_LIBRARIES}
         ${XKBCOMMON_LIBRARIES}
+        flux::flux
+        fontconfig
+        harfbuzz
         pthread
     )
 endif()
@@ -162,8 +164,6 @@ if(HAVE_SHERPA_ONNX)
 endif()
 
 add_executable(typio ${TYPIO_DAEMON_SOURCES})
-
-include(${CMAKE_SOURCE_DIR}/cmake/skia.cmake)
 
 target_include_directories(typio PRIVATE ${TYPIO_DAEMON_INCLUDE_DIRS})
 target_include_directories(typio SYSTEM PRIVATE ${TYPIO_DAEMON_SYSTEM_INCLUDE_DIRS})

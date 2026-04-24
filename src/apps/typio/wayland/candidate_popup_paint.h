@@ -1,12 +1,11 @@
 /**
  * @file candidate_popup_paint.h
- * @brief Skia paint paths for the candidate popup.
+ * @brief Paint paths for the candidate popup.
  *
- * Three render paths, each taking a PopupGeometry snapshot:
- *
- *   popup_paint_full      — full background + border + all rows + aux text
- *   popup_paint_selection — blit previous buffer, repaint two rows only
- *   popup_paint_aux       — blit previous buffer, repaint preedit/mode regions
+ * All paths now perform a full redraw.  The previous delta-optimised paths
+ * (selection-only / aux-only) have been simplified to full redraws because
+ * the candidate popup is tiny; rebuilding the entire Vulkan offscreen
+ * surface every frame was causing multi-second GPU stalls.
  */
 
 #ifndef TYPIO_WL_CANDIDATE_POPUP_PAINT_H
@@ -33,17 +32,19 @@ typedef struct {
  * Full repaint: allocate/reuse buffer, paint background, border, all rows,
  * preedit, and mode label.  Commits the surface.
  */
-bool popup_paint_full(const PopupPaintTarget *target,
+bool popup_paint_full(PopupRenderCtx *pc,
+                      const PopupPaintTarget *target,
                       const PopupGeometry *geom,
                       int selected,
                       TypioCandidatePopupBuffer **out_buf);
 
 /**
- * Selection-only repaint: copy @src into a free buffer, then repaint only
- * the old and new selected rows.  Returns false if @src dimensions do not
- * match the geometry (caller should fall back to popup_paint_full).
+ * Selection change: performs a full redraw.  The old fast-path that blitted
+ * the previous buffer has been removed because it required per-frame Vulkan
+ * image creation + vkQueueWaitIdle, which caused 5-second GPU stalls.
  */
-bool popup_paint_selection(const PopupPaintTarget *target,
+bool popup_paint_selection(PopupRenderCtx *pc,
+                           const PopupPaintTarget *target,
                            const PopupGeometry *geom,
                            int old_sel,
                            int new_sel,
@@ -51,12 +52,13 @@ bool popup_paint_selection(const PopupPaintTarget *target,
                            TypioCandidatePopupBuffer **out_buf);
 
 /**
- * Aux-only repaint: copy @src, erase old preedit/mode regions, draw new ones.
- * @old_geom and @new_geom must have the same popup_w/popup_h.
+ * Aux-only repaint: performs a full redraw.
  */
-bool popup_paint_aux(const PopupPaintTarget *target,
+bool popup_paint_aux(PopupRenderCtx *pc,
+                     const PopupPaintTarget *target,
                      const PopupGeometry *old_geom,
                      const PopupGeometry *new_geom,
+                     int selected,
                      const TypioCandidatePopupBuffer *src,
                      TypioCandidatePopupBuffer **out_buf);
 

@@ -60,20 +60,11 @@ if(HAVE_SYSTRAY)
         ${CMAKE_BINARY_DIR}
         ${CMAKE_SOURCE_DIR}/src/apps/typio/tray
     )
-    target_include_directories(test_tray_icon_pixmap SYSTEM PRIVATE
-        ${CMAKE_SOURCE_DIR}/external/skia
-        ${CMAKE_SOURCE_DIR}/external/skia/include
-        ${CMAKE_SOURCE_DIR}/external/skia/include/core
-    )
     set_target_properties(test_tray_icon_pixmap PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
     )
-    target_link_libraries(test_tray_icon_pixmap PRIVATE 
-        ${DBUS_LIBRARIES}
-        ${CMAKE_SOURCE_DIR}/external/skia/out/Release/libskia.a
-        dl fontconfig freetype pthread
-    )
+    target_link_libraries(test_tray_icon_pixmap PRIVATE m)
     add_test(NAME test_tray_icon_pixmap COMMAND test_tray_icon_pixmap)
 
     add_executable(test_server_app

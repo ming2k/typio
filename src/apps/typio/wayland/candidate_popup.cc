@@ -1,6 +1,6 @@
 /**
  * @file candidate_popup.cc
- * @brief Wayland input-popup coordinator (Skia version).
+ * @brief Wayland input-popup coordinator.
  */
 
 #include "wl_frontend_internal.h"
@@ -44,8 +44,8 @@ struct TypioWlCandidatePopup {
     TypioCandidatePopupBuffer  buffers[TYPIO_CANDIDATE_POPUP_BUFFER_COUNT];
     TypioCandidatePopupBuffer *last_committed;
 
-    /* Per-popup Skia engine context + LRU layout cache */
-    PopupSkiaCtx skia;
+    /* Per-popup text engine context + LRU layout cache */
+    PopupRenderCtx render;
 
     /* Current computed geometry (owned; NULL if not yet rendered) */
     PopupGeometry *geom;
@@ -107,33 +107,8 @@ static PopupDelta classify_delta(const PopupGeometry *geom,
             return POPUP_DELTA_CONTENT;
         }
 
-        /* 
-         * Optimization for Rime dynamic comments: if only the newly selected 
-         * candidate has different text/comment/label, and everything else matches 
-         * the current geometry, we can treat it as a selection change that also 
-         * needs a content refresh for the new row.
-         *
-         * Note: this assumes we can trust the caller's 'new_selected' index.
-         */
-        if (new_selected >= 0 && (size_t)new_selected < cands->count) {
-            bool others_match = true;
-            for (size_t i = 0; i < cands->count; ++i) {
-                if ((int)i == new_selected) continue;
-                
-                /* This is a bit expensive but still much cheaper than a full Skia layout/render cycle 
-                 * for the whole window. We use the content_signature of individual rows if we had them,
-                 * but for now we just do nothing and fall back to full content update if we are unsure.
-                 */
-                 others_match = false; 
-                 break;
-            }
-            
-            /* Actually, without per-row signatures in the core API, we can't easily 
-             * prove only one row changed here without a lot of string work. 
-             * Let's stick to the safe path for now but mark it for future core improvement. 
-             */
-        }
-
+        /* Without per-row signatures in the core API, we cannot prove that only
+         * one row changed. Keep the conservative full-content path. */
         return POPUP_DELTA_CONTENT;
     }
 
@@ -220,10 +195,9 @@ static const PopupConfig *get_config(TypioWlCandidatePopup *popup) {
 
 /* ── Geometry Free Helper ───────────────────────────────────────────── */
 
-static void skia_geometry_free(PopupSkiaCtx *pc, PopupGeometry *g) {
+static void render_geometry_free(PopupRenderCtx *pc, PopupGeometry *g) {
+    (void)pc;
     if (!g) return;
-    if (g->preedit_layout) pc->engine->vtable->free_layout(g->preedit_layout);
-    if (g->mode_layout) pc->engine->vtable->free_layout(g->mode_layout);
     popup_geometry_free(g);
 }
 
@@ -239,7 +213,7 @@ static void hide_surface(TypioWlCandidatePopup *popup) {
     popup->last_committed = nullptr;
     popup->selected      = -1;
 
-    skia_geometry_free(&popup->skia, popup->geom);
+    render_geometry_free(&popup->render, popup->geom);
     popup->geom = nullptr;
 }
 
@@ -294,7 +268,7 @@ static bool popup_render(TypioWlCandidatePopup *popup,
         delta_name = "selection";
         if (popup->last_committed) {
             TypioCandidatePopupBuffer *used = nullptr;
-            ok = popup_paint_selection(&target, popup->geom,
+            ok = popup_paint_selection(&popup->render, &target, popup->geom,
                                         popup->selected, new_selected,
                                         popup->last_committed, &used);
             if (ok) {
@@ -307,24 +281,24 @@ static bool popup_render(TypioWlCandidatePopup *popup,
 
     case POPUP_DELTA_AUX: {
         delta_name = "aux";
-        PopupGeometry *new_geom = popup_geometry_update_aux(&popup->skia,
+        PopupGeometry *new_geom = popup_geometry_update_aux(&popup->render,
                                                              popup->geom,
                                                              preedit_text,
                                                              mode_label);
         if (new_geom && popup->last_committed) {
             TypioCandidatePopupBuffer *used = nullptr;
-            ok = popup_paint_aux(&target, popup->geom, new_geom,
-                                  popup->last_committed, &used);
+            ok = popup_paint_aux(&popup->render, &target, popup->geom, new_geom,
+                                  popup->selected, popup->last_committed, &used);
             if (ok) {
-                skia_geometry_free(&popup->skia, popup->geom);
+                render_geometry_free(&popup->render, popup->geom);
                 popup->geom           = new_geom;
                 popup->last_committed = used;
                 popup->visible        = true;
             } else {
-                skia_geometry_free(&popup->skia, new_geom);
+                render_geometry_free(&popup->render, new_geom);
             }
         } else {
-            skia_geometry_free(&popup->skia, new_geom);
+            render_geometry_free(&popup->render, new_geom);
         }
         if (!ok) force_full_render = true;
         break;
@@ -332,7 +306,7 @@ static bool popup_render(TypioWlCandidatePopup *popup,
 
     case POPUP_DELTA_STYLE:
         delta_name = "style";
-        popup_skia_ctx_invalidate(&popup->skia);
+        popup_render_ctx_invalidate(&popup->render);
         force_full_render = true;
         break;
     case POPUP_DELTA_CONTENT:
@@ -342,7 +316,7 @@ static bool popup_render(TypioWlCandidatePopup *popup,
     }
 
     if (force_full_render) {
-        PopupGeometry *new_geom = popup_geometry_compute(&popup->skia,
+        PopupGeometry *new_geom = popup_geometry_compute(&popup->render,
                                                           cands,
                                                           preedit_text,
                                                           mode_label,
@@ -353,15 +327,15 @@ static bool popup_render(TypioWlCandidatePopup *popup,
         }
 
         TypioCandidatePopupBuffer *used = nullptr;
-        ok = popup_paint_full(&target, new_geom, new_selected, &used);
+        ok = popup_paint_full(&popup->render, &target, new_geom, new_selected, &used);
         if (ok) {
-            skia_geometry_free(&popup->skia, popup->geom);
+            render_geometry_free(&popup->render, popup->geom);
             popup->geom           = new_geom;
             popup->selected       = new_selected;
             popup->last_committed = used;
             popup->visible        = true;
         } else {
-            skia_geometry_free(&popup->skia, new_geom);
+            render_geometry_free(&popup->render, new_geom);
             typio_log(TYPIO_LOG_WARNING, "Popup: paint_full failed");
         }
     }
@@ -478,15 +452,15 @@ extern "C" TypioWlCandidatePopup *typio_wl_candidate_popup_create(TypioWlFronten
     popup->popup_surface = zwp_input_method_v2_get_input_popup_surface(frontend->input_method, popup->surface);
     if (!popup->popup_surface) { wl_surface_destroy(popup->surface); free(popup); return nullptr; }
     zwp_input_popup_surface_v2_add_listener(popup->popup_surface, &popup_surface_listener, popup);
-    popup_skia_ctx_init(&popup->skia);
+    popup_render_ctx_init(&popup->render);
     return popup;
 }
 
 extern "C" void typio_wl_candidate_popup_destroy(TypioWlCandidatePopup *popup) {
     if (!popup) return;
     hide_surface(popup);
-    skia_geometry_free(&popup->skia, popup->geom);
-    popup_skia_ctx_free(&popup->skia);
+    render_geometry_free(&popup->render, popup->geom);
+    popup_render_ctx_free(&popup->render);
     for (size_t i = 0; i < TYPIO_CANDIDATE_POPUP_BUFFER_COUNT; ++i) typio_candidate_popup_buffer_reset(&popup->buffers[i]);
     clear_outputs(popup);
     if (popup->popup_surface) zwp_input_popup_surface_v2_destroy(popup->popup_surface);
@@ -519,8 +493,8 @@ extern "C" void typio_wl_candidate_popup_invalidate_config(TypioWlTextUiBackend 
     TypioWlCandidatePopup *popup = backend->candidate_popup;
     popup->config_valid = false;
     memset(&popup->theme_cache, 0, sizeof(popup->theme_cache));
-    popup_skia_ctx_invalidate(&popup->skia);
-    skia_geometry_free(&popup->skia, popup->geom);
+    popup_render_ctx_invalidate(&popup->render);
+    render_geometry_free(&popup->render, popup->geom);
     popup->geom = nullptr;
     popup->last_committed = nullptr;
 }

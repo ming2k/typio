@@ -50,6 +50,7 @@ Current test binaries:
 
 ## Useful References
 
-- [Building Guide](development.md)
+- [Testing Locally](testing.md)
+- [Development Guide](development.md)
 - [Architecture](architecture.md)
 - [Creating Engines](creating-engines.md)

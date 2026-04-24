@@ -1,6 +1,6 @@
 /**
  * @file candidate_popup_layout.h
- * @brief Candidate popup geometry: LRU layout cache and immutable geometry snapshots (Skia version).
+ * @brief Candidate popup geometry: LRU layout cache and immutable geometry snapshots.
  */
 
 #ifndef TYPIO_WL_CANDIDATE_POPUP_LAYOUT_H
@@ -11,6 +11,7 @@
 #include "typio/instance.h"
 #include "typio/renderer.h"
 
+#include <flux/flux.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -63,7 +64,7 @@ typedef struct {
 /* ── Per-row geometry ───────────────────────────────────────────────── */
 
 typedef struct {
-    /* All four layouts borrowed from PopupSkiaCtx; do NOT free here.
+    /* All four layouts borrowed from PopupRenderCtx; do NOT free here.
      * _sel variants carry the selection-text colour and are used when
      * this row is the highlighted candidate. */
     TypioTextLayout *label_layout;
@@ -135,21 +136,24 @@ typedef struct {
     uint32_t     lru_tick;
 } PopupLayoutEntry;
 
-/* ── Persistent Skia engine + LRU cache ───────────────────────────── */
+/* ── Persistent text engine + LRU cache ───────────────────────────── */
 
 typedef struct {
     TypioTextEngine     *engine;
     PopupLayoutEntry      entries[POPUP_LAYOUT_CACHE_CAP];
     uint32_t              tick;
-} PopupSkiaCtx;
+    fx_surface           *flux_surface;
+    int                   flux_surface_w;
+    int                   flux_surface_h;
+} PopupRenderCtx;
 
 /* ── Functions ──────────────────────────────────────────────────────── */
 
-void popup_skia_ctx_init(PopupSkiaCtx *pc);
-void popup_skia_ctx_free(PopupSkiaCtx *pc);
-void popup_skia_ctx_invalidate(PopupSkiaCtx *pc);
+void popup_render_ctx_init(PopupRenderCtx *pc);
+void popup_render_ctx_free(PopupRenderCtx *pc);
+void popup_render_ctx_invalidate(PopupRenderCtx *pc);
 
-PopupGeometry *popup_geometry_compute(PopupSkiaCtx *pc,
+PopupGeometry *popup_geometry_compute(PopupRenderCtx *pc,
                                       const TypioCandidateList *candidates,
                                       const char *preedit_text,
                                       const char *mode_label,
@@ -157,7 +161,7 @@ PopupGeometry *popup_geometry_compute(PopupSkiaCtx *pc,
                                       const TypioCandidatePopupPalette *palette,
                                       int scale);
 
-PopupGeometry *popup_geometry_update_aux(PopupSkiaCtx *pc,
+PopupGeometry *popup_geometry_update_aux(PopupRenderCtx *pc,
                                          const PopupGeometry *base,
                                          const char *preedit_text,
                                          const char *mode_label);

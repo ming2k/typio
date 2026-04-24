@@ -1,18 +1,17 @@
 /**
  * @file candidate_popup_layout.cc
- * @brief Candidate popup geometry: Skia-based LRU cache and geometry computation.
+ * @brief Candidate popup geometry: Flux-based LRU cache and geometry computation.
  */
 
 #include "candidate_popup_layout.h"
+#include "flux_renderer.h"
 #include "typio/config.h"
 #include "utils/string.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-/* Forward declaration from skia_engine.cc */
-extern "C" TypioTextEngine *skia_engine_create();
 
 /* ── FNV-1a hash ────────────────────────────────────────────────────── */
 
@@ -82,15 +81,15 @@ static void format_candidate_parts(const TypioCandidate *c, size_t idx,
     }
 }
 
-/* ── Skia Context management ────────────────────────────────────────── */
+/* ── Flux context management ────────────────────────────────────────── */
 
-void popup_skia_ctx_init(PopupSkiaCtx *pc) {
+void popup_render_ctx_init(PopupRenderCtx *pc) {
     if (!pc) return;
     memset(pc, 0, sizeof(*pc));
-    pc->engine = skia_engine_create();
+    pc->engine = typio_flux_engine_create();
 }
 
-void popup_skia_ctx_free(PopupSkiaCtx *pc) {
+void popup_render_ctx_free(PopupRenderCtx *pc) {
     if (!pc) return;
     for (size_t i = 0; i < POPUP_LAYOUT_CACHE_CAP; ++i) {
         if (pc->entries[i].layout) {
@@ -100,15 +99,17 @@ void popup_skia_ctx_free(PopupSkiaCtx *pc) {
             pc->engine->vtable->free_layout(pc->entries[i].label_layout);
         }
     }
+    if (pc->flux_surface) {
+        fx_surface_destroy(pc->flux_surface);
+        pc->flux_surface = NULL;
+    }
     if (pc->engine) {
-        // Assuming TypioTextEngine should be freed if it was allocated
-        free(pc->engine->priv); // This depends on how skia_engine_create is implemented
-        free(pc->engine);
+        typio_flux_engine_destroy(pc->engine);
     }
     memset(pc, 0, sizeof(*pc));
 }
 
-void popup_skia_ctx_invalidate(PopupSkiaCtx *pc) {
+void popup_render_ctx_invalidate(PopupRenderCtx *pc) {
     if (!pc) return;
     for (size_t i = 0; i < POPUP_LAYOUT_CACHE_CAP; ++i) {
         if (pc->entries[i].layout) {
@@ -124,7 +125,7 @@ void popup_skia_ctx_invalidate(PopupSkiaCtx *pc) {
 
 /* ── LRU cache lookup / insert ──────────────────────────────────────── */
 
-static PopupLayoutEntry *lru_get_or_create(PopupSkiaCtx *pc,
+static PopupLayoutEntry *lru_get_or_create(PopupRenderCtx *pc,
                                             const char *label,
                                             const char *text,
                                             const char *label_font_desc,
@@ -179,6 +180,41 @@ static PopupLayoutEntry *lru_get_or_create(PopupSkiaCtx *pc,
     victim->pixel_baseline       = pc->engine->vtable->get_baseline(victim->layout);
 
     return victim;
+}
+
+static void scaled_font_desc(char *out, size_t out_size, const char *font_desc, int scale) {
+    char family[128] = "Sans";
+    int size = POPUP_DEFAULT_FONT_SIZE;
+    const char *last_space;
+
+    if (!out || out_size == 0) return;
+    if (scale < 1) scale = 1;
+
+    if (font_desc && font_desc[0]) {
+        last_space = strrchr(font_desc, ' ');
+        if (last_space && last_space[1]) {
+            size_t len = (size_t)(last_space - font_desc);
+            if (len >= sizeof(family)) len = sizeof(family) - 1;
+            memcpy(family, font_desc, len);
+            family[len] = '\0';
+            size = atoi(last_space + 1);
+            if (size <= 0) size = POPUP_DEFAULT_FONT_SIZE;
+        } else {
+            snprintf(family, sizeof(family), "%s", font_desc);
+        }
+    }
+
+    snprintf(out, out_size, "%s %d", family, size * scale);
+}
+
+static int logical_px(float physical_px, int scale) {
+    if (scale < 1) scale = 1;
+    return (int)ceilf(physical_px / (float)scale);
+}
+
+static float logical_float(float physical_px, int scale) {
+    if (scale < 1) scale = 1;
+    return physical_px / (float)scale;
 }
 
 /* ── Geometry helpers ───────────────────────────────────────────────── */
@@ -313,7 +349,7 @@ static void compute_positions(PopupGeometry *g, const PopupConfig *cfg, int pre_
 
 /* ── Public API ─────────────────────────────────────────────────────── */
 
-PopupGeometry *popup_geometry_compute(PopupSkiaCtx *pc,
+PopupGeometry *popup_geometry_compute(PopupRenderCtx *pc,
                                       const TypioCandidateList *candidates,
                                       const char *preedit_text,
                                       const char *mode_label,
@@ -342,6 +378,13 @@ PopupGeometry *popup_geometry_compute(PopupSkiaCtx *pc,
     TypioColor sel_color     = {(float)palette->selection_text_r, (float)palette->selection_text_g, (float)palette->selection_text_b, 1.0f};
     TypioColor preedit_color = {(float)palette->preedit_r,        (float)palette->preedit_g,        (float)palette->preedit_b,        1.0f};
     TypioColor muted_color   = label_color;
+    char scaled_font[96];
+    char scaled_label_font[96];
+    char scaled_aux_font[96];
+
+    scaled_font_desc(scaled_font, sizeof(scaled_font), cfg->font_desc, scale);
+    scaled_font_desc(scaled_label_font, sizeof(scaled_label_font), cfg->label_font_desc, scale);
+    scaled_font_desc(scaled_aux_font, sizeof(scaled_aux_font), cfg->aux_font_desc, scale);
 
     for (size_t i = 0; i < candidates->count; ++i) {
         char label_buf[64], text_buf[512];
@@ -349,11 +392,11 @@ PopupGeometry *popup_geometry_compute(PopupSkiaCtx *pc,
 
         /* Unselected variant — muted label + normal text colour */
         PopupLayoutEntry *entry = lru_get_or_create(pc, label_buf, text_buf,
-                                                     cfg->label_font_desc, cfg->font_desc,
+                                                     scaled_label_font, scaled_font,
                                                      label_color, text_color);
         /* Selected variant — both label and text use the selection-text colour */
         PopupLayoutEntry *entry_sel = lru_get_or_create(pc, label_buf, text_buf,
-                                                         cfg->label_font_desc, cfg->font_desc,
+                                                         scaled_label_font, scaled_font,
                                                          sel_color, sel_color);
 
         g->rows[i].label_layout     = entry->label_layout;
@@ -362,36 +405,36 @@ PopupGeometry *popup_geometry_compute(PopupSkiaCtx *pc,
         g->rows[i].layout_sel       = entry_sel->layout;
 
         /* Sizing comes from the unselected entry (metrics are colour-independent). */
-        g->rows[i].label_w = (int)entry->label_pixel_w;
-        g->rows[i].label_h = (int)entry->label_pixel_h;
-        g->rows[i].text_w  = (int)entry->pixel_w;
-        g->rows[i].text_h  = (int)entry->pixel_h;
-        g->rows[i].label_ink_y_offset = entry->label_pixel_baseline;
-        g->rows[i].text_ink_y_offset  = entry->pixel_baseline;
-        g->rows[i].w = (int)entry->label_pixel_w + POPUP_LABEL_GAP + (int)entry->pixel_w + POPUP_ROW_PAD_X * 2;
+        g->rows[i].label_w = logical_px(entry->label_pixel_w, scale);
+        g->rows[i].label_h = logical_px(entry->label_pixel_h, scale);
+        g->rows[i].text_w  = logical_px(entry->pixel_w, scale);
+        g->rows[i].text_h  = logical_px(entry->pixel_h, scale);
+        g->rows[i].label_ink_y_offset = logical_float(entry->label_pixel_baseline, scale);
+        g->rows[i].text_ink_y_offset  = logical_float(entry->pixel_baseline, scale);
+        g->rows[i].w = g->rows[i].label_w + POPUP_LABEL_GAP + g->rows[i].text_w + POPUP_ROW_PAD_X * 2;
         g->rows[i].h = (g->rows[i].label_h > g->rows[i].text_h
                         ? g->rows[i].label_h : g->rows[i].text_h) + POPUP_ROW_PAD_Y * 2;
     }
 
     if (preedit_text && preedit_text[0]) {
-        g->preedit_layout = pc->engine->vtable->create_layout(pc->engine, preedit_text, cfg->aux_font_desc, preedit_color);
+        g->preedit_layout = pc->engine->vtable->create_layout(pc->engine, preedit_text, scaled_aux_font, preedit_color);
         float fw, fh;
         pc->engine->vtable->get_metrics(g->preedit_layout, &fw, &fh);
-        g->pre_w = (int)fw; g->pre_h = (int)fh;
+        g->pre_w = logical_px(fw, scale); g->pre_h = logical_px(fh, scale);
     }
 
     if (cfg->mode_indicator && mode_label && mode_label[0]) {
-        g->mode_layout = pc->engine->vtable->create_layout(pc->engine, mode_label, cfg->aux_font_desc, muted_color);
+        g->mode_layout = pc->engine->vtable->create_layout(pc->engine, mode_label, scaled_aux_font, muted_color);
         float fw, fh;
         pc->engine->vtable->get_metrics(g->mode_layout, &fw, &fh);
-        g->mode_w = (int)fw; g->mode_h = (int)fh;
+        g->mode_w = logical_px(fw, scale); g->mode_h = logical_px(fh, scale);
     }
 
     compute_positions(g, cfg, (preedit_text && preedit_text[0]) ? 1 : 0);
     return g;
 }
 
-PopupGeometry *popup_geometry_update_aux(PopupSkiaCtx *pc,
+PopupGeometry *popup_geometry_update_aux(PopupRenderCtx *pc,
                                          const PopupGeometry *base,
                                          const char *preedit_text,
                                          const char *mode_label) {
@@ -405,18 +448,23 @@ PopupGeometry *popup_geometry_update_aux(PopupSkiaCtx *pc,
     const TypioCandidatePopupPalette *p = base->palette;
     TypioColor preedit_color = {(float)p->preedit_r, (float)p->preedit_g, (float)p->preedit_b, 1.0f};
     TypioColor muted_color   = {(float)p->muted_r,   (float)p->muted_g,   (float)p->muted_b,   1.0f};
+    char scaled_aux_font[96];
+
+    scaled_font_desc(scaled_aux_font, sizeof(scaled_aux_font), base->config.aux_font_desc, base->scale);
 
     if (preedit_text && preedit_text[0]) {
-        new_preedit_layout = pc->engine->vtable->create_layout(pc->engine, preedit_text, base->config.aux_font_desc, preedit_color);
+        new_preedit_layout = pc->engine->vtable->create_layout(pc->engine, preedit_text, scaled_aux_font, preedit_color);
         pc->engine->vtable->get_metrics(new_preedit_layout, &new_pre_w, &new_pre_h);
     }
     if (base->config.mode_indicator && mode_label && mode_label[0]) {
-        new_mode_layout = pc->engine->vtable->create_layout(pc->engine, mode_label, base->config.aux_font_desc, muted_color);
+        new_mode_layout = pc->engine->vtable->create_layout(pc->engine, mode_label, scaled_aux_font, muted_color);
         pc->engine->vtable->get_metrics(new_mode_layout, &new_mode_w, &new_mode_h);
     }
 
-    if ((int)new_pre_w != base->pre_w || (int)new_pre_h != base->pre_h ||
-        (int)new_mode_w != base->mode_w || (int)new_mode_h != base->mode_h) {
+    if (logical_px(new_pre_w, base->scale) != base->pre_w ||
+        logical_px(new_pre_h, base->scale) != base->pre_h ||
+        logical_px(new_mode_w, base->scale) != base->mode_w ||
+        logical_px(new_mode_h, base->scale) != base->mode_h) {
         if (new_preedit_layout) pc->engine->vtable->free_layout(new_preedit_layout);
         if (new_mode_layout) pc->engine->vtable->free_layout(new_mode_layout);
         return nullptr;
@@ -439,20 +487,8 @@ PopupGeometry *popup_geometry_update_aux(PopupSkiaCtx *pc,
 
 void popup_geometry_free(PopupGeometry *g) {
     if (!g) return;
-    // Preedit and mode layouts are owned by geometry
-    // But wait, who is the engine? We don't have the engine here.
-    // This is an architectural issue.
-    // We might need to store the engine pointer in PopupGeometry or just assume we know how to free it.
-    // Since we are in C++, maybe we should use smart pointers or a global engine?
-    // Let's assume TypioTextLayout can be freed if we have the engine.
-    // For now, I'll skip freeing these in PopupGeometry unless I have an engine ref.
-    // Wait, skia_engine.cc provides free_layout which just does `delete priv`.
-    // So we can just call it if we have it.
-    // I'll add a helper to free without engine if it's safe.
-    if (g->preedit_layout) {
-        /* We need the engine vtable... let's just use the fact that it's a delete priv. */
-        /* This is hacky. Better: the geometry compute/update functions should use a deleter. */
-    }
+    typio_flux_layout_free(g->preedit_layout);
+    typio_flux_layout_free(g->mode_layout);
     free(g);
 }
 

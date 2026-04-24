@@ -8,7 +8,8 @@
 - Wayland client development files
 - `xkbcommon` development files
 - `wayland-scanner`
-- **Skia** library and headers (placed in `external/skia`)
+- Vulkan, FreeType, HarfBuzz, and fontconfig development files
+- `glslangValidator`
 - a Wayland compositor that exposes `zwp_input_method_manager_v2`
 - Wayland applications in that session must use a working `zwp_text_input_manager_v3` path
 
@@ -24,7 +25,8 @@ cmake -S . -B build
 cmake --build build
 ```
 
-`ctest --test-dir build --output-on-failure` is optional if you only want a usable build.
+For local verification workflows, including automated tests and build-tree
+runtime checks, see [Testing Locally](testing.md).
 
 ## Try without Installing
 

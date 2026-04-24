@@ -118,14 +118,16 @@ Within the Wayland daemon, responsibilities are intentionally split by layer:
   `zwp_input_popup_surface_v2`.  A `PopupDelta` classifier drives render-path
   selection (selection-only, aux-only, content, or style rebuild).
 - `candidate_popup_layout.c`
-  Owns text measurement and geometry computation.  A persistent `PopupSkiaCtx`
-  holds a 64-entry LRU cache of `TypioTextLayout` objects keyed by formatted
+  Owns text measurement and geometry computation.  A persistent `PopupRenderCtx`
+  holds a 128-entry LRU cache of `TypioTextLayout` objects keyed by formatted
   candidate text and font description, so layouts survive page changes and avoid
   repeated font shaping.  `PopupGeometry` is an immutable snapshot of all
   computed positions; the selected index is deliberately excluded from it.
 - `candidate_popup_paint.c`
-  Owns Skia pixel rendering for all three render paths, each accepting a
-  `PopupGeometry*` rather than a long parameter list.
+  Owns Flux pixel rendering.  All paint paths share a single persistent
+  offscreen Vulkan surface stored in `PopupRenderCtx`; the surface is only
+  recreated when popup dimensions change.  Each path accepts a `PopupGeometry*`
+  rather than a long parameter list.
 - `key_route.c`
   Owns key-routing decisions. The current model separates final action
   (`consume` or `forward`) from routing reason (for example reserved Typio
@@ -336,8 +338,8 @@ any rendering work begins:
 | Delta | Trigger | Action |
 |-------|---------|--------|
 | `NONE` | Nothing visible changed | Skip rendering |
-| `SELECTION` | Only selected index changed | Repaint two rows only |
-| `AUX` | Only preedit / mode label changed (same popup size) | Repaint aux area only |
+| `SELECTION` | Only selected index changed | Full repaint (fast on persistent surface) |
+| `AUX` | Only preedit / mode label changed (same popup size) | Full repaint (fast on persistent surface) |
 | `CONTENT` | Candidate list changed (page navigation) | Full repaint |
 | `STYLE` | Font, theme, or output scale changed | Cache invalidation + full repaint |
 
@@ -351,11 +353,10 @@ auxiliary text positions for one page. The selected index is **not** part of the
 geometry; changing the selection never requires re-measuring text or recomputing
 positions.
 
-Text measurement and `TypioTextLayout` objects are owned by `PopupSkiaCtx`, a
-persistent per-popup structure holding a 64-entry LRU cache. Cache entries are
-keyed by `FNV-1a(formatted_text + font_desc)`. Layouts are created directly
-from Skia's `ParagraphBuilder` — no scratch drawing surface is needed for measurement.
-Metrics are resolved using `Paragraph::layout()` and painted onto an `SkCanvas`.
+Text measurement and `TypioTextLayout` objects are owned by `PopupRenderCtx`, a
+persistent per-popup structure holding a 128-entry LRU cache. Cache entries are
+keyed by `FNV-1a(formatted_text + font_desc + color)`. Layouts are shaped through
+HarfBuzz and rendered by Flux into the Wayland shm buffer.
 
 On a typical page change, most candidate layouts are already in the cache
 because the user has seen those candidates in a previous session or because the
@@ -366,23 +367,26 @@ bump.
 ### Paint paths
 
 `candidate_popup_paint.c` implements three paint functions, each accepting a
-`PopupGeometry*`:
+`PopupGeometry*`.  All three paths currently perform a **full redraw**:
 
 1. `popup_paint_full`
    Full background, border, all candidate rows, preedit, and mode label.
    Used for `CONTENT` and `STYLE` deltas.
 2. `popup_paint_selection`
-   Copies the last committed buffer, then repaints only the old and new
-   selected rows. Used for `SELECTION` delta.
+   Previously an incremental path that blitted the previous buffer and repainted
+   only two rows.  It is now a full redraw because the candidate popup is tiny
+   (typically <500×50 px) and the previous incremental path required creating a
+   temporary Vulkan image on every selection change, which triggered
+   `vkQueueWaitIdle` and caused multi-second GPU stalls.
 3. `popup_paint_aux`
-   Copies the last committed buffer, erases the old preedit and mode-label
-   regions, and draws the new ones. Used for `AUX` delta when popup dimensions
-   are unchanged; falls back to `popup_paint_full` otherwise.
+   Previously an incremental path for preedit/mode-label changes.  It is now a
+   full redraw for the same reason.
 
-The safety rule is strict: partial repaint paths may reuse the last committed
-buffer, but they must not change popup geometry or buffer-pool ownership
-semantics. If any precondition is not met the implementation falls back to
-`popup_paint_full`.
+The Vulkan offscreen surface is persistent across frames (stored in
+`PopupRenderCtx`).  It is only recreated when the buffer size changes (e.g.
+output scale change or content resize).  This eliminates per-frame pipeline
+reconstruction and the associated `vkDeviceWaitIdle` / `vkQueueWaitIdle`
+synchronisation that previously caused the watchdog to kill the process.
 
 ## Keyboard Safety Model
 

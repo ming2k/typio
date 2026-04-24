@@ -1,0 +1,8 @@
+option('wayland',    type : 'feature', value : 'auto',
+       description : 'Build Wayland surface support')
+option('examples',   type : 'boolean', value : true,
+       description : 'Build example programs')
+option('tests',      type : 'boolean', value : true,
+       description : 'Build unit + golden tests')
+option('validation', type : 'feature', value : 'auto',
+       description : 'Compile-in Vulkan validation-layer loading')
