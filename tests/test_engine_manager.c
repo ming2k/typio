@@ -173,6 +173,38 @@ static TypioEngine *mock2_create(void) {
     return typio_engine_new(&mock2_engine_info, &mock_engine_ops);
 }
 
+static TypioResult failing_init([[maybe_unused]] TypioEngine *engine,
+                                [[maybe_unused]] TypioInstance *instance) {
+    return TYPIO_ERROR;
+}
+
+static const TypioEngineOps failing_engine_ops = {
+    .init = failing_init,
+    .destroy = mock_destroy,
+    .process_key = mock_process_key,
+};
+
+static const TypioEngineInfo failing_engine_info = {
+    .name = "failing",
+    .display_name = "Failing Engine",
+    .description = "An engine that fails activation",
+    .version = "1.0.0",
+    .author = "Test",
+    .icon = "failing",
+    .language = "en",
+    .type = TYPIO_ENGINE_TYPE_KEYBOARD,
+    .capabilities = TYPIO_CAP_PREEDIT,
+    .api_version = TYPIO_API_VERSION,
+};
+
+static const TypioEngineInfo *failing_get_info(void) {
+    return &failing_engine_info;
+}
+
+static TypioEngine *failing_create(void) {
+    return typio_engine_new(&failing_engine_info, &failing_engine_ops);
+}
+
 /* Mock voice engine */
 static const TypioEngineInfo mock_voice_info = {
     .name = "mock-voice",
@@ -193,6 +225,27 @@ static const TypioEngineInfo *mock_voice_get_info(void) {
 
 static TypioEngine *mock_voice_create(void) {
     return typio_engine_new(&mock_voice_info, &mock_engine_ops);
+}
+
+static const TypioEngineInfo failing_voice_info = {
+    .name = "failing-voice",
+    .display_name = "Failing Voice Engine",
+    .description = "A voice engine that fails activation",
+    .version = "1.0.0",
+    .author = "Test",
+    .icon = NULL,
+    .language = NULL,
+    .type = TYPIO_ENGINE_TYPE_VOICE,
+    .capabilities = TYPIO_CAP_VOICE_INPUT,
+    .api_version = TYPIO_API_VERSION,
+};
+
+static const TypioEngineInfo *failing_voice_get_info(void) {
+    return &failing_voice_info;
+}
+
+static TypioEngine *failing_voice_create(void) {
+    return typio_engine_new(&failing_voice_info, &failing_engine_ops);
 }
 
 /* Test: Engine manager creation */
@@ -407,6 +460,54 @@ TEST(switch_engine_rebinds_focused_context) {
     ASSERT_EQ(mock_focus_out_count, 1);
     ASSERT_EQ(mock2_focus_in_count, 1);
     ASSERT_EQ(mock2_focus_out_count, 0);
+
+    typio_instance_free(instance);
+}
+
+TEST(failed_keyboard_switch_restores_previous_engine) {
+    TypioInstance *instance = typio_instance_new();
+    typio_instance_init(instance);
+
+    TypioEngineManager *manager = typio_instance_get_engine_manager(instance);
+
+    typio_engine_manager_register(manager, mock_create, mock_get_info);
+    typio_engine_manager_register(manager, failing_create, failing_get_info);
+
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "mock"), TYPIO_OK);
+    TypioEngine *active = typio_engine_manager_get_active(manager);
+    ASSERT_NOT_NULL(active);
+    ASSERT_STR_EQ(typio_engine_get_name(active), "mock");
+    ASSERT(typio_engine_is_active(active));
+
+    ASSERT_EQ(typio_engine_manager_set_active(manager, "failing"), TYPIO_ERROR);
+    active = typio_engine_manager_get_active(manager);
+    ASSERT_NOT_NULL(active);
+    ASSERT_STR_EQ(typio_engine_get_name(active), "mock");
+    ASSERT(typio_engine_is_active(active));
+
+    typio_instance_free(instance);
+}
+
+TEST(failed_voice_switch_restores_previous_engine) {
+    TypioInstance *instance = typio_instance_new();
+    typio_instance_init(instance);
+
+    TypioEngineManager *manager = typio_instance_get_engine_manager(instance);
+
+    typio_engine_manager_register(manager, mock_voice_create, mock_voice_get_info);
+    typio_engine_manager_register(manager, failing_voice_create, failing_voice_get_info);
+
+    ASSERT_EQ(typio_engine_manager_set_active_voice(manager, "mock-voice"), TYPIO_OK);
+    TypioEngine *active_voice = typio_engine_manager_get_active_voice(manager);
+    ASSERT_NOT_NULL(active_voice);
+    ASSERT_STR_EQ(typio_engine_get_name(active_voice), "mock-voice");
+    ASSERT(typio_engine_is_active(active_voice));
+
+    ASSERT_EQ(typio_engine_manager_set_active_voice(manager, "failing-voice"), TYPIO_ERROR);
+    active_voice = typio_engine_manager_get_active_voice(manager);
+    ASSERT_NOT_NULL(active_voice);
+    ASSERT_STR_EQ(typio_engine_get_name(active_voice), "mock-voice");
+    ASSERT(typio_engine_is_active(active_voice));
 
     typio_instance_free(instance);
 }
@@ -727,6 +828,8 @@ int main(void) {
     run_test_keyboard_and_voice_slots_are_independent();
     run_test_switch_engines();
     run_test_switch_engine_rebinds_focused_context();
+    run_test_failed_keyboard_switch_restores_previous_engine();
+    run_test_failed_voice_switch_restores_previous_engine();
     run_test_unload_engine();
     run_test_engine_capabilities();
     run_test_engine_user_data();

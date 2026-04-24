@@ -5,7 +5,7 @@ Wayland text-input/input-method protocol stack and provides:
 
 - `typio-core`: the engine, context, config, and plugin runtime
 - `typio`: a `zwp_input_method_v2` Wayland frontend
-- `typio-client`: a D-Bus CLI for controlling a running daemon
+- `typio` client commands: a D-Bus CLI mode for controlling a running daemon
 - `basic`: a built-in keyboard engine that commits printable text directly
 - `rime`: the default Chinese input engine plugin backed by `librime`
 - a shared-library engine ABI for richer out-of-tree engines
@@ -68,7 +68,7 @@ automatically in the background; there is no global `Apply` / `Cancel` flow.
 Run directly from the build tree (no install needed):
 
 ```bash
-./build/src/apps/daemon/typio --engine basic --verbose
+./build/src/apps/typio/typio --engine basic --verbose
 ```
 
 Install is only needed for packaging or verifying the installed layout:
@@ -95,7 +95,6 @@ Runtime requirements:
 Installed artifacts:
 
 - `bin/typio`
-- `bin/typio-client`
 - `lib/libtypio-core.so` or `lib/libtypio-core.a`
 - `include/typio/*.h`
 - `lib/pkgconfig/typio.pc`
@@ -122,8 +121,7 @@ Installed artifacts:
 The source tree is organized by product boundary:
 
 - `src/core/`: shared library code and public headers under `include/typio/`
-- `src/apps/daemon/`: the `typio` Wayland daemon
-- `src/apps/cli/`: the `typio-client` D-Bus CLI
+- `src/apps/typio/`: the `typio` Wayland daemon and D-Bus CLI
 - `src/apps/control/`: the `typio-control` GTK control panel
 - `src/engines/`: built-in and plugin engine implementations
 

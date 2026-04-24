@@ -39,7 +39,8 @@ Rules:
 - only the daemon writes it
 - control surfaces mutate config through daemon APIs such as
   `SetConfigText`
-- config defaults happen daemon-side
+- config defaults happen daemon-side on initial load, explicit reload, and
+  accepted `SetConfigText`
 
 Examples:
 
@@ -58,6 +59,8 @@ Rules:
   from config
 - runtime state may differ temporarily from persisted config during startup,
   reload, failure, or async engine switching
+- when an engine switch fails, runtime state should remain on the previously
+  active engine if it can be restored; persisted intent is not silently changed
 
 Current runtime properties include:
 
@@ -186,6 +189,30 @@ Current examples:
 
 This is intentionally narrow. Do not attach a runtime property unless there is
 one stable daemon property that represents the field's live value.
+
+## Reload And Rollback Rules
+
+Config reload is a daemon-owned boundary:
+
+1. parse the replacement config
+2. apply schema defaults
+3. switch affected runtime engines
+4. refresh runtime subsystems through the frontend callback
+5. publish updated runtime/config state over D-Bus
+
+Rules:
+
+- empty or invalid replacement config is rejected before defaults are applied
+- missing config files are treated as an empty user config plus schema defaults
+- if a requested keyboard or voice engine cannot be created or activated, the
+  engine manager restores the previous active engine in that category when
+  possible
+- keyboard and voice rollback are independent; a failed voice switch must not
+  disturb the active keyboard engine, and a failed keyboard switch must not
+  disturb the active voice engine
+- voice reload may complete after the config reload boundary if recording or
+  inference is currently active; during that window runtime state may briefly
+  report the old active voice backend
 
 ## Best-Practice Workflow For New State
 

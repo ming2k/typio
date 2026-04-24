@@ -1,6 +1,7 @@
 #include "wl_frontend_internal.h"
 
 #include "frontend_aux.h"
+#include "monotonic_time.h"
 #include "text_ui_state.h"
 #include "typio/input_context.h"
 #include "utils/log.h"
@@ -92,7 +93,8 @@ static int event_loop_poll(TypioWlFrontend *frontend,
                            struct pollfd *fds,
                            int *idx_display,
                            int *idx_repeat,
-                           int *idx_config
+                           int *idx_config,
+                           int *idx_config_reload
 #ifdef HAVE_SYSTRAY
                            , int *idx_tray
 #endif
@@ -124,9 +126,13 @@ static int event_loop_poll(TypioWlFrontend *frontend,
 #endif
 #ifdef HAVE_VOICE
     *idx_voice = -1;
-    if (!aux->voice_disabled && aux->voice_fd >= 0) {
-        *idx_voice = nfds;
-        fds[nfds++] = (struct pollfd){ .fd = aux->voice_fd, .events = POLLIN };
+    if (!aux->voice_disabled) {
+        int voice_fd = frontend->voice ? typio_voice_service_get_fd(frontend->voice) : -1;
+        if (voice_fd >= 0) {
+            aux->voice_fd = voice_fd;
+            *idx_voice = nfds;
+            fds[nfds++] = (struct pollfd){ .fd = aux->voice_fd, .events = POLLIN };
+        }
     }
 #endif
 
@@ -145,8 +151,28 @@ static int event_loop_poll(TypioWlFrontend *frontend,
         fds[nfds++] = (struct pollfd){ .fd = frontend->config_watch_fd, .events = POLLIN };
     }
 
+    *idx_config_reload = -1;
+    {
+        int config_reload_fd = typio_wl_frontend_get_config_reload_fd(frontend);
+        if (config_reload_fd >= 0) {
+            *idx_config_reload = nfds;
+            fds[nfds++] = (struct pollfd){ .fd = config_reload_fd, .events = POLLIN };
+        }
+    }
+
     typio_wl_frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_POLL);
-    return poll(fds, (nfds_t)nfds, 100);
+    int timeout_ms = 100;
+    if (frontend->virtual_keyboard_state == TYPIO_WL_VK_STATE_NEEDS_KEYMAP &&
+        frontend->virtual_keyboard_keymap_deadline_ms > 0) {
+        uint64_t now_ms = typio_wl_monotonic_ms();
+        int deadline_ms = frontend->virtual_keyboard_keymap_deadline_ms <= now_ms
+                              ? 0
+                              : (int)(frontend->virtual_keyboard_keymap_deadline_ms - now_ms);
+        if (deadline_ms < timeout_ms) {
+            timeout_ms = deadline_ms;
+        }
+    }
+    return poll(fds, (nfds_t)nfds, timeout_ms);
 }
 
 static int event_loop_handle_wayland(TypioWlFrontend *frontend,
@@ -308,10 +334,11 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
     aux = event_loop_init_aux_fds(frontend);
 
     while (frontend->running) {
-        struct pollfd fds[6];
+        struct pollfd fds[7];
         int idx_display;
         int idx_repeat;
         int idx_config;
+        int idx_config_reload;
         int ret;
 #ifdef HAVE_SYSTRAY
         int idx_tray;
@@ -331,7 +358,8 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
             return -1;
         }
 
-        ret = event_loop_poll(frontend, &aux, fds, &idx_display, &idx_repeat, &idx_config
+        ret = event_loop_poll(frontend, &aux, fds, &idx_display, &idx_repeat, &idx_config,
+                              &idx_config_reload
 #ifdef HAVE_SYSTRAY
                               , &idx_tray
 #endif
@@ -392,6 +420,13 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
         if (idx_config >= 0 && (fds[idx_config].revents & POLLIN)) {
             typio_wl_frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_CONFIG_RELOAD);
             typio_wl_frontend_handle_config_watch(frontend);
+            typio_wl_frontend_watchdog_heartbeat(frontend);
+            typio_wl_frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
+        }
+
+        if (idx_config_reload >= 0 && (fds[idx_config_reload].revents & POLLIN)) {
+            typio_wl_frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_CONFIG_RELOAD);
+            typio_wl_frontend_dispatch_config_reload(frontend);
             typio_wl_frontend_watchdog_heartbeat(frontend);
             typio_wl_frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
         }

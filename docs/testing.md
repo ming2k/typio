@@ -76,6 +76,21 @@ Run the full test suite:
 ctest --test-dir build --output-on-failure
 ```
 
+Run with an isolated D-Bus session when validating status-bus, tray, or
+CI-like behavior:
+
+```bash
+dbus-run-session -- ctest --test-dir build --output-on-failure
+```
+
+Run sanitizer coverage:
+
+```bash
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON -DENABLE_UBSAN=ON
+cmake --build build-asan
+dbus-run-session -- ctest --test-dir build-asan --output-on-failure
+```
+
 Useful individual binaries:
 
 ```bash
@@ -102,24 +117,24 @@ Runtime checks require a Wayland session where:
 Run the daemon without installing:
 
 ```bash
-./build/src/apps/daemon/typio --engine basic --verbose
+./build/src/apps/typio/typio --engine basic --verbose
 ```
 
 List available engines from the build tree:
 
 ```bash
-./build/src/apps/daemon/typio --engine-dir ./build/engines --list
+./build/src/apps/typio/typio --engine-dir ./build/engines --list
 ```
 
 Run with a plugin engine built into `./build/engines`:
 
 ```bash
-./build/src/apps/daemon/typio --engine-dir ./build/engines --engine rime --verbose
+./build/src/apps/typio/typio --engine-dir ./build/engines --engine rime --verbose
 ```
 
 Common build-tree outputs:
 
-- `./build/src/apps/daemon/typio`
+- `./build/src/apps/typio/typio`
 - `./build/src/apps/control/typio-control` when `BUILD_CONTROL_PANEL=ON`
 - `./build/engines/*.so` for plugin engines
 

@@ -18,6 +18,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <sys/inotify.h>
+#include <sys/timerfd.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -295,6 +296,8 @@ static void frontend_setup_config_watch(TypioWlFrontend *frontend) {
     frontend->config_watch_fd = -1;
     frontend->config_dir_watch = -1;
     frontend->config_engines_watch = -1;
+    frontend->config_reload_timer_fd = -1;
+    frontend->config_reload_pending = false;
 
     config_dir = typio_instance_get_config_dir(frontend->instance);
     if (!config_dir || !*config_dir) {
@@ -305,6 +308,13 @@ static void frontend_setup_config_watch(TypioWlFrontend *frontend) {
     if (frontend->config_watch_fd < 0) {
         typio_log(TYPIO_LOG_WARNING, "Failed to initialize configuration watch");
         return;
+    }
+
+    frontend->config_reload_timer_fd = timerfd_create(CLOCK_MONOTONIC,
+                                                      TFD_NONBLOCK | TFD_CLOEXEC);
+    if (frontend->config_reload_timer_fd < 0) {
+        typio_log(TYPIO_LOG_WARNING,
+                  "Failed to initialize configuration reload debounce timer");
     }
 
     frontend->config_dir_watch = inotify_add_watch(frontend->config_watch_fd,
@@ -535,6 +545,10 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
     if (frontend->config_watch_fd >= 0) {
         close(frontend->config_watch_fd);
         frontend->config_watch_fd = -1;
+    }
+    if (frontend->config_reload_timer_fd >= 0) {
+        close(frontend->config_reload_timer_fd);
+        frontend->config_reload_timer_fd = -1;
     }
 
 #ifdef HAVE_VOICE

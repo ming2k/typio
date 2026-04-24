@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            build_dir: build
+            cmake_args: ""
+          - name: asan-ubsan
+            build_dir: build-sanitize
+            cmake_args: "-DENABLE_ASAN=ON -DENABLE_UBSAN=ON"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            dbus \
+            pkg-config \
+            wayland-protocols \
+            libdbus-1-dev \
+            libwayland-dev \
+            libxkbcommon-dev
+
+      - name: Configure
+        run: >
+          cmake -S . -B "${{ matrix.build_dir }}"
+          -DBUILD_RIME_ENGINE=OFF
+          -DBUILD_MOZC_ENGINE=OFF
+          -DBUILD_CONTROL_PANEL=OFF
+          -DENABLE_SYSTRAY=OFF
+          ${{ matrix.cmake_args }}
+
+      - name: Build
+        run: cmake --build "${{ matrix.build_dir }}" --parallel
+
+      - name: Test
+        run: dbus-run-session -- ctest --test-dir "${{ matrix.build_dir }}" --output-on-failure

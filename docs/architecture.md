@@ -56,8 +56,9 @@ The source tree is organized by stable product boundary first:
   `runtime/` holds the core implementation, and `utils/` holds internal
   support code used by the runtime.
 - `src/apps/`
-  Executable programs. `daemon/` is the Wayland IME host, `cli/` is the
-  D-Bus command-line control surface, and `control/` is the GTK control panel.
+  Executable programs. `typio/` contains the Wayland IME host, the D-Bus
+  command-line control surface, status bus, tray, and voice plumbing.
+  `control/` is the GTK control panel.
 - `src/engines/`
   Built-in and pluggable input-engine implementations.
 
@@ -91,7 +92,7 @@ Internal split:
 
 ### `typio`
 
-Located under `src/apps/daemon/`.
+Located under `src/apps/typio/`.
 
 Responsibilities:
 
@@ -140,9 +141,12 @@ Within the Wayland daemon, responsibilities are intentionally split by layer:
   emergency-exit fast path before normal routing.
 - `wl_event_loop.c`
   Owns the polling loop, Wayland dispatch, watchdog staging, and aux-fd
-  integration such as tray, status bus, voice, repeat, and config watch.
+  integration such as tray, status bus, voice, repeat, config watch, and the
+  debounced config-reload timer. It is also responsible for keeping the poll
+  timeout short enough to honor virtual-keyboard keymap deadlines.
 - `wl_runtime_config.c`
-  Owns runtime config reload, shortcut refresh, and text-UI config invalidation.
+  Owns runtime config reload, shortcut refresh, text-UI config invalidation,
+  config-watch rearming, and coalescing filesystem events before a reload.
 - `wl_frontend.c`
   Owns frontend construction, registry/global binding, and teardown glue.
 
@@ -239,6 +243,17 @@ For built-in integrations, Typio's authoritative user configuration now lives
 in the root file `~/.config/typio/typio.toml`, typically under sections such
 as `[engines.rime]` and `[engines.mozc]`.
 
+Activation rules:
+
+- engine instances are created lazily when an engine is selected
+- switching a keyboard engine never evicts the active voice engine
+- switching a voice engine never evicts the active keyboard engine
+- if creating or activating the requested engine fails, the manager attempts
+  to restore the previously active engine in the same category
+- next/previous keyboard switching resolves against the ordered keyboard list,
+  not the raw registration table, so hidden or non-keyboard entries do not
+  affect keyboard cycling
+
 ## Engine Categories
 
 Typio models input engines in two parallel categories:
@@ -257,6 +272,30 @@ Operational rules:
 - keyboard and voice selections do not evict each other
 - the tray, status bus, and control panel should treat keyboard and voice as
   separate runtime values, not as one flat engine list
+
+## Runtime Scheduling
+
+The daemon is single-process and event-loop driven. The main loop polls:
+
+- Wayland display events
+- keyboard repeat timer
+- status D-Bus fd
+- tray D-Bus fd
+- voice completion fd
+- config inotify fd
+- config reload timer fd
+
+Scheduling rules:
+
+- Wayland dispatch remains the primary path and must not be starved by
+  auxiliary fds
+- D-Bus dispatchers process a bounded number of messages per tick
+- config filesystem events are debounced before reload so editor save bursts
+  produce one runtime refresh
+- the virtual-keyboard keymap deadline can shorten the poll timeout while the
+  frontend is waiting for a keymap
+- voice reloads are deferred while recording or inference is active, then
+  applied once the active voice job finishes
 
 The built-in `basic` engine is the baseline keyboard engine. Voice backends
 such as Whisper and sherpa-onnx belong to the voice category.

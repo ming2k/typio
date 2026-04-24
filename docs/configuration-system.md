@@ -53,16 +53,21 @@ These are sufficient for Typio's flat configuration model.
 missing key to the field's default value.  Existing user values are never
 overwritten.
 
+Defaults are applied after initial load, after `ReloadConfig()`, and after a
+valid `SetConfigText(s)` replacement has been parsed. Empty `SetConfigText`
+content is rejected before defaults are applied so an accidental blank write
+cannot silently become a full default config.
+
 After this step the daemon holds a complete config with no missing defaults.
 
-### 4. Hold
+### 3. Hold
 
 `TypioInstance` owns the live `TypioConfig *`.  All daemon subsystems
 read from it.  Engine-specific sections are extracted via
 `typio_instance_get_engine_config(instance, "rime")`, which returns a
 copied sub-config.
 
-### 5. Expose Over D-Bus
+### 4. Expose Over D-Bus
 
 The D-Bus service, path, and interface constants are defined in
 `typio/dbus_protocol.h` (part of the public library) so that both the
@@ -84,7 +89,7 @@ And two config-mutating methods:
 
 Both emit `PropertiesChanged` after completing.
 
-### 6. Edit From Control Surfaces
+### 5. Edit From Control Surfaces
 
 Control surfaces follow the instant-apply model documented in
 `control-surfaces.md`:
@@ -96,21 +101,27 @@ Control surfaces follow the instant-apply model documented in
 
 Control surfaces never write `typio.toml` directly.
 
-### 7. Reload
+### 6. Reload
 
 `typio_instance_reload_config` (called by `SetConfigText`, `ReloadConfig`,
-or inotify) replaces the in-memory config, re-runs defaults,
+or the debounced config-watch timer) replaces the in-memory config, re-runs defaults,
 switches the active engine if `default_engine` changed, tells the active
 engine to `reload_config`, and fires the `config_reloaded_callback`.  The
 Wayland frontend registers this callback to refresh shortcuts, voice, and
 the status bus.
+
+Inotify events do not reload config directly. `wl_runtime_config.c` schedules a
+short debounce timer so common editor save patterns (`write`, `rename`,
+`chmod`, multiple close events) collapse into one reload. If the watched file
+is deleted, moved, or atomically replaced, the watcher is rearmed before the
+reload is scheduled.
 
 The callback boundary means Typio accepted the new config and refreshed the
 runtime pipeline. It does not require every optional subsystem to finish heavy
 work synchronously. In particular, voice backends may continue loading a
 replacement model on a background thread after `reload_config` returns.
 
-### 8. Explicit Rime Deploy
+### 7. Explicit Rime Deploy
 
 `typio_instance_deploy_rime_config` is the manual rebuild path for out-of-band
 Rime edits under `user_data_dir`, such as `default.custom.yaml`. Unlike normal
@@ -162,6 +173,10 @@ should prefer that runtime property for display state when appropriate. See
 - `ConfigText` round-trips: `load_string(to_string(config))` produces
   an equivalent config.
 - `apply_defaults` never overwrites a user-set value.
+- all daemon-owned config entry points apply schema defaults before publishing
+  the config to runtime subsystems.
+- config watch reloads are debounced and must be safe across atomic file
+  replacement.
 - Control surfaces must not write config state before receiving the first
   `ConfigText` from the daemon (see the known failure pattern in
   `control-surfaces.md`).

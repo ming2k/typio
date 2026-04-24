@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.4] - 2026-04-25
+
+### Added
+
+- **CI coverage**: Added GitHub Actions jobs for default and ASan/UBSan test
+  runs using an isolated D-Bus session.
+- **Engine manager regression coverage**: Added tests that verify failed
+  keyboard and voice engine switches restore the previously active engine.
+
+### Changed
+
+- **Config hot reload scheduling**: Runtime config watch events are now
+  debounced and file watches are rearmed after editor-style atomic
+  replacement.
+- **Event loop scheduling**: Poll timeouts now account for virtual-keyboard
+  keymap deadlines, and auxiliary D-Bus dispatch is bounded per tick.
+- **Voice reload handling**: Voice service reload is deferred while recording
+  or inference is active and applied after the current job completes.
+- **Config defaults**: Schema defaults are applied consistently across
+  initial load, reload, and accepted `SetConfigText` updates.
+
+### Fixed
+
+- **Engine switch rollback**: Failed keyboard or voice engine activation no
+  longer clears the previously active engine in that category.
+- **Keyboard cycling resolution**: Next/previous keyboard switching now resolves
+  against the ordered keyboard list instead of mixing ordered indices with raw
+  registration entries.
+
 ## [3.0.3] - 2026-04-24
 
 ### Fixed

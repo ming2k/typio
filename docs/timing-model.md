@@ -75,6 +75,12 @@ Additional rule:
   cleanup and temporary VK modifier carry across deactivation
 - `vk_bridge.*` owns virtual-keyboard health, keymap deadlines, readiness
   gating, and fail-safe downgrade
+- `wl_event_loop.c` owns poll scheduling, bounded auxiliary-fd dispatch, and
+  deadline-aware wakeups
+- `wl_runtime_config.c` owns config-watch events, debounce timing, watch
+  rearming, and the final runtime reload boundary
+- `voice_service.c` owns voice recording/inference state and deferred voice
+  reload application
 - `xkb_state` owns the logical modifier view
 - `modifier_policy.*` owns effective event-modifier resolution
 - engine implementations own only engine/composition behavior
@@ -189,6 +195,29 @@ Rules:
 - `Ctrl+Shift` and similar modifier-only shortcuts are not Typio-owned input
   behavior and should remain transparent to the application/compositor path
 
+## Event Loop Scheduling
+
+The Wayland frontend uses one poll loop for Wayland and auxiliary runtime
+sources. Auxiliary fds are part of the same timing model because they can
+otherwise delay keymap deadlines, lifecycle cleanup, or user-visible config
+changes.
+
+Rules:
+
+- while the virtual keyboard is in `needs_keymap`, the poll timeout must not
+  sleep past the current keymap deadline
+- status and tray D-Bus dispatch must be bounded per tick so a busy bus cannot
+  starve Wayland dispatch, voice completion, repeat, or config reload
+- config watch events schedule a debounced reload instead of reloading
+  immediately for each inotify event
+- config watches must be rearmed after the watched file is deleted, moved, or
+  replaced by an editor save sequence
+- voice service reload must not swap the active voice engine while recording
+  or inference owns the current engine snapshot; the reload is marked pending
+  and applied after the active job completes
+- the voice fd is refreshed when runtime config changes because voice
+  availability can change after an engine reload
+
 ## Invariants
 
 - no key press/release events are processed outside the `active` phase
@@ -204,6 +233,10 @@ Rules:
 - a rebuilt keyboard grab must not inherit prior-grab keymap health
 - fail-safe paths must prefer releasing the keyboard grab over continuing to
   run in a partially broken forwarding state
+- config reload bursts must coalesce into a single runtime reload once the
+  filesystem settles
+- an engine switch failure must not silently clear the previously active engine
+  in that same category
 
 ## Test Expectations
 

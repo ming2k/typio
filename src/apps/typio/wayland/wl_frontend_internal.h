@@ -264,6 +264,8 @@ struct TypioWlFrontend {
     int config_watch_fd;
     int config_dir_watch;
     int config_engines_watch;
+    int config_reload_timer_fd;
+    bool config_reload_pending;
 
     /* Configurable shortcut bindings */
     TypioShortcutConfig shortcuts;
@@ -289,6 +291,8 @@ void typio_wl_frontend_watchdog_stop(TypioWlFrontend *frontend);
 void typio_wl_frontend_log_shortcuts(TypioWlFrontend *frontend,
                                      const char *prefix);
 void typio_wl_frontend_handle_config_watch(TypioWlFrontend *frontend);
+int typio_wl_frontend_get_config_reload_fd(TypioWlFrontend *frontend);
+void typio_wl_frontend_dispatch_config_reload(TypioWlFrontend *frontend);
 
 /* Input method functions (wl_input_method.c) */
 void typio_wl_input_method_setup(TypioWlFrontend *frontend);

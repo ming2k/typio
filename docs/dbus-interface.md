@@ -156,9 +156,9 @@ sessions to pick up the changes on the next keystroke.
 
 ## Implementation Notes
 
-- The server-side handler lives in `src/apps/daemon/status/status.c`.
+- The server-side handler lives in `src/apps/typio/status/status.c`.
 - Protocol constants are in `src/core/include/typio/dbus_protocol.h`.
-- `typio` source is in `src/apps/cli/main.c` — a pure D-Bus client
-  with no dependency on `typio-core`.
+- `typio` client-mode source lives under `src/apps/typio/` and uses D-Bus
+  without depending on `typio-core`.
 - `typio-control` (GTK4) uses the same D-Bus interface via GDBusProxy.
 - The status bus integration test is in `tests/test_status_bus.c`.

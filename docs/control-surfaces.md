@@ -130,7 +130,7 @@ binding layer instead of direct one-off widget code.
 Implementation locations:
 
 - `src/apps/control/` for the GTK control panel
-- `src/apps/daemon/tray/` for the tray control surface
+- `src/apps/typio/tray/` for the tray control surface
 - `src/core/include/typio/` and `src/core/runtime/` for shared config and
   schema helpers consumed by those surfaces
 

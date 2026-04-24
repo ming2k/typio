@@ -8,6 +8,8 @@
 #include "utils/log.h"
 #include "utils/string.h"
 
+#define TYPIO_TRAY_BUS_MAX_DISPATCH_PER_TICK 16
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -242,12 +244,16 @@ int typio_tray_get_fd(TypioTray *tray) {
 }
 
 int typio_tray_dispatch(TypioTray *tray) {
+    int dispatched = 0;
+
     if (!tray || !tray->conn) {
         return -1;
     }
 
     dbus_connection_read_write(tray->conn, 0);
-    while (dbus_connection_dispatch(tray->conn) == DBUS_DISPATCH_DATA_REMAINS) {
+    while (dispatched < TYPIO_TRAY_BUS_MAX_DISPATCH_PER_TICK &&
+           dbus_connection_dispatch(tray->conn) == DBUS_DISPATCH_DATA_REMAINS) {
+        dispatched++;
     }
 
     return 0;

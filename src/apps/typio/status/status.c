@@ -21,6 +21,7 @@
 #include <string.h>
 
 #define DBUS_PROPERTIES_INTERFACE "org.freedesktop.DBus.Properties"
+#define TYPIO_STATUS_BUS_MAX_DISPATCH_PER_TICK 16
 
 struct TypioStatusBus {
     TypioInstance *instance;
@@ -991,12 +992,16 @@ int typio_status_bus_get_fd(TypioStatusBus *bus) {
 }
 
 int typio_status_bus_dispatch(TypioStatusBus *bus) {
+    int dispatched = 0;
+
     if (!bus || !bus->conn) {
         return -1;
     }
 
     dbus_connection_read_write(bus->conn, 0);
-    while (dbus_connection_dispatch(bus->conn) == DBUS_DISPATCH_DATA_REMAINS) {
+    while (dispatched < TYPIO_STATUS_BUS_MAX_DISPATCH_PER_TICK &&
+           dbus_connection_dispatch(bus->conn) == DBUS_DISPATCH_DATA_REMAINS) {
+        dispatched++;
     }
 
     return 0;

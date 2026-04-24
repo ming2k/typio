@@ -56,7 +56,7 @@ Rule: no `TypioKeyTrackState` value may survive from one activation to the next.
 
 ## Key Tracking State Machine
 
-`TypioKeyTrackState` lives in `src/apps/daemon/wayland/wl_frontend_internal.h`.
+`TypioKeyTrackState` lives in `src/apps/typio/wayland/wl_frontend_internal.h`.
 Per-key ownership also tracks a `key_generation`: a key cycle belongs to the
 current grab only if Typio observed its press in the current generation.
 
@@ -173,6 +173,16 @@ Before merging keyboard-path changes, verify:
 - startup Enter suppression does not emit a lone app-facing release
 - tests cover the new state transition or lifecycle boundary
 
+Before merging runtime-scheduling changes, verify:
+
+- virtual-keyboard keymap deadlines still shorten the poll timeout while
+  waiting for `ready`
+- config reload bursts are debounced and file replacement re-arms the watch
+- status and tray D-Bus dispatch are bounded per event-loop tick
+- voice reload is deferred while recording or processing and applied afterward
+- failed keyboard or voice engine switches restore the previous active engine
+  in the same category
+
 ## Required Tests
 
 At minimum, keyboard-path changes should keep these areas covered:
@@ -223,5 +233,8 @@ Any change that modifies one of these must update this manual:
 - activation/deactivation ordering
 - synthetic release behavior
 - keyboard repeat ownership
+- runtime event-loop scheduling
+- config-watch reload behavior
+- voice reload deferral
 
 This keeps maintenance knowledge in-repo instead of in commit history only.

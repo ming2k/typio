@@ -8,6 +8,7 @@
 #include "typio/engine_manager.h"
 #include "typio/input_context.h"
 #include "typio/config.h"
+#include "typio/config_schema.h"
 #include "typio_build_config.h"
 #include "../utils/log.h"
 #include "../utils/string.h"
@@ -233,6 +234,22 @@ static void register_builtin_engines(TypioInstance *instance) {
 #endif
 }
 
+static TypioResult instance_ensure_config(TypioInstance *instance) {
+    if (!instance) {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!instance->config) {
+        instance->config = typio_config_new();
+    }
+    if (!instance->config) {
+        return TYPIO_ERROR_OUT_OF_MEMORY;
+    }
+
+    typio_config_apply_defaults(instance->config);
+    return TYPIO_OK;
+}
+
 TypioInstance *typio_instance_new(void) {
     return typio_instance_new_with_config(nullptr);
 }
@@ -336,6 +353,8 @@ void typio_instance_free(TypioInstance *instance) {
 }
 
 TypioResult typio_instance_init(TypioInstance *instance) {
+    TypioResult result;
+
     if (!instance) {
         return TYPIO_ERROR_INVALID_ARGUMENT;
     }
@@ -361,6 +380,11 @@ TypioResult typio_instance_init(TypioInstance *instance) {
     if (!instance->config) {
         instance->config = typio_config_new();
     }
+    result = instance_ensure_config(instance);
+    if (result != TYPIO_OK) {
+        typio_log_error("Failed to initialize configuration");
+        return result;
+    }
 
     /* Create engine manager */
     instance->engine_manager = typio_engine_manager_new(instance);
@@ -384,8 +408,8 @@ TypioResult typio_instance_init(TypioInstance *instance) {
     }
 
     if (default_engine) {
-        TypioResult result = typio_engine_manager_set_active(
-            instance->engine_manager, default_engine);
+        result = typio_engine_manager_set_active(instance->engine_manager,
+                                                 default_engine);
         if (result != TYPIO_OK) {
             typio_log_warning("Failed to activate default engine: %s",
                               default_engine);
@@ -396,8 +420,8 @@ TypioResult typio_instance_init(TypioInstance *instance) {
         size_t count = 0;
         const char **engines = typio_engine_manager_list(instance->engine_manager, &count);
         if (engines && count > 0) {
-            TypioResult result = typio_engine_manager_set_active(
-                instance->engine_manager, engines[0]);
+            result = typio_engine_manager_set_active(instance->engine_manager,
+                                                     engines[0]);
             if (result != TYPIO_OK) {
                 typio_log_warning("Failed to activate first available engine: %s",
                                   engines[0]);
@@ -671,10 +695,18 @@ TypioResult typio_instance_reload_config(TypioInstance *instance) {
 
     TypioConfig *new_config = typio_config_load_file(config_path);
     if (new_config) {
+        typio_config_apply_defaults(new_config);
         if (instance->config) {
             typio_config_free(instance->config);
         }
         instance->config = new_config;
+    }
+    if (!instance->config) {
+        instance->config = typio_config_new();
+        if (!instance->config) {
+            return TYPIO_ERROR_OUT_OF_MEMORY;
+        }
+        typio_config_apply_defaults(instance->config);
     }
 
     configured_default_engine = typio_config_get_string(instance->config,
@@ -820,6 +852,8 @@ TypioResult typio_instance_set_config_text(TypioInstance *instance, const char *
         typio_config_free(parsed);
         return TYPIO_ERROR_INVALID_ARGUMENT;
     }
+
+    typio_config_apply_defaults(parsed);
 
     old_config = instance->config;
     instance->config = parsed;

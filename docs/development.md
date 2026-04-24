@@ -26,13 +26,13 @@ ctest --test-dir build --output-on-failure
 Run the daemon directly from the build tree while iterating:
 
 ```bash
-./build/src/apps/daemon/typio --engine basic --verbose
+./build/src/apps/typio/typio --engine basic --verbose
 ```
 
 For plugin engine work, point the daemon at the build-tree engine directory:
 
 ```bash
-./build/src/apps/daemon/typio --engine-dir ./build/engines --engine rime --verbose
+./build/src/apps/typio/typio --engine-dir ./build/engines --engine rime --verbose
 ```
 
 ## CMake Options
@@ -66,8 +66,12 @@ cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
 cmake --build build-asan
 ASAN_OPTIONS=detect_leaks=1:suppressions=$PWD/tests/asan_suppressions.txt \
 LSAN_OPTIONS=suppressions=$PWD/tests/asan_suppressions.txt \
-ctest --test-dir build-asan --output-on-failure
+dbus-run-session -- ctest --test-dir build-asan --output-on-failure
 ```
+
+Use `dbus-run-session` for sanitizer and CI-like runs so status-bus and tray
+tests get an isolated session bus instead of depending on the developer's
+desktop session.
 
 ## Test Ownership
 
@@ -77,6 +81,9 @@ Add or update tests when changing:
 - engine manager behavior
 - input context commit/preedit semantics
 - Wayland lifecycle, key routing, repeat, or startup guard behavior
+- runtime config reload, config-watch debounce, or event-loop scheduling
+- voice service state transitions, reload deferral, or completion dispatch
+- status/tray D-Bus dispatch loops
 - candidate popup layout, rendering, or state classification
 - public APIs under `src/core/include/typio`
 

@@ -816,6 +816,51 @@ static void engine_manager_rebind_focused_context(TypioEngineManager *manager,
     }
 }
 
+static TypioResult engine_manager_ensure_entry_instance(TypioEngineManager *manager,
+                                                        EngineEntry *entry) {
+    char *config_path;
+
+    if (!manager || !entry) {
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (entry->instance) {
+        return TYPIO_OK;
+    }
+
+    entry->instance = entry->factory();
+    if (!entry->instance) {
+        typio_log_error("Failed to create engine instance: %s", entry->name);
+        return TYPIO_ERROR_ENGINE_LOAD_FAILED;
+    }
+
+    config_path = get_engine_config_path(manager, entry->name);
+    if (config_path) {
+        typio_engine_set_config_path(entry->instance, config_path);
+        free(config_path);
+    }
+
+    return TYPIO_OK;
+}
+
+static void engine_manager_try_restore_engine(EngineEntry *entry,
+                                              TypioInstance *instance,
+                                              const char *slot_name) {
+    TypioResult restore_result;
+
+    if (!entry || !entry->instance) {
+        return;
+    }
+
+    restore_result = typio_engine_activate(entry->instance, instance);
+    if (restore_result != TYPIO_OK) {
+        typio_log_error("Failed to restore previous %s engine '%s' after switch failure: %d",
+                        slot_name ? slot_name : "active",
+                        entry->name ? entry->name : "(unknown)",
+                        restore_result);
+    }
+}
+
 TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
                                              const char *name) {
     uint64_t now_ms;
@@ -844,35 +889,29 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
 
     /* Route to voice slot if this is a voice engine */
     if (is_voice) {
+        EngineEntry *current = nullptr;
+
         if (index == manager->active_voice_index) {
             return TYPIO_OK;
         }
 
         /* Deactivate current voice engine */
         if (manager->active_voice_index != (size_t)-1) {
-            EngineEntry *current = manager->entries[manager->active_voice_index];
+            current = manager->entries[manager->active_voice_index];
             if (current->instance) {
                 typio_engine_deactivate(current->instance);
             }
         }
 
-        /* Get or create engine instance */
-        if (!entry->instance) {
-            entry->instance = entry->factory();
-            if (!entry->instance) {
-                typio_log_error("Failed to create engine instance: %s", name);
-                return TYPIO_ERROR_ENGINE_LOAD_FAILED;
-            }
-
-            char *config_path = get_engine_config_path(manager, entry->name);
-            if (config_path) {
-                typio_engine_set_config_path(entry->instance, config_path);
-                free(config_path);
-            }
+        TypioResult result = engine_manager_ensure_entry_instance(manager, entry);
+        if (result != TYPIO_OK) {
+            engine_manager_try_restore_engine(current, manager->instance, "voice");
+            return result;
         }
 
-        TypioResult result = typio_engine_activate(entry->instance, manager->instance);
+        result = typio_engine_activate(entry->instance, manager->instance);
         if (result != TYPIO_OK) {
+            engine_manager_try_restore_engine(current, manager->instance, "voice");
             return result;
         }
 
@@ -896,24 +935,16 @@ TypioResult typio_engine_manager_set_active(TypioEngineManager *manager,
         }
     }
 
-    /* Get or create engine instance */
-    if (!entry->instance) {
-        entry->instance = entry->factory();
-        if (!entry->instance) {
-            typio_log_error("Failed to create engine instance: %s", name);
-            return TYPIO_ERROR_ENGINE_LOAD_FAILED;
-        }
-
-        char *config_path = get_engine_config_path(manager, entry->name);
-        if (config_path) {
-            typio_engine_set_config_path(entry->instance, config_path);
-            free(config_path);
-        }
+    TypioResult result = engine_manager_ensure_entry_instance(manager, entry);
+    if (result != TYPIO_OK) {
+        engine_manager_try_restore_engine(current, manager->instance, "keyboard");
+        return result;
     }
 
     /* Activate new engine */
-    TypioResult result = typio_engine_activate(entry->instance, manager->instance);
+    result = typio_engine_activate(entry->instance, manager->instance);
     if (result != TYPIO_OK) {
+        engine_manager_try_restore_engine(current, manager->instance, "keyboard");
         return result;
     }
 
@@ -991,16 +1022,15 @@ TypioEngine *typio_engine_manager_get_active_voice(TypioEngineManager *manager) 
  *
  * @param direction  +1 for next, -1 for prev
  */
-static size_t engine_manager_resolve_switch(TypioEngineManager *manager,
-                                            int direction) {
-    size_t ordered_count = 0;
-    const char **ordered = typio_engine_manager_list_ordered_keyboards(
-        manager, &ordered_count);
+static const char *engine_manager_resolve_switch(TypioEngineManager *manager,
+                                                 const char **ordered,
+                                                 size_t ordered_count,
+                                                 int direction) {
 
     if (manager->active_keyboard_index == (size_t)-1) {
         return ordered_count > 0
-            ? (direction > 0 ? 0 : ordered_count - 1)
-            : (size_t)-1;
+            ? ordered[direction > 0 ? 0 : ordered_count - 1]
+            : NULL;
     }
 
     uint64_t now_ms = engine_manager_monotonic_ms();
@@ -1010,7 +1040,7 @@ static size_t engine_manager_resolve_switch(TypioEngineManager *manager,
     if (elapsed > TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
         size_t partner = engine_manager_recent_partner_index(manager);
         if (partner != (size_t)-1) {
-            return partner;
+            return manager->entries[partner]->name;
         }
     }
 
@@ -1026,14 +1056,14 @@ static size_t engine_manager_resolve_switch(TypioEngineManager *manager,
 
     if (current_ordered == (size_t)-1) {
         return ordered_count > 0
-            ? (direction > 0 ? 0 : ordered_count - 1)
-            : (size_t)-1;
+            ? ordered[direction > 0 ? 0 : ordered_count - 1]
+            : NULL;
     }
 
     if (direction > 0) {
-        return (current_ordered + 1) % ordered_count;
+        return ordered[(current_ordered + 1) % ordered_count];
     }
-    return current_ordered == 0 ? ordered_count - 1 : current_ordered - 1;
+    return ordered[current_ordered == 0 ? ordered_count - 1 : current_ordered - 1];
 }
 
 TypioResult typio_engine_manager_next(TypioEngineManager *manager) {
@@ -1043,12 +1073,12 @@ TypioResult typio_engine_manager_next(TypioEngineManager *manager) {
 
     size_t ordered_count = 0;
     const char **ordered = typio_engine_manager_list_ordered_keyboards(manager, &ordered_count);
-    size_t target = engine_manager_resolve_switch(manager, +1);
+    const char *target = engine_manager_resolve_switch(manager, ordered, ordered_count, +1);
 
-    if (target == (size_t)-1) {
+    if (!target) {
         return TYPIO_ERROR_ENGINE_NOT_AVAILABLE;
     }
-    return typio_engine_manager_set_active(manager, ordered[target]);
+    return typio_engine_manager_set_active(manager, target);
 }
 
 TypioResult typio_engine_manager_prev(TypioEngineManager *manager) {
@@ -1058,12 +1088,12 @@ TypioResult typio_engine_manager_prev(TypioEngineManager *manager) {
 
     size_t ordered_count = 0;
     const char **ordered = typio_engine_manager_list_ordered_keyboards(manager, &ordered_count);
-    size_t target = engine_manager_resolve_switch(manager, -1);
+    const char *target = engine_manager_resolve_switch(manager, ordered, ordered_count, -1);
 
-    if (target == (size_t)-1) {
+    if (!target) {
         return TYPIO_ERROR_ENGINE_NOT_AVAILABLE;
     }
-    return typio_engine_manager_set_active(manager, ordered[target]);
+    return typio_engine_manager_set_active(manager, target);
 }
 
 void typio_engine_manager_notify_commit(TypioEngineManager *manager) {
