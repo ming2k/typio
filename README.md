@@ -1,153 +1,41 @@
 # Typio
 
-Typio is a native Wayland input method daemon written in C. It runs on the
-Wayland text-input/input-method protocol stack and provides:
-
-- `typio-core`: the engine, context, config, and plugin runtime
-- `typio`: a `zwp_input_method_v2` Wayland frontend
-- `typio` client commands: a D-Bus CLI mode for controlling a running daemon
-- `basic`: a built-in keyboard engine that commits printable text directly
-- `rime`: the default Chinese input engine plugin backed by `librime`
-- a shared-library engine ABI for richer out-of-tree engines
-- a pure-Wayland candidate popup surface for engines that expose candidates
-- a D-Bus status interface for structured runtime state beyond what a tray icon
-  can express
-
-Conceptually, Typio keeps two engine categories in parallel:
-
-- `keyboard` engines own composition, preedit, candidates, and committed text
-- `voice` engines own speech recognition and voice-model selection
-
-The categories do not conflict with each other. A session always has at most
-one active keyboard engine and at most one active voice engine.
-
-## Protocol Stack
-
-Typio is designed around the native Wayland text input protocol stack:
-
-- `zwp_text_input_manager_v3` / `zwp_text_input_v3`
-  Applications use this path to tell the compositor about editable state,
-  cursor rectangles, surrounding text, and content type. Typio depends on
-  this path, but does not act as the text-input client itself.
-- `zwp_input_method_manager_v2` / `zwp_input_method_v2`
-  Typio directly implements this side. The compositor activates the input
-  method, forwards input-method state, and receives preedit or committed
-  text back from Typio.
-- `zwp_input_method_keyboard_grab_v2`
-  Typio uses the keyboard grab to receive raw key events for composition,
-  candidate selection, and command handling.
-- `zwp_input_popup_surface_v2`
-  Typio uses the popup-surface path for candidate UI placement near the
-  active text cursor.
-- `wl_compositor`, `wl_surface`, and `wl_shm`
-  These Wayland core objects carry the actual candidate window buffers once
-  popup rendering is active.
+Typio is a native Wayland input method daemon written in C. It runs on the Wayland text-input/input-method protocol stack and provides a daemon frontend, a shared core library, a plugin engine ABI, and a GTK4 control panel.
 
 ## Quick Start
 
-Build and test:
-
 ```bash
+# Configure and build
 cmake -S . -B build
 cmake --build build
+
+# Run tests
 ctest --test-dir build --output-on-failure
-```
 
-Build with the optional GTK4 control panel:
-
-```bash
-cmake -S . -B build -DBUILD_CONTROL_PANEL=ON
-cmake --build build
-./build/src/apps/control/typio-control
-```
-
-The control panel uses a native GTK-style preferences layout with
-`Appearance`, `Input engines`, and `Shortcuts` pages. Changes are saved
-automatically in the background; there is no global `Apply` / `Cancel` flow.
-
-Run directly from the build tree (no install needed):
-
-```bash
+# Run directly from the build tree
 ./build/src/apps/typio/typio --engine basic --verbose
 ```
 
-Install is only needed for packaging or verifying the installed layout:
-
-```bash
-# Staging install (disposable, no root)
-cmake --install build --prefix /tmp/typio-staging
-/tmp/typio-staging/bin/typio --verbose
-rm -rf /tmp/typio-staging
-
-# System-wide install
-sudo cmake --install build --prefix /usr/local
-```
-
-Runtime requirements:
-
-- you must be inside a Wayland session
-- the compositor must expose `zwp_input_method_manager_v2`
-- applications and the compositor must provide a working `zwp_text_input_manager_v3` path
-- no other input method daemon can already own the seat
-
-## Install
-
-Installed artifacts:
-
-- `bin/typio`
-- `lib/libtypio-core.so` or `lib/libtypio-core.a`
-- `include/typio/*.h`
-- `lib/pkgconfig/typio.pc`
-- `share/typio/typio.toml.example`
+Expected output: startup logs ending with `engine basic activated`.
 
 ## Documentation
 
-- [User Installation](docs/installation.md)
-- [Testing Locally](docs/testing.md)
-- [User Configuration](docs/configuration.md)
-- [User Usage](docs/usage.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Developer Guide](docs/development.md)
-- [Architecture](docs/architecture.md)
-- [Developer Maintenance Manual](docs/maintenance.md)
-- [Developer Timing Model](docs/timing-model.md)
-- [Wayland Runtime Diagnostics](docs/troubleshooting.md#wayland-runtime-diagnostics)
-- [Control Surfaces](docs/control-surfaces.md)
-- [Creating Engines](docs/creating-engines.md)
-- [D-Bus Interface Reference](docs/dbus-interface.md)
+- [Full documentation](docs/index.md)
+- [Getting Started Tutorial](docs/tutorials/01-getting-started.md)
+- [API Reference](docs/reference/api/)
+- [Architecture Overview](docs/explanation/architecture-overview.md)
+- [Contributing](CONTRIBUTING.md)
 
-## Source Layout
+## When to use this project
 
-The source tree is organized by product boundary:
+Typio is a good fit if you need a native Wayland input method with:
+- Pure Wayland protocol integration (no X11)
+- A plugin engine ABI for custom input engines
+- Structured D-Bus runtime control and status
+- Optional GTK4 control panel
 
-- `src/core/`: shared library code and public headers under `include/typio/`
-- `src/apps/typio/`: the `typio` Wayland daemon and D-Bus CLI
-- `src/apps/control/`: the `typio-control` GTK control panel
-- `src/engines/`: built-in and plugin engine implementations
+Consider alternatives like Fcitx5 or IBus if you need X11 support or a larger built-in engine ecosystem.
 
-## Notes
+## License
 
-- Typio currently targets Wayland only.
-- Default CMake options are used unless a command shows a `-D...` override.
-- The default build includes the built-in `basic` engine and no external engine plugins.
-- Enable the optional `rime` plugin with `-DBUILD_RIME_ENGINE=ON`.
-- Tray support is a separate compile-time feature. Disable it with `-DENABLE_SYSTRAY=OFF`.
-- The session D-Bus status/control interface is also a separate feature. Disable it with `-DENABLE_STATUS_BUS=OFF`.
-- The optional GTK4 control panel is built with `-DBUILD_CONTROL_PANEL=ON`.
-- Only one input method can own the Wayland input-method seat at a time.
-- Typio directly implements the Wayland input-method side and depends on the compositor/application text-input-v3 path for end-to-end text input.
-- The built-in `basic` engine does not provide candidate UI.
-- When enabled, the `rime` engine renders candidates through `zwp_input_popup_surface_v2`. The candidate popup follows Wayland `wl_surface.enter/leave` and `wl_output.scale` so integer HiDPI scaling such as 2x stays sharp. If candidate popup rendering is unavailable in the current session, Typio keeps candidate state visible inline in preedit.
-- When enabled, the Rime candidate popup defaults to a horizontal layout and can follow common desktop light/dark theme hints, with `typio.toml` overrides under `[display]` when needed.
-- Tray hosts that ignore themed icon paths can still render the current engine icon through the exported `IconPixmap` fallback.
-- When the active engine is `rime`, the tray menu exposes a dedicated submenu with the current schema and schema-switch actions. The selected schema is remembered in XDG state rather than `typio.toml`.
-- Typio also exports a D-Bus status object at `org.typio.InputMethod1` so shells
-  such as quickshell can read the active keyboard engine, active voice engine,
-  available engine lists, and engine/config state as structured properties
-  instead of inferring everything from tray icon changes. Current builds also
-  expose a `RuntimeState` property for live Wayland frontend diagnostics such
-  as lifecycle phase, keyboard-grab activity, virtual-keyboard state, and
-  keymap timing ages.
-- Typio supports a single user-facing config file: `~/.config/typio/typio.toml`.
-- Build-tree plugin testing is supported with `typio --engine-dir <build-dir>/engines`.
-- The pre-`typio-core` prototype API and examples were removed; the maintained public headers now live under `src/core/include/typio/`.
+See [LICENSE](LICENSE) for details.

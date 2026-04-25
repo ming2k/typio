@@ -1,7 +1,6 @@
 # D-Bus Interface Reference
 
-Typio exposes a session-bus service for runtime control and introspection.
-Both the `typio` CLI and `typio-control` are built on this interface.
+Typio exposes a session-bus service for runtime control and introspection. Both the `typio` CLI and `typio-control` are built on this interface.
 
 ## Service
 
@@ -12,14 +11,11 @@ Both the `typio` CLI and `typio-control` are built on this interface.
 | Path      | `/org/typio/InputMethod1`    |
 | Interface | `org.typio.InputMethod1`     |
 
-The service is registered when `typio` starts with `ENABLE_STATUS_BUS=ON`
-(the default). The constants live in `src/core/include/typio/dbus_protocol.h`.
+The service is registered when `typio` starts with `ENABLE_STATUS_BUS=ON` (the default). The constants live in `src/core/include/typio/dbus_protocol.h`.
 
 ## Properties
 
-All properties are read-only. The daemon emits
-`org.freedesktop.DBus.Properties.PropertiesChanged` whenever active-engine
-state, config, or runtime diagnostics change.
+All properties are read-only. The daemon emits `org.freedesktop.DBus.Properties.PropertiesChanged` whenever active-engine state, config, or runtime diagnostics change.
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -34,9 +30,9 @@ state, config, or runtime diagnostics change.
 | `EngineOrder` | `as` | Full `engine_order` array from config |
 | `AvailableVoiceEngines` | `as` | Registered voice engines |
 | `ActiveVoiceEngine` | `s` | Currently active voice engine name |
-| `ActiveEngineMode` | `a{sv}` | Active engine mode dict (see below) |
-| `ActiveEngineState` | `a{sv}` | Active keyboard engine detail dict (see below) |
-| `RuntimeState` | `a{sv}` | Wayland frontend diagnostics dict (see below) |
+| `ActiveEngineMode` | `a{sv}` | Active engine mode dict |
+| `ActiveEngineState` | `a{sv}` | Active keyboard engine detail dict |
+| `RuntimeState` | `a{sv}` | Wayland frontend diagnostics dict |
 | `RimeSchema` | `s` | Current Rime input schema identifier |
 | `ConfigText` | `s` | Full `typio.toml` contents as text |
 
@@ -44,14 +40,10 @@ state, config, or runtime diagnostics change.
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `mode_class` | `s` | Coarse classification: `"native"` or `"latin"` |
-| `mode_id` | `s` | Engine-specific mode identifier (e.g. `"chinese"`, `"hiragana"`, `"direct"`) |
-| `display_label` | `s` | Short display label (e.g. `"中"`, `"あ"`, `"A"`) |
-| `icon_name` | `s` | Icon name for this mode (e.g. `"typio-rime"`, `"typio-mozc-katakana"`) |
-
-This property is empty (`a{sv}{}`) when no engine is active or the engine
-does not report mode information. It updates alongside `PropertiesChanged`
-whenever the engine's mode changes.
+| `mode_class` | `s` | `"native"` or `"latin"` |
+| `mode_id` | `s` | Engine-specific mode identifier |
+| `display_label` | `s` | Short display label |
+| `icon_name` | `s` | Icon name for this mode |
 
 ### `ActiveEngineState` keys
 
@@ -64,7 +56,7 @@ whenever the engine's mode changes.
 | `engine_type` | `s` | `"keyboard"` or `"voice"` |
 | `capabilities` | `u` | Capability flags |
 | `active` | `b` | Whether the engine is active |
-| `mode_class` | `s` | Current mode class (`"native"` or `"latin"`) |
+| `mode_class` | `s` | Current mode class |
 | `mode_id` | `s` | Current mode identifier |
 | `mode_display_label` | `s` | Current mode display label |
 | `mode_icon` | `s` | Current mode icon name |
@@ -94,9 +86,9 @@ whenever the engine's mode changes.
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `ActivateEngine` | `s -> ()` | Switch to named keyboard engine; saves to config |
-| `NextEngine` | `() -> ()` | Cycle to the next keyboard engine (same as Ctrl+Shift) |
+| `NextEngine` | `() -> ()` | Cycle to next keyboard engine |
 | `SetRimeSchema` | `s -> ()` | Set the active Rime schema and reload |
-| `DeployRimeConfig` | `() -> ()` | Rebuild generated Rime config artifacts for out-of-band edits under the active Rime user data directory |
+| `DeployRimeConfig` | `() -> ()` | Rebuild generated Rime config artifacts |
 | `SetConfigText` | `s -> ()` | Replace entire config from text |
 | `ReloadConfig` | `() -> ()` | Reload config from disk |
 | `Stop` | `() -> ()` | Shut down the daemon |
@@ -105,16 +97,14 @@ All methods return a D-Bus error reply on failure.
 
 ## Signals
 
-The daemon emits `PropertiesChanged` on the standard
-`org.freedesktop.DBus.Properties` interface after every method that
-modifies state. Clients can subscribe with:
+The daemon emits `PropertiesChanged` on the standard `org.freedesktop.DBus.Properties` interface after every method that modifies state. Clients can subscribe with:
 
 ```
 type='signal',interface='org.freedesktop.DBus.Properties',
 path='/org/typio/InputMethod1'
 ```
 
-## Quick Examples
+## Quick examples
 
 ### busctl
 
@@ -149,16 +139,10 @@ typio stop               # stop the daemon
 typio version            # show server version
 ```
 
-`DeployRimeConfig` is the explicit rebuild path for edits that bypass
-`typio.toml`, such as rewriting `default.custom.yaml` inside the Rime user data
-directory. After deployment finishes, Typio transparently recreates active Rime
-sessions to pick up the changes on the next keystroke.
-
-## Implementation Notes
+## Implementation notes
 
 - The server-side handler lives in `src/apps/typio/status/status.c`.
 - Protocol constants are in `src/core/include/typio/dbus_protocol.h`.
-- `typio` client-mode source lives under `src/apps/typio/` and uses D-Bus
-  without depending on `typio-core`.
+- `typio` client-mode source lives under `src/apps/typio/` and uses D-Bus without depending on `typio-core`.
 - `typio-control` (GTK4) uses the same D-Bus interface via GDBusProxy.
 - The status bus integration test is in `tests/test_status_bus.c`.

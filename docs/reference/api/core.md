@@ -1,11 +1,8 @@
-# API Reference
+# Core API Reference
 
-This document summarizes the main public C surface under `src/core/include/typio/*.h`.
-It is an overview, not a replacement for the installed headers.
+This document summarizes the stable public C surface under `src/core/include/typio/*.h`. For exact signatures and inline comments, read the installed headers.
 
-## Core Lifecycle
-
-### `TypioInstance`
+## `TypioInstance`
 
 Main lifecycle and ownership object.
 
@@ -48,15 +45,9 @@ void typio_instance_set_config_reloaded_callback(TypioInstance *instance,
                                                  void *user_data);
 ```
 
-`TypioConfigReloadedCallback` fires after config reload succeeds and the active
-keyboard engine has been resynchronized. Subsystems such as shortcuts, voice,
-and the status bus use this hook to stay aligned.
+`TypioConfigReloadedCallback` fires after config reload succeeds and the active keyboard engine has been resynchronized. Voice backends may finish their own model reload asynchronously after the callback returns.
 
-Voice backends may finish their own model reload asynchronously after the
-callback returns. The callback still marks the point where Typio has accepted
-the new config and kicked the runtime refresh path.
-
-### `TypioInputContext`
+## `TypioInputContext`
 
 Per-client input state and callback surface.
 
@@ -85,12 +76,15 @@ bool typio_input_context_get_surrounding(TypioInputContext *ctx,
                                          const char **text,
                                          int *cursor_pos,
                                          int *anchor_pos);
+
+void typio_input_context_set_commit_callback(TypioInputContext *ctx, TypioCommitCallback callback, void *user_data);
+void typio_input_context_set_preedit_callback(TypioInputContext *ctx, TypioPreeditCallback callback, void *user_data);
+void typio_input_context_set_candidate_callback(TypioInputContext *ctx, TypioCandidateCallback callback, void *user_data);
 ```
 
-## Config API
+## `TypioConfig`
 
-`TypioConfig` stores TOML-compatible flat keys such as `default_engine` or
-`engines.rime.shared_data_dir`.
+TOML-compatible flat-key configuration storage.
 
 ```c
 TypioConfig *typio_config_new(void);
@@ -112,97 +106,7 @@ TypioResult typio_config_set_bool(TypioConfig *config, const char *key, bool val
 TypioResult typio_config_set_float(TypioConfig *config, const char *key, double value);
 ```
 
-Common helpers not shown above include section accessors such as
-`typio_config_get_section()` and schema/default application helpers.
-
-## Engine System
-
-### `TypioEngineManager`
-
-Loads engine metadata, creates instances lazily, and tracks active keyboard and
-voice engines.
-
-```c
-TypioEngineManager *typio_engine_manager_new(TypioInstance *instance);
-void typio_engine_manager_free(TypioEngineManager *manager);
-
-int typio_engine_manager_load_dir(TypioEngineManager *manager, const char *path);
-TypioResult typio_engine_manager_load(TypioEngineManager *manager, const char *path);
-TypioResult typio_engine_manager_register(TypioEngineManager *manager,
-                                          TypioEngineFactory factory,
-                                          TypioEngineInfoFunc info_func);
-
-const char **typio_engine_manager_list(TypioEngineManager *manager, size_t *count);
-const TypioEngineInfo *typio_engine_manager_get_info(TypioEngineManager *manager, const char *name);
-TypioEngine *typio_engine_manager_get_engine(TypioEngineManager *manager, const char *name);
-
-TypioResult typio_engine_manager_set_active(TypioEngineManager *manager, const char *name);
-TypioResult typio_engine_manager_set_active_voice(TypioEngineManager *manager, const char *name);
-TypioEngine *typio_engine_manager_get_active(TypioEngineManager *manager);
-TypioEngine *typio_engine_manager_get_active_voice(TypioEngineManager *manager);
-```
-
-### `TypioEngineInfo`
-
-```c
-struct TypioEngineInfo {
-    const char *name;
-    const char *display_name;
-    const char *description;
-    const char *version;
-    const char *author;
-    const char *icon;
-    const char *language;
-    TypioEngineType type;
-    uint32_t capabilities;
-    int api_version;
-};
-```
-
-### `TypioEngineOps`
-
-```c
-typedef struct TypioEngineOps {
-    TypioResult (*init)(TypioEngine *engine, TypioInstance *instance);
-    void (*destroy)(TypioEngine *engine);
-
-    void (*focus_in)(TypioEngine *engine, TypioInputContext *ctx);
-    void (*focus_out)(TypioEngine *engine, TypioInputContext *ctx);
-    void (*reset)(TypioEngine *engine, TypioInputContext *ctx);
-
-    TypioKeyProcessResult (*process_key)(TypioEngine *engine,
-                                         TypioInputContext *ctx,
-                                         const TypioKeyEvent *event);
-
-    TypioResult (*voice_start)(TypioEngine *engine, TypioInputContext *ctx);
-    TypioResult (*voice_stop)(TypioEngine *engine, TypioInputContext *ctx);
-    TypioResult (*voice_process)(TypioEngine *engine,
-                                 TypioInputContext *ctx,
-                                 const void *audio_data,
-                                 size_t size,
-                                 int sample_rate,
-                                 int channels);
-
-    TypioResult (*get_config)(TypioEngine *engine, TypioConfig **config);
-    TypioResult (*set_config)(TypioEngine *engine, const TypioConfig *config);
-    TypioResult (*reload_config)(TypioEngine *engine);
-    const char *(*get_preedit)(TypioEngine *engine, TypioInputContext *ctx);
-    TypioCandidateList *(*get_candidates)(TypioEngine *engine, TypioInputContext *ctx);
-    const char *(*get_status_icon)(TypioEngine *engine, TypioInputContext *ctx);
-} TypioEngineOps;
-```
-
-### Plugin Entry Points
-
-External shared engines must export:
-
-```c
-const TypioEngineInfo *typio_engine_get_info(void);
-TypioEngine *typio_engine_create(void);
-```
-
-The helper macro `TYPIO_ENGINE_DEFINE(info_var, create_func)` can generate both
-symbols.
+Common helpers include section accessors such as `typio_config_get_section()` and schema/default application helpers.
 
 ## Events
 
@@ -219,9 +123,7 @@ bool typio_key_event_is_release(const TypioKeyEvent *event);
 
 ## D-Bus Protocol Constants
 
-Shared constants for the status bus live in `typio/dbus_protocol.h` so that
-both the server and control surfaces can reference them without cross-layer
-includes:
+Shared constants for the status bus live in `typio/dbus_protocol.h`:
 
 ```c
 #define TYPIO_STATUS_DBUS_SERVICE   "org.typio.InputMethod1"
@@ -231,17 +133,9 @@ includes:
 
 ## Rime Schema Discovery
 
-`typio/rime_schema_list.h` provides shared helpers so that every consumer
-(tray menu, control center) discovers Rime schemas identically:
-
 ```c
 bool typio_rime_schema_list_load(const TypioConfig *config,
                                  const char *default_data_dir,
                                  TypioRimeSchemaList *list);
 void typio_rime_schema_list_clear(TypioRimeSchemaList *list);
 ```
-
-## Authoritative Source
-
-For exact signatures and comments, read the public headers under
-`include/typio/` or `src/core/include/typio/`.

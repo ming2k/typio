@@ -64,11 +64,7 @@ typedef struct TypioEngineMode {
 } TypioEngineMode;
 ```
 
-Engines expose their sub-mode (e.g. Rime Chinese/Latin, Mozc Hiragana/Katakana)
-through `get_mode`. The framework observes mode state and displays it in the
-tray icon, candidate popup, and D-Bus interface. `mode_class` provides a coarse
-NATIVE vs LATIN classification; `mode_id` and `display_label` carry
-engine-specific detail.
+Engines expose their sub-mode (e.g. Rime Chinese/Latin, Mozc Hiragana/Katakana) through `get_mode`. The framework observes mode state and displays it in the tray icon, candidate popup, and D-Bus interface. `mode_class` provides a coarse NATIVE vs LATIN classification; `mode_id` and `display_label` carry engine-specific detail.
 
 ## Engine Operations
 
@@ -104,9 +100,7 @@ typedef struct TypioEngineOps {
 } TypioEngineOps;
 ```
 
-Engines should implement `get_mode` to report their current sub-mode. The
-framework prefers `get_mode` over `get_status_icon` when both are set.
-Engines notify mode changes by calling `typio_instance_notify_mode()`.
+Engines should implement `get_mode` to report their current sub-mode. The framework prefers `get_mode` over `get_status_icon` when both are set. Engines notify mode changes by calling `typio_instance_notify_mode()`.
 
 ## Engine Utilities
 

@@ -1,8 +1,17 @@
-# Creating Custom Engines
+# How to Create a Custom Engine
 
-Typio engines are shared libraries that implement the public engine ABI from `typio/engine.h`.
+This guide assumes you are familiar with building Typio from source and with C programming.
 
-## Required Exported Symbols
+## When to use this
+
+Use this when you want to add a new input engine to Typio as a shared-library plugin.
+
+## Prerequisites
+
+- Typio built and installed (or at least `typio-core` headers and pkg-config file available)
+- C compiler and CMake
+
+## Required exported symbols
 
 Your shared object must export:
 
@@ -11,7 +20,7 @@ const TypioEngineInfo *typio_engine_get_info(void);
 TypioEngine *typio_engine_create(void);
 ```
 
-## Minimal Engine
+## Minimal engine
 
 ```c
 #include <typio/typio.h>
@@ -64,21 +73,7 @@ static TypioEngine *my_create(void) {
 TYPIO_ENGINE_DEFINE(my_info, my_create)
 ```
 
-## Configuration Path
-
-Before activation, Typio assigns each engine a per-user config path:
-
-```c
-const char *path = typio_engine_get_config_path(engine);
-```
-
-Typical value:
-
-```text
-~/.config/typio/engines/my-engine.toml
-```
-
-## Build Example
+## Build example
 
 ```cmake
 cmake_minimum_required(VERSION 3.16)
@@ -95,9 +90,9 @@ install(TARGETS typio-my-engine
     LIBRARY DESTINATION lib/typio/engines)
 ```
 
-If `typio.pc` is installed in a non-standard prefix, export `PKG_CONFIG_PATH` accordingly before configuring the engine project.
+If `typio.pc` is in a non-standard prefix, export `PKG_CONFIG_PATH` before configuring.
 
-## Testing the Engine
+## Install and verify
 
 1. Install the engine into the Typio engine directory.
 2. Confirm it appears:
@@ -112,9 +107,14 @@ typio --list
 typio --engine my-engine --verbose
 ```
 
-## Practical Guidance
+## Practical guidance
 
-- keep engine state in `engine->user_data` or context properties
-- do not block inside `process_key`
-- return `TYPIO_KEY_NOT_HANDLED` for keys you want the compositor or client path to keep
-- use `typio_input_context_set_preedit()` and `typio_input_context_set_candidates()` only when your engine really owns composition
+- Keep engine state in `engine->user_data` or context properties.
+- Do not block inside `process_key`.
+- Return `TYPIO_KEY_NOT_HANDLED` for keys you want the compositor or client to keep.
+- Use `typio_input_context_set_preedit()` and `typio_input_context_set_candidates()` only when your engine owns composition.
+
+## See also
+
+- [Engine API Reference](../reference/api/engine.md)
+- [Architecture Overview](../explanation/architecture-overview.md) — engine manager model

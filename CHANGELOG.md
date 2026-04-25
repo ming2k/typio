@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Text gamma correction**: Added `pow(alpha, 1.0/2.2)` to the Flux text
   fragment shader so glyph coverage blends perceptually rather than in linear
   space, correcting text that appeared too thin.
-- **Documentation**: Updated `docs/architecture.md` to reflect that all popup
+- **Documentation**: Updated `docs/explanation/architecture-overview.md` to reflect that all popup
   paint paths now perform full redraws over the persistent Vulkan surface.
 
 ## [3.0.2] - 2026-04-18
