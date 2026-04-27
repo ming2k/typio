@@ -20,7 +20,17 @@
 #include <time.h>
 
 #define TYPIO_ENGINE_CONFIG_SUFFIX ".toml"
-#define TYPIO_SWITCH_STABLE_THRESHOLD_MS 1000
+#define TYPIO_SWITCH_STABLE_THRESHOLD_MS_DEFAULT 1000
+
+static uint64_t engine_manager_switch_threshold_ms(void)
+{
+	const char *env = getenv("TYPIO_SWITCH_STABLE_THRESHOLD_MS");
+	if (env) {
+		unsigned long v = strtoul(env, NULL, 10);
+		if (v > 0) return (uint64_t)v;
+	}
+	return TYPIO_SWITCH_STABLE_THRESHOLD_MS_DEFAULT;
+}
 #define TYPIO_ENGINE_STATE_FILE "engine-state.toml"
 #define TYPIO_ENGINE_STATE_PRIMARY_KEY "recent.primary"
 #define TYPIO_ENGINE_STATE_SECONDARY_KEY "recent.secondary"
@@ -1037,7 +1047,7 @@ static const char *engine_manager_resolve_switch(TypioEngineManager *manager,
     uint64_t elapsed = now_ms - manager->last_switch_ms;
 
     /* Slow switch: toggle between recent committed pair */
-    if (elapsed > TYPIO_SWITCH_STABLE_THRESHOLD_MS) {
+    if (elapsed > engine_manager_switch_threshold_ms()) {
         size_t partner = engine_manager_recent_partner_index(manager);
         if (partner != (size_t)-1) {
             return manager->entries[partner]->name;

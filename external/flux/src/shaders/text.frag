@@ -14,9 +14,5 @@ layout(binding = 0) uniform sampler2D tex;
 void main(void)
 {
     float a = texture(tex, in_uv).r;
-    /* Gamma-correct the atlas alpha so coverage blends perceptually
-     * rather than in linear space.  Without this, text appears too thin
-     * because the human eye perceives luminance non-linearly. */
-    a = pow(a, 1.0 / 2.2);
     out_color = pc.color * a;
 }

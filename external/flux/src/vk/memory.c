@@ -1,4 +1,5 @@
 #include "memory.h"
+#include "vk/vk_mem_alloc.h"
 #include "../internal.h"
 
 #define INITIAL_CHUNK_SIZE (4 * 1024 * 1024)
@@ -17,39 +18,19 @@ static fx_vbuf_chunk *chunk_create(fx_context *ctx, size_t size)
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
 
-    if (vkCreateBuffer(ctx->device, &bci, NULL, &chunk->buffer) != VK_SUCCESS) {
-        free(chunk);
-        return NULL;
-    }
-
-    VkMemoryRequirements mr;
-    vkGetBufferMemoryRequirements(ctx->device, chunk->buffer, &mr);
-
-    uint32_t mem_type = find_memory_type(ctx, mr.memoryTypeBits,
-                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if (mem_type == UINT32_MAX) {
-        vkDestroyBuffer(ctx->device, chunk->buffer, NULL);
-        free(chunk);
-        return NULL;
-    }
-
-    VkMemoryAllocateInfo mai = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = mr.size,
-        .memoryTypeIndex = mem_type,
+    VmaAllocationCreateInfo aci = {
+        .usage = VMA_MEMORY_USAGE_CPU_TO_GPU,
+        .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT,
     };
-
-    if (vkAllocateMemory(ctx->device, &mai, NULL, &chunk->memory) != VK_SUCCESS) {
-        vkDestroyBuffer(ctx->device, chunk->buffer, NULL);
+    VmaAllocationInfo ainfo;
+    if (vmaCreateBuffer(ctx->vma_allocator, &bci, &aci,
+                        &chunk->buffer, &chunk->alloc, &ainfo) != VK_SUCCESS) {
         free(chunk);
         return NULL;
     }
 
-    vkBindBufferMemory(ctx->device, chunk->buffer, chunk->memory, 0);
-    vkMapMemory(ctx->device, chunk->memory, 0, mr.size, 0, &chunk->map);
-    chunk->size = mr.size;
-
+    chunk->map = ainfo.pMappedData;
+    chunk->size = ainfo.size;
     return chunk;
 }
 
@@ -66,9 +47,7 @@ void fx_vbuf_pool_destroy(fx_vbuf_pool *pool)
     fx_vbuf_chunk *chunk = pool->head;
     while (chunk) {
         fx_vbuf_chunk *next = chunk->next;
-        vkUnmapMemory(pool->ctx->device, chunk->memory);
-        vkFreeMemory(pool->ctx->device, chunk->memory, NULL);
-        vkDestroyBuffer(pool->ctx->device, chunk->buffer, NULL);
+        vmaDestroyBuffer(pool->ctx->vma_allocator, chunk->buffer, chunk->alloc);
         free(chunk);
         chunk = next;
     }

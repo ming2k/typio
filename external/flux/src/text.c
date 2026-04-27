@@ -1,5 +1,7 @@
 #include "internal.h"
 #include <math.h>
+#include <freetype/ftmm.h>
+#include <freetype/fttypes.h>
 
 #define ATLAS_SIZE 2048
 
@@ -32,6 +34,14 @@ static fx_atlas_entry *find_atlas_entry(fx_context *ctx, fx_font *font, uint32_t
     return NULL;
 }
 
+static void atlas_reset(fx_context *ctx)
+{
+    ctx->atlas.entry_count = 0;
+    ctx->atlas.shelf_x = 2;
+    ctx->atlas.shelf_y = 2;
+    ctx->atlas.shelf_h = 0;
+}
+
 static bool upload_glyph(fx_context *ctx, fx_font *font, uint32_t glyph_id, fx_atlas_entry *out_entry)
 {
     if (FT_Load_Glyph(font->ft_face, glyph_id, FT_LOAD_RENDER) != 0) return false;
@@ -40,6 +50,12 @@ static bool upload_glyph(fx_context *ctx, fx_font *font, uint32_t glyph_id, fx_a
     int w = (int)bm->width;
     int h = (int)bm->rows;
 
+    if (w + 2 > ATLAS_SIZE || h + 2 > ATLAS_SIZE) {
+        FX_LOGE(ctx, "glyph %u is larger than atlas (%dx%d, atlas %d)",
+                glyph_id, w, h, ATLAS_SIZE);
+        return false;
+    }
+
     if (ctx->atlas.shelf_x + w + 2 > ATLAS_SIZE) {
         ctx->atlas.shelf_x = 2;
         ctx->atlas.shelf_y += ctx->atlas.shelf_h + 2;
@@ -47,9 +63,15 @@ static bool upload_glyph(fx_context *ctx, fx_font *font, uint32_t glyph_id, fx_a
     }
 
     if (ctx->atlas.shelf_y + h + 2 > ATLAS_SIZE) {
-        /* Atlas full! In a production impl we'd clear or grow.
-         * For now, we'll just fail. */
-        return false;
+        /* Atlas is full. Evict every cached glyph and reuse the texture.
+         * Callers re-ask via fx_atlas_ensure_glyph each frame, so no pointers
+         * go stale. We log once per eviction event so runaway glyph churn is
+         * visible without flooding the log. */
+        FX_LOGW(ctx, "glyph atlas full: evicting %zu entries",
+                ctx->atlas.entry_count);
+        atlas_reset(ctx);
+        /* Wait for in-flight frames to release the atlas before overwriting. */
+        vkDeviceWaitIdle(ctx->device);
     }
 
     if (h > ctx->atlas.shelf_h) ctx->atlas.shelf_h = h;
@@ -57,62 +79,17 @@ static bool upload_glyph(fx_context *ctx, fx_font *font, uint32_t glyph_id, fx_a
     int x = ctx->atlas.shelf_x;
     int y = ctx->atlas.shelf_y;
 
-    /* Update GPU texture */
     if (bm->buffer) {
-        /* We need a specialized partial upload for the atlas.
-         * For now, I'll use a slow path: recreate staging and copy.
-         * A better way is a persistent staging buffer. */
-        
-        VkBuffer staging;
-        VkDeviceMemory staging_mem;
-        VkBufferCreateInfo bci = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = (size_t)w * h, .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT };
-        vkCreateBuffer(ctx->device, &bci, NULL, &staging);
-        VkMemoryRequirements mr;
-        vkGetBufferMemoryRequirements(ctx->device, staging, &mr);
-        VkMemoryAllocateInfo mai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = mr.size };
-        for (uint32_t i = 0; i < ctx->mem_props.memoryTypeCount; ++i)
-            if ((mr.memoryTypeBits & (1 << i)) && (ctx->mem_props.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)))
-                { mai.memoryTypeIndex = i; break; }
-        vkAllocateMemory(ctx->device, &mai, NULL, &staging_mem);
-        vkBindBufferMemory(ctx->device, staging, staging_mem, 0);
-
-        void *mapped;
-        vkMapMemory(ctx->device, staging_mem, 0, (size_t)w * h, 0, &mapped);
-        if (bm->pitch == w) {
-            memcpy(mapped, bm->buffer, (size_t)w * h);
-        } else {
-            for (int i = 0; i < h; ++i)
-                memcpy((uint8_t *)mapped + i * w, bm->buffer + i * bm->pitch, (size_t)w);
+        if (!fx_upload_image(ctx, ctx->atlas.image->vk_image,
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                             x, y, (uint32_t)w, (uint32_t)h,
+                             bm->buffer, (size_t)bm->pitch, 1)) {
+            FX_LOGE(ctx, "glyph upload failed (glyph=%u)", glyph_id);
+            return false;
         }
-        vkUnmapMemory(ctx->device, staging_mem);
-
-        VkCommandBufferAllocateInfo cai = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .commandPool = ctx->frame_cmd_pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1 };
-        VkCommandBuffer cb;
-        vkAllocateCommandBuffers(ctx->device, &cai, &cb);
-        VkCommandBufferBeginInfo bi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT };
-        vkBeginCommandBuffer(cb, &bi);
-
-        VkImageMemoryBarrier barrier = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, .oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .image = ctx->atlas.image->vk_image, .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
-        vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
-
-        VkBufferImageCopy region = { .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }, .imageOffset = { (int32_t)x, (int32_t)y, 0 }, .imageExtent = { (uint32_t)w, (uint32_t)h, 1 } };
-        vkCmdCopyBufferToImage(cb, staging, ctx->atlas.image->vk_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
-
-        vkEndCommandBuffer(cb);
-        VkSubmitInfo si = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cb };
-        vkQueueSubmit(ctx->graphics_queue, 1, &si, VK_NULL_HANDLE);
-        vkQueueWaitIdle(ctx->graphics_queue);
-
-        vkFreeCommandBuffers(ctx->device, ctx->frame_cmd_pool, 1, &cb);
-        vkDestroyBuffer(ctx->device, staging, NULL);
-        vkFreeMemory(ctx->device, staging_mem, NULL);
     }
 
-    /* Record entry */
     if (ctx->atlas.entry_count + 1 > ctx->atlas.entry_cap) {
         size_t new_cap = ctx->atlas.entry_cap ? ctx->atlas.entry_cap * 2 : 256;
         fx_atlas_entry *new_entries = realloc(ctx->atlas.entries, new_cap * sizeof(fx_atlas_entry));
@@ -178,6 +155,23 @@ fx_font *fx_font_create(fx_context *ctx, const fx_font_desc *desc)
         return NULL;
     }
     FT_Set_Pixel_Sizes(font->ft_face, 0, (FT_UInt)desc->size);
+
+    /* Apply weight for variable fonts */
+    if (desc->weight != 400 && FT_HAS_MULTIPLE_MASTERS(font->ft_face)) {
+        FT_MM_Var *mm_var = NULL;
+        if (FT_Get_MM_Var(font->ft_face, &mm_var) == 0 && mm_var) {
+            for (FT_UInt i = 0; i < mm_var->num_axis; ++i) {
+                if (mm_var->axis[i].tag == FT_MAKE_TAG('w', 'g', 'h', 't')) {
+                    FT_Fixed coords[1];
+                    coords[0] = (FT_Fixed)(desc->weight * 65536);
+                    FT_Set_Var_Design_Coordinates(font->ft_face, 1, coords);
+                    break;
+                }
+            }
+            FT_Done_MM_Var(font->ctx->ft_lib, mm_var);
+        }
+    }
+
     font->hb_font = hb_ft_font_create(font->ft_face, NULL);
     font->size = desc->size;
     font->ascender  = (float)(font->ft_face->size->metrics.ascender  >> 6);

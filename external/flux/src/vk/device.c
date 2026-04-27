@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "vk/vk_mem_alloc.h"
 
 #include <stdio.h>
 
@@ -267,8 +268,33 @@ bool fx_device_init(fx_context *ctx, VkSurfaceKHR probe_surface)
         .flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
         .queueFamilyIndex = ctx->graphics_family,
     };
-    FX_CHECK_VK(ctx, vkCreateCommandPool(ctx->device, &pci, NULL,
+    FX_TRY_VK(ctx, vkCreateCommandPool(ctx->device, &pci, NULL,
                                          &ctx->frame_cmd_pool));
+
+    VkPipelineCacheCreateInfo pcci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+    };
+    if (vkCreatePipelineCache(ctx->device, &pcci, NULL, &ctx->pipeline_cache)
+        != VK_SUCCESS) {
+        FX_LOGE(ctx, "vkCreatePipelineCache failed");
+        return false;
+    }
+
+    VmaAllocatorCreateInfo vaci = {
+        .physicalDevice = ctx->phys,
+        .device = ctx->device,
+        .instance = ctx->instance,
+        .vulkanApiVersion = VK_API_VERSION_1_2,
+    };
+    if (vmaCreateAllocator(&vaci, &ctx->vma_allocator) != VK_SUCCESS) {
+        FX_LOGE(ctx, "vmaCreateAllocator failed");
+        return false;
+    }
+
+    if (!fx_upload_init(ctx)) {
+        FX_LOGE(ctx, "fx_upload_init failed");
+        return false;
+    }
     return true;
 }
 
@@ -276,6 +302,16 @@ void fx_device_shutdown(fx_context *ctx)
 {
     if (ctx->device) {
         vkDeviceWaitIdle(ctx->device);
+        fx_pipeline_set_destroy_all(ctx);
+        fx_upload_shutdown(ctx);
+        if (ctx->vma_allocator) {
+            vmaDestroyAllocator(ctx->vma_allocator);
+            ctx->vma_allocator = VK_NULL_HANDLE;
+        }
+        if (ctx->pipeline_cache) {
+            vkDestroyPipelineCache(ctx->device, ctx->pipeline_cache, NULL);
+            ctx->pipeline_cache = VK_NULL_HANDLE;
+        }
         if (ctx->frame_cmd_pool) {
             vkDestroyCommandPool(ctx->device, ctx->frame_cmd_pool, NULL);
             ctx->frame_cmd_pool = VK_NULL_HANDLE;

@@ -43,8 +43,8 @@ fx_context *fx_context_create(const fx_context_desc *desc)
     bool want_validation = desc && desc->enable_validation;
     if (!want_validation) want_validation = env_flag("FX_ENABLE_VALIDATION");
 
-    /* Phase-0 always wants Wayland surface support. When we add
-     * offscreen-only contexts we'll make this conditional. */
+    /* Always include Wayland surface support; offscreen-only
+     * contexts simply do not create a surface. */
     const char *inst_exts[] = {
         "VK_KHR_surface",
         "VK_KHR_wayland_surface",
@@ -57,6 +57,12 @@ fx_context *fx_context_create(const fx_context_desc *desc)
         free(ctx);
         return NULL;
     }
+
+    VkPipelineCacheCreateInfo pcci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+    };
+    /* Device may not exist yet; pipeline_cache is created on first surface. */
+    (void)pcci;
 
     /* Defer device creation until the first surface: surface support is
      * a queue-family selection input. */

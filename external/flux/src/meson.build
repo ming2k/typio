@@ -85,6 +85,8 @@ flux_sources = files(
   'vk/device.c',
   'vk/swapchain.c',
   'vk/memory.c',
+  'vk/upload.c',
+  'vk/vma.cpp',
 ) + [
   solid_color_vert_spv,
   solid_color_frag_spv,

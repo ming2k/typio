@@ -559,9 +559,9 @@ void popup_config_load(PopupConfig *cfg, TypioInstance *instance) {
 
 build_descs:;
     int ls = cfg->font_size * 4 / 5; if (ls < 7) ls = 7;
-    snprintf(cfg->font_desc, sizeof(cfg->font_desc), "%s %d", cfg->font_family, cfg->font_size);
-    snprintf(cfg->label_font_desc, sizeof(cfg->label_font_desc), "%s %d", cfg->font_family, ls);
-    snprintf(cfg->aux_font_desc, sizeof(cfg->aux_font_desc), "%s %d", cfg->font_family, cfg->font_size > 6 ? cfg->font_size - 1 : 6);
+    snprintf(cfg->font_desc, sizeof(cfg->font_desc), "%s Medium %d", cfg->font_family, cfg->font_size);
+    snprintf(cfg->label_font_desc, sizeof(cfg->label_font_desc), "%s Medium %d", cfg->font_family, ls);
+    snprintf(cfg->aux_font_desc, sizeof(cfg->aux_font_desc), "%s Medium %d", cfg->font_family, cfg->font_size > 6 ? cfg->font_size - 1 : 6);
 }
 
 void popup_config_build_palette(const PopupConfig *cfg, TypioCandidatePopupThemeCache *cache, TypioCandidatePopupPalette *out) {

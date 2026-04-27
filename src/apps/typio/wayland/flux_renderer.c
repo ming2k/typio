@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 struct TypioTextLayout {
     fx_font      *font;
@@ -26,8 +27,9 @@ static fx_context *global_ctx;
 #define FONT_FILE_CACHE_CAP 8
 
 typedef struct {
-    char family[128];
-    char *path;
+    char   family[128];
+    int32_t weight;
+    char  *path;
 } FontFileEntry;
 
 static FontFileEntry font_file_cache[FONT_FILE_CACHE_CAP];
@@ -39,25 +41,28 @@ static void font_file_cache_clear(void)
         free(font_file_cache[i].path);
         font_file_cache[i].path = NULL;
         font_file_cache[i].family[0] = '\0';
+        font_file_cache[i].weight = 400;
     }
     font_file_cache_count = 0;
 }
 
-static char *font_file_cache_lookup(const char *family)
+static char *font_file_cache_lookup(const char *family, int32_t weight)
 {
     for (size_t i = 0; i < font_file_cache_count; ++i) {
-        if (strcmp(font_file_cache[i].family, family) == 0) {
+        if (font_file_cache[i].weight == weight &&
+            strcmp(font_file_cache[i].family, family) == 0) {
             return strdup(font_file_cache[i].path);
         }
     }
     return NULL;
 }
 
-static void font_file_cache_insert(const char *family, const char *path)
+static void font_file_cache_insert(const char *family, int32_t weight, const char *path)
 {
     if (font_file_cache_count < FONT_FILE_CACHE_CAP) {
         FontFileEntry *e = &font_file_cache[font_file_cache_count++];
         snprintf(e->family, sizeof(e->family), "%s", family);
+        e->weight = weight;
         e->path = strdup(path);
     } else {
         free(font_file_cache[0].path);
@@ -65,6 +70,7 @@ static void font_file_cache_insert(const char *family, const char *path)
             font_file_cache[i - 1] = font_file_cache[i];
         FontFileEntry *e = &font_file_cache[FONT_FILE_CACHE_CAP - 1];
         snprintf(e->family, sizeof(e->family), "%s", family);
+        e->weight = weight;
         e->path = strdup(path);
     }
 }
@@ -119,7 +125,7 @@ static void font_obj_cache_insert(const char *path, float size, fx_font *font)
     }
 }
 
-static fx_font *get_or_create_font(fx_context *ctx, const char *path, float size)
+static fx_font *get_or_create_font(fx_context *ctx, const char *path, float size, int32_t weight)
 {
     fx_font *font = font_obj_cache_lookup(path, size);
     if (font) return font;
@@ -128,7 +134,7 @@ static fx_font *get_or_create_font(fx_context *ctx, const char *path, float size
         .family = "",
         .source_name = path,
         .size = size,
-        .weight = 400,
+        .weight = weight,
         .italic = false,
     };
     font = fx_font_create(ctx, &desc);
@@ -173,38 +179,79 @@ fx_context *typio_flux_context_get(void)
     return global_ctx;
 }
 
+static int32_t parse_weight_keyword(const char *s, size_t len)
+{
+    if (len == 6 && strncasecmp(s, "Medium", 6) == 0)  return 500;
+    if (len == 4 && strncasecmp(s, "Bold", 4) == 0)    return 700;
+    if (len == 6 && strncasecmp(s, "Normal", 6) == 0)  return 400;
+    if (len == 7 && strncasecmp(s, "Regular", 7) == 0) return 400;
+    if (len == 5 && strncasecmp(s, "Light", 5) == 0)   return 300;
+    if (len == 4 && strncasecmp(s, "Thin", 4) == 0)    return 100;
+    if (len == 9 && strncasecmp(s, "ExtraBold", 9) == 0) return 800;
+    if (len == 5 && strncasecmp(s, "Black", 5) == 0)   return 900;
+    if (len == 8 && strncasecmp(s, "SemiBold", 8) == 0) return 600;
+    if (len == 10 && strncasecmp(s, "ExtraLight", 10) == 0) return 200;
+    {
+        /* numeric weight like "500" */
+        int v = atoi(s);
+        if (v >= 100 && v <= 1000) return v;
+    }
+    return 0;
+}
+
 static bool parse_font_desc(const char *font_desc,
                             char *family,
                             size_t family_size,
-                            float *size)
+                            float *size,
+                            int32_t *weight)
 {
-    const char *last_space;
-
     if (!family || family_size == 0 || !size) return false;
 
     snprintf(family, family_size, "Sans");
     *size = 16.0f;
+    if (weight) *weight = 400;
 
     if (!font_desc || !font_desc[0]) return true;
 
-    last_space = strrchr(font_desc, ' ');
-    if (last_space && last_space[1]) {
-        size_t len = (size_t)(last_space - font_desc);
-        float parsed = (float)atof(last_space + 1);
-        if (len >= family_size) len = family_size - 1;
-        memcpy(family, font_desc, len);
-        family[len] = '\0';
-        if (parsed > 0.0f) *size = parsed * (96.0f / 72.0f);
+    const char *last_space = strrchr(font_desc, ' ');
+    if (!last_space || !last_space[1]) {
+        snprintf(family, family_size, "%s", font_desc);
         return true;
     }
 
-    snprintf(family, family_size, "%s", font_desc);
+    float parsed = (float)atof(last_space + 1);
+    if (parsed <= 0.0f) {
+        snprintf(family, family_size, "%s", font_desc);
+        return true;
+    }
+    *size = parsed * (96.0f / 72.0f);
+
+    const char *family_end = last_space;
+
+    if (last_space > font_desc) {
+        const char *p = last_space - 1;
+        while (p > font_desc && *p != ' ') p--;
+        if (*p == ' ') {
+            const char *wstart = p + 1;
+            size_t wlen = (size_t)(last_space - wstart);
+            int32_t w = parse_weight_keyword(wstart, wlen);
+            if (w > 0) {
+                if (weight) *weight = w;
+                family_end = p;
+            }
+        }
+    }
+
+    size_t flen = (size_t)(family_end - font_desc);
+    if (flen >= family_size) flen = family_size - 1;
+    memcpy(family, font_desc, flen);
+    family[flen] = '\0';
     return true;
 }
 
-static char *match_font_file(const char *family)
+static char *match_font_file(const char *family, int32_t weight)
 {
-    char *cached = font_file_cache_lookup(family);
+    char *cached = font_file_cache_lookup(family, weight);
     if (cached) return cached;
 
     if (!FcInit()) return NULL;
@@ -214,6 +261,18 @@ static char *match_font_file(const char *family)
 
     FcPatternAddString(pat, FC_FAMILY,
                        (const FcChar8 *)(family && family[0] ? family : "Sans"));
+    /* Map CSS weight (100-900) to fontconfig weight */
+    int fc_weight = FC_WEIGHT_REGULAR;
+    if (weight >= 900)      fc_weight = FC_WEIGHT_BLACK;
+    else if (weight >= 800) fc_weight = FC_WEIGHT_EXTRABOLD;
+    else if (weight >= 700) fc_weight = FC_WEIGHT_BOLD;
+    else if (weight >= 600) fc_weight = FC_WEIGHT_DEMIBOLD;
+    else if (weight >= 500) fc_weight = FC_WEIGHT_MEDIUM;
+    else if (weight >= 400) fc_weight = FC_WEIGHT_REGULAR;
+    else if (weight >= 300) fc_weight = FC_WEIGHT_LIGHT;
+    else if (weight >= 200) fc_weight = FC_WEIGHT_EXTRALIGHT;
+    else                    fc_weight = FC_WEIGHT_THIN;
+    FcPatternAddInteger(pat, FC_WEIGHT, fc_weight);
     FcConfigSubstitute(NULL, pat, FcMatchPattern);
     FcDefaultSubstitute(pat);
 
@@ -230,12 +289,12 @@ static char *match_font_file(const char *family)
     FcPatternDestroy(pat);
 
     if (result) {
-        font_file_cache_insert(family, result);
+        font_file_cache_insert(family, weight, result);
     }
     return result;
 }
 
-static char *find_fallback_font(const char *text)
+static char *find_fallback_font(const char *text, int32_t weight)
 {
     if (!text || !text[0]) return NULL;
     if (!FcInit()) return NULL;
@@ -253,6 +312,17 @@ static char *find_fallback_font(const char *text)
         p += len;
     }
     FcPatternAddCharSet(pat, FC_CHARSET, cs);
+    int fc_weight = FC_WEIGHT_REGULAR;
+    if (weight >= 900)      fc_weight = FC_WEIGHT_BLACK;
+    else if (weight >= 800) fc_weight = FC_WEIGHT_EXTRABOLD;
+    else if (weight >= 700) fc_weight = FC_WEIGHT_BOLD;
+    else if (weight >= 600) fc_weight = FC_WEIGHT_DEMIBOLD;
+    else if (weight >= 500) fc_weight = FC_WEIGHT_MEDIUM;
+    else if (weight >= 400) fc_weight = FC_WEIGHT_REGULAR;
+    else if (weight >= 300) fc_weight = FC_WEIGHT_LIGHT;
+    else if (weight >= 200) fc_weight = FC_WEIGHT_EXTRALIGHT;
+    else                    fc_weight = FC_WEIGHT_THIN;
+    FcPatternAddInteger(pat, FC_WEIGHT, fc_weight);
     FcConfigSubstitute(NULL, pat, FcMatchPattern);
     FcDefaultSubstitute(pat);
 
@@ -353,23 +423,24 @@ static TypioTextLayout *flux_create_layout(void *engine,
     fx_font *font = NULL;
     TypioTextLayout *layout = NULL;
     TypioTextLayout *fb_layout = NULL;
+    int32_t weight = 400;
 
     if (!priv || !priv->ctx) return NULL;
-    if (!parse_font_desc(font_desc, family, sizeof(family), &size_px)) return NULL;
+    if (!parse_font_desc(font_desc, family, sizeof(family), &size_px, &weight)) return NULL;
 
-    font_file = match_font_file(family);
+    font_file = match_font_file(family, weight);
     if (!font_file) return NULL;
 
-    font = get_or_create_font(priv->ctx, font_file, size_px);
+    font = get_or_create_font(priv->ctx, font_file, size_px, weight);
     if (!font) goto fail;
 
     layout = flux_shape_text(priv->ctx, text, font, color);
     if (!layout) goto fail;
 
     if (layout_has_missing_glyphs(layout)) {
-        fb_file = find_fallback_font(text);
+        fb_file = find_fallback_font(text, weight);
         if (fb_file && strcmp(fb_file, font_file) != 0) {
-            fx_font *fb_font = get_or_create_font(priv->ctx, fb_file, size_px);
+            fx_font *fb_font = get_or_create_font(priv->ctx, fb_file, size_px, weight);
             if (fb_font) {
                 fb_layout = flux_shape_text(priv->ctx, text, fb_font, color);
                 if (fb_layout && !layout_has_missing_glyphs(fb_layout)) {

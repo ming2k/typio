@@ -61,10 +61,12 @@ add_library(flux STATIC
     src/vk/device.c
     src/vk/swapchain.c
     src/vk/memory.c
+    src/vk/upload.c
+    src/vk/vma.cpp
     ${FLUX_SHADER_INCS}
 )
 
-target_compile_features(flux PUBLIC c_std_11)
+target_compile_features(flux PUBLIC c_std_11 cxx_std_17)
 target_compile_definitions(flux
     PUBLIC
         FX_STATIC=1
@@ -79,6 +81,7 @@ target_include_directories(flux
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/vk"
         "${CMAKE_CURRENT_BINARY_DIR}/src"
 )
 
@@ -95,6 +98,7 @@ target_link_libraries(flux
         ${FLUX_VULKAN_LIBRARIES}
         ${FLUX_FREETYPE_LIBRARIES}
         ${FLUX_HARFBUZZ_LIBRARIES}
+    PRIVATE
         ${FLUX_WAYLAND_LIBRARIES}
         m
         pthread

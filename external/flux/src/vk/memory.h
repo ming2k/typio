@@ -5,11 +5,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+VK_DEFINE_HANDLE(VmaAllocation)
+
 typedef struct fx_context fx_context;
 
 typedef struct fx_vbuf_chunk {
     VkBuffer        buffer;
-    VkDeviceMemory  memory;
+    VmaAllocation   alloc;
     void           *map;
     size_t          size;
     struct fx_vbuf_chunk *next;

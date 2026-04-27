@@ -199,16 +199,12 @@ static bool push_verb_and_points(fx_path *path, uint8_t verb,
         path->points[path->point_count++] = points[i];
         update_bounds(path, points[i].x, points[i].y);
     }
-    path->generation++;
     return true;
 }
 
 fx_path *fx_path_create(void)
 {
     fx_path *path = calloc(1, sizeof(fx_path));
-    if (path) {
-        path->generation = 1;
-    }
     return path;
 }
 
@@ -217,8 +213,6 @@ void fx_path_destroy(fx_path *path)
     if (!path) return;
     free(path->verbs);
     free(path->points);
-    free(path->fill_tris);
-    free(path->stroke_tris);
     free(path);
 }
 
@@ -229,7 +223,6 @@ void fx_path_reset(fx_path *path)
     path->point_count = 0;
     path->bounds = (fx_rect){ 0 };
     path->has_bounds = false;
-    path->generation++;
 }
 
 bool fx_path_move_to(fx_path *path, float x, float y)
@@ -484,19 +477,123 @@ bool fx_path_get_line_loop(const fx_path *path,
     return true;
 }
 
-bool fx_path_flatten_polyline(const fx_path *path, float tolerance,
-                              fx_arena *arena,
-                              fx_point **out_points, size_t *out_count,
-                              bool *out_closed)
+bool fx_path_has_multiple_subpaths(const fx_path *path)
+{
+    if (!path) return false;
+    size_t move_count = 0;
+    for (size_t i = 0; i < path->verb_count; ++i) {
+        if (path->verbs[i] == FX_PATH_MOVE) {
+            if (++move_count > 1)
+                return true;
+        }
+    }
+    return false;
+}
+
+static bool flatten_subpath_at(const fx_path *path,
+                                 size_t start_verb, size_t start_pt,
+                                 float tol_sq,
+                                 fx_point **flat, size_t *flat_count, size_t *flat_cap,
+                                 size_t *out_end_verb, size_t *out_end_pt,
+                                 bool *out_closed)
+{
+    fx_point current = { 0 };
+    fx_point start = { 0 };
+    size_t point_i = start_pt;
+    bool have_current = false;
+    bool closed = false;
+    size_t i;
+
+    for (i = start_verb; i < path->verb_count; ++i) {
+        uint8_t verb = path->verbs[i];
+
+        if (verb == FX_PATH_MOVE) {
+            if (have_current) {
+                /* Next sub-path begins; stop here. */
+                break;
+            }
+            if (point_i >= path->point_count) return false;
+            current = path->points[point_i++];
+            start = current;
+            have_current = true;
+            if (!append_flat_point(flat, flat_count, flat_cap, current))
+                return false;
+        } else if (verb == FX_PATH_LINE) {
+            if (!have_current || point_i >= path->point_count) return false;
+            current = path->points[point_i++];
+            if (!append_flat_point(flat, flat_count, flat_cap, current))
+                return false;
+        } else if (verb == FX_PATH_QUAD) {
+            fx_point c;
+            fx_point p;
+            if (!have_current || point_i + 1 >= path->point_count) return false;
+            c = path->points[point_i++];
+            p = path->points[point_i++];
+            if (!flatten_quad_recursive(current, c, p, tol_sq, 0,
+                                        flat, flat_count, flat_cap)) {
+                return false;
+            }
+            current = p;
+        } else if (verb == FX_PATH_CUBIC) {
+            fx_point c0;
+            fx_point c1;
+            fx_point p;
+            if (!have_current || point_i + 2 >= path->point_count) return false;
+            c0 = path->points[point_i++];
+            c1 = path->points[point_i++];
+            p = path->points[point_i++];
+            if (!flatten_cubic_recursive(current, c0, c1, p, tol_sq, 0,
+                                         flat, flat_count, flat_cap)) {
+                return false;
+            }
+            current = p;
+        } else if (verb == FX_PATH_CLOSE) {
+            if (!have_current) return false;
+            if (!points_equal(current, start) && *flat_count >= 2 &&
+                points_equal((*flat)[*flat_count - 1], start)) {
+                (*flat_count)--;
+            }
+            closed = true;
+        } else {
+            return false;
+        }
+    }
+
+    if (!have_current || *flat_count < 2) return false;
+    if (*flat_count >= 2 && points_equal((*flat)[*flat_count - 1], (*flat)[0]))
+        (*flat_count)--;
+    if ((closed && *flat_count < 3) || *flat_count < 2)
+        return false;
+
+    *out_end_verb = i;
+    *out_end_pt = point_i;
+    *out_closed = closed;
+    return true;
+}
+
+size_t fx_path_subpath_count(const fx_path *path)
+{
+    if (!path) return 0;
+    size_t count = 0;
+    for (size_t i = 0; i < path->verb_count; ++i) {
+        if (path->verbs[i] == FX_PATH_MOVE)
+            count++;
+    }
+    return count ? count : 0;
+}
+
+bool fx_path_flatten_subpath(const fx_path *path, size_t subpath_index, float tolerance,
+                             fx_arena *arena,
+                             fx_point **out_points, size_t *out_count,
+                             bool *out_closed)
 {
     fx_point *flat = NULL;
     size_t flat_count = 0;
     size_t flat_cap = 0;
-    fx_point current = { 0 };
-    fx_point start = { 0 };
-    size_t point_i = 0;
-    bool have_current = false;
     float tol_sq;
+    size_t verb_i = 0;
+    size_t pt_i = 0;
+    size_t move_seen = 0;
 
     if (out_points) *out_points = NULL;
     if (out_count) *out_count = 0;
@@ -506,61 +603,32 @@ bool fx_path_flatten_polyline(const fx_path *path, float tolerance,
     if (tolerance <= 0.0f) tolerance = 0.25f;
     tol_sq = tolerance * tolerance;
 
+    /* Locate the start of the requested sub-path. */
     for (size_t i = 0; i < path->verb_count; ++i) {
         uint8_t verb = path->verbs[i];
-
         if (verb == FX_PATH_MOVE) {
-            if (have_current || point_i >= path->point_count) goto fail;
-            current = path->points[point_i++];
-            start = current;
-            have_current = true;
-            if (!append_flat_point(&flat, &flat_count, &flat_cap, current))
-                goto fail;
+            if (move_seen == subpath_index) {
+                verb_i = i;
+                break;
+            }
+            move_seen++;
+            pt_i++;
         } else if (verb == FX_PATH_LINE) {
-            if (!have_current || point_i >= path->point_count) goto fail;
-            current = path->points[point_i++];
-            if (!append_flat_point(&flat, &flat_count, &flat_cap, current))
-                goto fail;
+            pt_i++;
         } else if (verb == FX_PATH_QUAD) {
-            fx_point c;
-            fx_point p;
-            if (!have_current || point_i + 1 >= path->point_count) goto fail;
-            c = path->points[point_i++];
-            p = path->points[point_i++];
-            if (!flatten_quad_recursive(current, c, p, tol_sq, 0,
-                                        &flat, &flat_count, &flat_cap)) {
-                goto fail;
-            }
-            current = p;
+            pt_i += 2;
         } else if (verb == FX_PATH_CUBIC) {
-            fx_point c0;
-            fx_point c1;
-            fx_point p;
-            if (!have_current || point_i + 2 >= path->point_count) goto fail;
-            c0 = path->points[point_i++];
-            c1 = path->points[point_i++];
-            p = path->points[point_i++];
-            if (!flatten_cubic_recursive(current, c0, c1, p, tol_sq, 0,
-                                         &flat, &flat_count, &flat_cap)) {
-                goto fail;
-            }
-            current = p;
-        } else if (verb == FX_PATH_CLOSE) {
-            if (!have_current || i != path->verb_count - 1) goto fail;
-            if (!points_equal(current, start) && flat_count >= 2 &&
-                points_equal(flat[flat_count - 1], start)) {
-                flat_count--;
-            }
-            if (out_closed) *out_closed = true;
-        } else {
-            goto fail;
+            pt_i += 3;
         }
+        /* CLOSE consumes no points */
     }
+    if (verb_i >= path->verb_count) return false;
 
-    if (point_i != path->point_count || flat_count < 2) goto fail;
-    if (flat_count >= 2 && points_equal(flat[flat_count - 1], flat[0]))
-        flat_count--;
-    if ((out_closed && *out_closed && flat_count < 3) || flat_count < 2)
+    size_t end_verb, end_pt;
+    bool closed = false;
+    if (!flatten_subpath_at(path, verb_i, pt_i, tol_sq,
+                            &flat, &flat_count, &flat_cap,
+                            &end_verb, &end_pt, &closed))
         goto fail;
 
     /* Copy to arena */
@@ -568,6 +636,50 @@ bool fx_path_flatten_polyline(const fx_path *path, float tolerance,
     if (!*out_points) goto fail;
     memcpy(*out_points, flat, flat_count * sizeof(fx_point));
     *out_count = flat_count;
+    if (out_closed) *out_closed = closed;
+
+    free(flat);
+    return true;
+
+fail:
+    free(flat);
+    return false;
+}
+
+bool fx_path_flatten_polyline(const fx_path *path, float tolerance,
+                              fx_arena *arena,
+                              fx_point **out_points, size_t *out_count,
+                              bool *out_closed)
+{
+    fx_point *flat = NULL;
+    size_t flat_count = 0;
+    size_t flat_cap = 0;
+    float tol_sq;
+    size_t end_verb, end_pt;
+    bool closed = false;
+
+    if (out_points) *out_points = NULL;
+    if (out_count) *out_count = 0;
+    if (out_closed) *out_closed = false;
+    if (!path || !out_points || !out_count) return false;
+    if (path->verb_count < 2 || path->point_count < 2) return false;
+    if (tolerance <= 0.0f) tolerance = 0.25f;
+    tol_sq = tolerance * tolerance;
+
+    if (!flatten_subpath_at(path, 0, 0, tol_sq,
+                            &flat, &flat_count, &flat_cap,
+                            &end_verb, &end_pt, &closed))
+        goto fail;
+
+    if (end_verb != path->verb_count || end_pt != path->point_count)
+        goto fail;
+
+    /* Copy to arena */
+    *out_points = fx_arena_alloc(arena, flat_count * sizeof(fx_point));
+    if (!*out_points) goto fail;
+    memcpy(*out_points, flat, flat_count * sizeof(fx_point));
+    *out_count = flat_count;
+    if (out_closed) *out_closed = closed;
 
     free(flat);
     return true;

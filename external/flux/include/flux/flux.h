@@ -313,13 +313,13 @@ static inline bool fx_rect_contains(const fx_rect *r, float x, float y) {
     return r && x >= r->x && x <= r->x + r->w && y >= r->y && y <= r->y + r->h;
 }
 FX_API bool fx_fill_rect(fx_canvas *c, const fx_rect *rect, fx_color color);
-/* Fill a path.  The current tessellator handles concave simple polygons;
- * self-intersecting paths and the even-odd fill rule are not yet supported. */
+/* Fill a path.  The current tessellator handles concave simple polygons and
+ * multi-subpath paths using stencil-based even-odd fill (holes are supported).
+ * Self-intersecting paths and nonzero fill rule are not yet supported. */
 FX_API bool fx_fill_path(fx_canvas *c, const fx_path *path, const fx_paint *paint);
 FX_API bool fx_stroke_path(fx_canvas *c, const fx_path *path, const fx_paint *paint);
 FX_API bool fx_draw_image(fx_canvas *c, const fx_image *image,
                             const fx_rect *src, const fx_rect *dst);
-FX_API bool fx_draw_image_ex(fx_canvas *c, const fx_image *image, const fx_rect *src, const fx_rect *dst);
 FX_API bool fx_draw_glyph_run(fx_canvas           *c,
                                 const fx_font       *font,
                                 const fx_glyph_run  *run,
@@ -335,9 +335,9 @@ FX_API fx_path *fx_path_transform(const fx_path *src, const fx_matrix *m);
  * non-premultiplied rgba in [0,255]. */
 static inline fx_color fx_color_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 {
-    unsigned int ar = (r * a + 127) / 255;
-    unsigned int ag = (g * a + 127) / 255;
-    unsigned int ab = (b * a + 127) / 255;
+    unsigned int ar = ((unsigned int)r * a + 127) / 255;
+    unsigned int ag = ((unsigned int)g * a + 127) / 255;
+    unsigned int ab = ((unsigned int)b * a + 127) / 255;
     return ((fx_color)a  << 24) |
            ((fx_color)ar << 16) |
            ((fx_color)ag << 8 ) |

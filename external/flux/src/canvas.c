@@ -109,37 +109,53 @@ bool fx_fill_rect(fx_canvas *c, const fx_rect *rect, fx_color color)
 {
     if (!c || !rect) return false;
     fx_rect r = scale_rect_by_dpr(rect, c->dpr);
-    fx_path *path = fx_path_create();
-    if (!path) return false;
-    fx_path_add_rect(path, &r);
-    
-    fx_paint p;
-    fx_paint_init(&p, color);
-    
-    fx_op op = {
-        .kind = FX_OP_FILL_PATH,
-        .u.fill_path = {
-            .path = path,
-            .paint = p,
-            .owns_path = true,
-        },
-    };
 
     fx_matrix m = canvas_transform(c);
     if (!fx_matrix_is_identity(&m)) {
-        fx_path *trans = fx_path_transform(path, &m);
-        fx_path_destroy(path);
-        if (!trans) return false;
-        op.u.fill_path.path = trans;
+        /* Transformed rect may not be axis-aligned; fall back to path fill. */
+        float x0 = r.x,         y0 = r.y;
+        float x1 = r.x + r.w,   y1 = r.y;
+        float x2 = r.x + r.w,   y2 = r.y + r.h;
+        float x3 = r.x,         y3 = r.y + r.h;
+        fx_matrix_transform_point(&m, &x0, &y0);
+        fx_matrix_transform_point(&m, &x1, &y1);
+        fx_matrix_transform_point(&m, &x2, &y2);
+        fx_matrix_transform_point(&m, &x3, &y3);
+        fx_path *path = fx_path_create();
+        if (!path) return false;
+        fx_path_move_to(path, x0, y0);
+        fx_path_line_to(path, x1, y1);
+        fx_path_line_to(path, x2, y2);
+        fx_path_line_to(path, x3, y3);
+        fx_path_close(path);
+        fx_paint p;
+        fx_paint_init(&p, color);
+        fx_op op = {
+            .kind = FX_OP_FILL_PATH,
+            .u.fill_path = {
+                .path = path,
+                .paint = p,
+                .owns_path = true,
+            },
+        };
+        bool ok = push_op(c, &op);
+        if (!ok) fx_path_destroy(path);
+        return ok;
     }
 
+    fx_op op = {
+        .kind = FX_OP_FILL_RECT,
+        .u.fill_rect = {
+            .rect = r,
+            .color = color,
+        },
+    };
     return push_op(c, &op);
 }
 
 bool fx_fill_path(fx_canvas *c, const fx_path *path, const fx_paint *paint)
 {
     if (!c || !path || !paint) return false;
-
     fx_op op = {
         .kind = FX_OP_FILL_PATH,
         .u.fill_path = {
@@ -162,7 +178,6 @@ bool fx_fill_path(fx_canvas *c, const fx_path *path, const fx_paint *paint)
 bool fx_stroke_path(fx_canvas *c, const fx_path *path, const fx_paint *paint)
 {
     if (!c || !path || !paint || paint->stroke_width <= 0.0f) return false;
-
     fx_op op = {
         .kind = FX_OP_STROKE_PATH,
         .u.stroke_path = {
@@ -179,9 +194,8 @@ bool fx_stroke_path(fx_canvas *c, const fx_path *path, const fx_paint *paint)
         if (!op.u.stroke_path.path) return false;
         /* Note: stroke width is not transformed here; it follows
          * the convention of being in 'user space' but applied to
-         * a path that was transformed. For Phase 1 we treat it as
-         * constant in device space if transformed. A more complete
-         * impl would scale the width too. */
+         * a path that was transformed. A more complete impl would
+         * scale the width too. */
     }
 
     return push_op(c, &op);
@@ -189,12 +203,6 @@ bool fx_stroke_path(fx_canvas *c, const fx_path *path, const fx_paint *paint)
 
 bool fx_draw_image(fx_canvas *c, const fx_image *image,
                    const fx_rect *src, const fx_rect *dst)
-{
-    return fx_draw_image_ex(c, image, src, dst);
-}
-
-bool fx_draw_image_ex(fx_canvas *c, const fx_image *image,
-                      const fx_rect *src, const fx_rect *dst)
 {
     fx_rect full_src = { 0 };
     if (!c || !image || !dst) return false;

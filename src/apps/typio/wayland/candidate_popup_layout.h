@@ -53,9 +53,9 @@ typedef struct {
     PopupLayoutMode              layout_mode;
     int                          font_size;
     bool                         mode_indicator;
-    char                         font_desc[96];
-    char                         label_font_desc[96];
-    char                         aux_font_desc[96];
+    char                         font_desc[128];
+    char                         label_font_desc[128];
+    char                         aux_font_desc[128];
     char                         font_family[80];
     PopupThemeVariant            light_custom;
     PopupThemeVariant            dark_custom;

@@ -60,8 +60,8 @@ static void ensure_dir(const char *path) {
 
 static void sleep_past_switch_threshold(void) {
     struct timespec ts = {
-        .tv_sec = 1,
-        .tv_nsec = 100 * 1000 * 1000,
+        .tv_sec = 0,
+        .tv_nsec = 5 * 1000 * 1000,
     };
     nanosleep(&ts, NULL);
 }
@@ -817,6 +817,7 @@ TEST(unload_voice_engine) {
 }
 
 int main(void) {
+    setenv("TYPIO_SWITCH_STABLE_THRESHOLD_MS", "1", 1);
     printf("Running engine manager tests:\n");
 
     run_test_manager_create();
