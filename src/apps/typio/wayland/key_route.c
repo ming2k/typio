@@ -74,7 +74,17 @@ static bool key_route_should_forward_basic_text(TypioWlFrontend *frontend,
     route_mode = typio_config_get_string(config,
                                          "engines.basic.printable_key_mode",
                                          "forward");
-    return route_mode && strcmp(route_mode, "commit") != 0;
+    if (!route_mode || strcmp(route_mode, "commit") == 0) {
+        return false;
+    }
+
+    /* If compose sequences are enabled, printable keys must go through the
+     * basic engine so that dead-key composition works. */
+    if (typio_config_get_bool(config, "engines.basic.compose", false)) {
+        return false;
+    }
+
+    return true;
 }
 
 static TypioWlKeyDecision key_route_decision(TypioWlKeyAction action,

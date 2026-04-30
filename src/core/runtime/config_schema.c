@@ -115,6 +115,13 @@ static const TypioConfigField schema_fields[] = {
         .ui_section = "basic",
         .ui_options = basic_printable_key_mode_options,
     },
+    {
+        .key = "engines.basic.compose",
+        .type = TYPIO_FIELD_BOOL,
+        .def.b = false,
+        .ui_label = "Enable compose sequences",
+        .ui_section = "basic",
+    },
 
     /* --- Rime engine --- */
     {

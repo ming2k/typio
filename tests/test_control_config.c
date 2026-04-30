@@ -305,6 +305,23 @@ TEST(basic_engine_settings_expose_printable_key_mode) {
     cleanup_control(&control);
 }
 
+TEST(basic_engine_settings_expose_compose_toggle) {
+    TypioControl control;
+    char root[] = "/tmp/typio-control-test-XXXXXX";
+    GtkWidget *basic_page;
+    GtkWidget *field;
+
+    setup_control(&control, root);
+
+    basic_page = gtk_stack_get_child_by_name(control.engine_config_stack, "basic");
+    ASSERT_NOT_NULL(basic_page);
+    field = find_widget_by_name(basic_page, "field-engines-basic-compose");
+    ASSERT_NOT_NULL(field);
+    ASSERT(GTK_IS_SWITCH(field));
+
+    cleanup_control(&control);
+}
+
 TEST(keyboard_page_exposes_per_app_preferences_toggle) {
     TypioControl control;
     char root[] = "/tmp/typio-control-test-XXXXXX";
@@ -883,6 +900,7 @@ int main(void) {
     run_test_state_bindings_are_configured();
     run_test_engine_settings_use_separate_window();
     run_test_basic_engine_settings_expose_printable_key_mode();
+    run_test_basic_engine_settings_expose_compose_toggle();
     run_test_keyboard_page_exposes_per_app_preferences_toggle();
     run_test_keyboard_engine_binding_selects_engine_ids();
     run_test_form_changes_update_buffer_immediately();

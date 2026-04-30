@@ -18,6 +18,14 @@ add_executable(test_config test_config.c)
 target_link_libraries(test_config PRIVATE typio-core)
 add_test(NAME test_config COMMAND test_config)
 
+add_executable(test_basic_compose test_basic_compose.c
+    ${CMAKE_SOURCE_DIR}/src/engines/basic/compose.c
+)
+target_include_directories(test_basic_compose PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/engines/basic
+)
+add_test(NAME test_basic_compose COMMAND test_basic_compose)
+
 add_executable(test_recent_log_dump test_recent_log_dump.c)
 target_include_directories(test_recent_log_dump PRIVATE
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}

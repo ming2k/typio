@@ -53,6 +53,11 @@ font_size = 11
 # "commit" lets the built-in basic engine commit printable text directly.
 # printable_key_mode = "forward"
 
+# Enable compose sequences for accented characters in the basic engine.
+# When enabled: ' + a → á, ` + e → è, ~ + n → ñ, " + u → ü, etc.
+# Default: false
+# compose = true
+
 [engines.rime]
 # shared_data_dir = "/usr/share/rime-data"
 # user_data_dir = "~/.local/share/typio/rime"

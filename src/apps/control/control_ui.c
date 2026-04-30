@@ -208,6 +208,13 @@ static GtkWidget *build_basic_config(TypioControl *control) {
                             "Forward key events or let Typio commit text directly.",
                             create_bound_widget(control, "engines.basic.printable_key_mode")));
 
+    gtk_list_box_append(GTK_LIST_BOX(list),
+                        control_create_preference_row_named(
+                            "basic-compose-row",
+                            "Compose sequences",
+                            "Enable compose key sequences (e.g. ' + a → á).",
+                            create_bound_widget(control, "engines.basic.compose")));
+
     gtk_box_append(GTK_BOX(box), list);
     return box;
 }

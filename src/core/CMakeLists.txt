@@ -15,6 +15,7 @@ add_library(typio-core
     utils/string.c
     utils/log.c
     $<$<BOOL:${BUILD_BASIC_ENGINE}>:${CMAKE_SOURCE_DIR}/src/engines/basic/basic.c>
+    $<$<BOOL:${BUILD_BASIC_ENGINE}>:${CMAKE_SOURCE_DIR}/src/engines/basic/compose.c>
 )
 
 target_include_directories(typio-core PUBLIC

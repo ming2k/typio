@@ -46,6 +46,7 @@ typedef struct RecordedVkEvent {
 
 static const char *g_active_engine_name;
 static const char *g_basic_printable_key_mode;
+static bool g_basic_compose_enabled;
 static bool g_process_key_result;
 static int g_process_key_calls;
 static int g_process_key_press_calls;
@@ -75,6 +76,7 @@ static void reset_state(void) {
 
     g_active_engine_name = NULL;
     g_basic_printable_key_mode = "forward";
+    g_basic_compose_enabled = false;
     g_process_key_result = false;
     g_process_key_calls = 0;
     g_process_key_press_calls = 0;
@@ -88,6 +90,10 @@ static void set_active_engine(const char *name) {
 
 static void set_basic_printable_key_mode(const char *mode) {
     g_basic_printable_key_mode = mode;
+}
+
+static void set_basic_compose_enabled(bool enabled) {
+    g_basic_compose_enabled = enabled;
 }
 
 TypioEngineManager *typio_instance_get_engine_manager(TypioInstance *instance) {
@@ -116,6 +122,16 @@ const char *typio_config_get_string(const TypioConfig *config,
     (void)config;
     if (key && strcmp(key, "engines.basic.printable_key_mode") == 0) {
         return g_basic_printable_key_mode ? g_basic_printable_key_mode : default_val;
+    }
+    return default_val;
+}
+
+bool typio_config_get_bool(const TypioConfig *config,
+                           const char *key,
+                           bool default_val) {
+    (void)config;
+    if (key && strcmp(key, "engines.basic.compose") == 0) {
+        return g_basic_compose_enabled;
     }
     return default_val;
 }
@@ -376,6 +392,23 @@ TEST(basic_engine_commit_mode_keeps_engine_in_path) {
     ASSERT(g_frontend.key_states[30] == TYPIO_KEY_TRACK_IDLE);
 }
 
+TEST(basic_engine_compose_mode_keeps_engine_in_path) {
+    reset_state();
+    set_active_engine("basic");
+    set_basic_compose_enabled(true);
+    g_process_key_result = true;
+
+    typio_wl_key_route_process_press(&g_keyboard, &g_session, 30,
+                                     'a', TYPIO_MOD_NONE,
+                                     'a', 1234);
+
+    ASSERT(g_process_key_calls == 1);
+    ASSERT(g_process_key_press_calls == 1);
+    ASSERT(g_process_key_release_calls == 0);
+    ASSERT(g_vk_event_count == 0);
+    ASSERT(g_frontend.key_states[30] == TYPIO_KEY_TRACK_IDLE);
+}
+
 int main(void) {
     printf("Running key route tests:\n");
     run_test_basic_engine_bypasses_for_printable_text();
@@ -383,6 +416,7 @@ int main(void) {
     run_test_forwarded_shift_release_still_reaches_engine();
     run_test_non_basic_engine_keeps_engine_in_path();
     run_test_basic_engine_commit_mode_keeps_engine_in_path();
+    run_test_basic_engine_compose_mode_keeps_engine_in_path();
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
 }

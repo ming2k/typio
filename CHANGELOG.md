@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-04-30
+
+### Added
+
+- **Basic engine compose sequences**: Added dead-key composition support to the
+  built-in basic keyboard engine.  Pressing a compose prefix (e.g. `'`, `` ` ``,
+  `^`, `"`, `~`, `,`) followed by a letter produces accented characters such as
+  `á`, `è`, `û`, `ö`, `ñ`, `ç`.  The rule set covers ~70 common sequences
+  including acute, grave, circumflex, diaeresis, tilde, cedilla, slash, en dash,
+  em dash, ellipsis, guillemets, and inverted punctuation.
+- **`engines.basic.compose` configuration option**: Defaults to `false`.  When
+  enabled, printable keys are routed through the basic engine so that compose
+  sequences work even when `engines.basic.printable_key_mode` is `"forward"`.
+- **Control panel integration**: `typio-control` now exposes a **"Compose
+  sequences"** toggle in the Basic engine settings page.
+- **Test coverage**: Added `test_basic_compose` (20 cases) and a key-route test
+  verifying that compose mode keeps printable keys in the engine path.
+
+### Fixed
+
+- **Key routing bypass with compose enabled**: `key_route.c` no longer forwards
+  printable text directly to the virtual keyboard when `engines.basic.compose`
+  is `true`, ensuring the compose state machine receives both keys of a
+  sequence.
+
 ## [3.0.4] - 2026-04-25
 
 ### Added
