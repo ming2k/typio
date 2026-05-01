@@ -28,6 +28,8 @@
 #include "input-method-unstable-v2-client-protocol.h"
 #include "virtual-keyboard-unstable-v1-client-protocol.h"
 
+#include "aux_handler.h"
+
 #ifdef HAVE_STATUS_BUS
 #include "status/status.h"
 #endif
@@ -236,11 +238,17 @@ struct TypioWlFrontend {
     TypioWlIdentityProvider *identity_provider;
     TypioWlIdentity current_identity;
 
+    /* Optional subsystems registered as uniform TypioWlAuxHandler instances.
+     * This replaces #ifdef-polluted struct members with a runtime array so
+     * that the struct layout is stable across build configurations. */
+    TypioWlAuxHandler *aux_handlers[4];
+    size_t aux_handler_count;
+
+    /* Legacy optional subsystem pointers (kept for gradual migration) */
 #ifdef HAVE_STATUS_BUS
     TypioStatusBus *status_bus;
 #endif
 #ifdef HAVE_SYSTRAY
-    /* System tray */
     TypioTray *tray;
 #endif
 #ifdef HAVE_VOICE

@@ -124,9 +124,19 @@ static const TypioEngineInfo *mock_voice_get_info(void) {
     return &mock_voice_info;
 }
 
+static char *mock_voice_process_audio([[maybe_unused]] TypioEngine *engine,
+                                       [[maybe_unused]] const float *samples,
+                                       [[maybe_unused]] size_t n_samples) {
+    return NULL;
+}
+
+static const TypioVoiceEngineOps mock_voice_ops = {
+    .process_audio = mock_voice_process_audio,
+};
+
 static TypioEngine *mock_voice_create(void) {
-    static const TypioEngineOps ops = {};
-    return typio_engine_new(&mock_voice_info, &ops);
+    static const TypioEngineBaseOps ops = {};
+    return typio_engine_new(&mock_voice_info, &ops, NULL, &mock_voice_ops);
 }
 
 TEST(missing_default_engine_warns) {

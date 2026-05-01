@@ -14,7 +14,12 @@ extern "C" {
 #endif
 
 /* Version info */
-#define TYPIO_API_VERSION 1
+#define TYPIO_API_VERSION       1
+#define TYPIO_ABI_MIN_VERSION   1
+#define TYPIO_ABI_MAX_VERSION   1
+
+/* ABI compatibility: struct size sentinel for runtime validation */
+#define TYPIO_ENGINE_INFO_SIZE  sizeof(struct TypioEngineInfo)
 
 /* Forward declarations */
 typedef struct TypioInstance TypioInstance;

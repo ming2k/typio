@@ -334,13 +334,13 @@ static void identity_restore_mode(TypioWlFrontend *frontend) {
     active = manager ? typio_engine_manager_get_active(manager) : nullptr;
     ctx = frontend->session->ctx;
     if (!active || !typio_str_equals(typio_engine_get_name(active), engine_name) ||
-        !active->ops || !active->ops->set_mode) {
+        !active->keyboard || !active->keyboard->set_mode) {
         free(engine_name);
         free(mode_id);
         return;
     }
 
-    current_mode = active->ops->get_mode ? active->ops->get_mode(active, ctx) : nullptr;
+    current_mode = active->keyboard->get_mode ? active->keyboard->get_mode(active, ctx) : nullptr;
     if (current_mode && current_mode->mode_id &&
         typio_str_equals(current_mode->mode_id, mode_id)) {
         free(engine_name);
@@ -348,7 +348,7 @@ static void identity_restore_mode(TypioWlFrontend *frontend) {
         return;
     }
 
-    if (active->ops->set_mode(active, ctx, mode_id) == TYPIO_OK) {
+    if (active->keyboard->set_mode(active, ctx, mode_id) == TYPIO_OK) {
         typio_log(TYPIO_LOG_INFO,
                   "Restored keyboard mode %s for %s",
                   mode_id,

@@ -510,18 +510,32 @@ static const TypioEngineInfo mock_voice_info = {
     .api_version = TYPIO_API_VERSION,
 };
 
-static const TypioEngineOps mock_voice_ops = {
+static const TypioEngineBaseOps mock_voice_base_ops = {
     .init = mock_init,
     .destroy = mock_destroy,
-    .process_key = mock_process_key,
+    .focus_in = NULL,
+    .focus_out = NULL,
+    .reset = NULL,
+    .reload_config = NULL,
 };
 
 static const TypioEngineInfo *mock_voice_get_info(void) {
     return &mock_voice_info;
 }
 
+static char *mock_voice_process_audio([[maybe_unused]] TypioEngine *engine,
+                                       [[maybe_unused]] const float *samples,
+                                       [[maybe_unused]] size_t n_samples) {
+    return NULL;
+}
+
+static const TypioVoiceEngineOps mock_voice_ops = {
+    .process_audio = mock_voice_process_audio,
+};
+
 static TypioEngine *mock_voice_create(void) {
-    return typio_engine_new(&mock_voice_info, &mock_voice_ops);
+    return typio_engine_new(&mock_voice_info, &mock_voice_base_ops, NULL,
+                            &mock_voice_ops);
 }
 
 static void mock_runtime_state_callback(void *user_data,

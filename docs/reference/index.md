@@ -5,7 +5,7 @@ Lookup-oriented documentation. These pages are dense, complete, and accurate —
 ## API Reference
 
 - [Core API](api/core.md) — `TypioInstance`, `TypioInputContext`, `TypioConfig`, events
-- [Engine API](api/engine.md) — `TypioEngineManager`, `TypioEngineOps`, plugin ABI
+- [Engine API](api/engine.md) — `TypioEngineManager`, `TypioEngineBaseOps`, `TypioKeyboardEngineOps`, `TypioVoiceEngineOps`, plugin ABI
 - [API Index](api/index.md)
 
 ## Interfaces and Configuration
@@ -13,6 +13,7 @@ Lookup-oriented documentation. These pages are dense, complete, and accurate —
 - [CLI Reference](cli.md) — Command-line flags and `typio` client subcommands
 - [Configuration Reference](configuration.md) — All `typio.toml` keys, types, and defaults
 - [D-Bus Interface Reference](dbus-interface.md) — Properties, methods, and signals on `org.typio.InputMethod1`
+- [Engine Reference](engines.md) — Built-in keyboard and voice engines, config keys, capabilities, and plugin ABI
 
 ## Looking for something else?
 

@@ -45,6 +45,10 @@ if(HAVE_WAYLAND)
         wayland/modifier_policy.c
         wayland/wl_event_loop.c
         wayland/wl_runtime_config.c
+        wayland/wl_watchdog.c
+        wayland/keyboard_xkb.c
+        wayland/aux_handler.c
+        wayland/aux_adapters.c
         wayland/candidate_popup.cc
         wayland/candidate_popup_buffer.c
         wayland/candidate_popup_layout.cc

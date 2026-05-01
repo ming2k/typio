@@ -176,6 +176,7 @@ static const TypioEngineInfo whisper_engine_info = {
     .type = TYPIO_ENGINE_TYPE_VOICE,
     .capabilities = TYPIO_CAP_VOICE_INPUT,
     .api_version = TYPIO_API_VERSION,
+    .struct_size = TYPIO_ENGINE_INFO_SIZE,
 };
 
 static TypioResult whisper_engine_init(TypioEngine *engine,
@@ -215,11 +216,64 @@ static void whisper_engine_destroy(TypioEngine *engine) {
     }
 }
 
-static TypioKeyProcessResult whisper_engine_process_key(
-        [[maybe_unused]] TypioEngine *engine,
-        [[maybe_unused]] TypioInputContext *ctx,
-        [[maybe_unused]] const TypioKeyEvent *event) {
-    return TYPIO_KEY_NOT_HANDLED;
+static void whisper_engine_deactivate(TypioEngine *engine) {
+    WhisperProxy *proxy = engine->user_data;
+    if (!proxy) {
+        return;
+    }
+
+    pthread_mutex_lock(&proxy->lock);
+    if (proxy->impl) {
+        typio_voice_backend_destroy(proxy->impl);
+        proxy->impl = NULL;
+    }
+    pthread_mutex_unlock(&proxy->lock);
+
+    typio_log(TYPIO_LOG_INFO, "Whisper: model freed on deactivate");
+}
+
+static void whisper_engine_focus_in(TypioEngine *engine,
+                                     [[maybe_unused]] TypioInputContext *ctx) {
+    WhisperProxy *proxy = engine->user_data;
+    if (!proxy || proxy->impl) {
+        return;
+    }
+
+    /* Lazily reload the model if it was freed during deactivate */
+    pthread_mutex_lock(&proxy->lock);
+    if (proxy->impl || proxy->reload_running) {
+        pthread_mutex_unlock(&proxy->lock);
+        return;
+    }
+
+    const char *data_dir = typio_instance_get_data_dir(engine->instance);
+    const char *language = NULL;
+    const char *model = "base";
+
+    TypioConfig *ecfg = typio_instance_get_engine_config(engine->instance, "whisper");
+    if (ecfg) {
+        const char *l = typio_config_get_string(ecfg, "language", NULL);
+        const char *m = typio_config_get_string(ecfg, "model", NULL);
+        if (l) language = l;
+        if (m) model = m;
+    }
+
+    proxy->impl = typio_voice_backend_whisper_new(data_dir, language, model);
+    pthread_mutex_unlock(&proxy->lock);
+
+    if (proxy->impl) {
+        typio_log(TYPIO_LOG_INFO, "Whisper: model reloaded on focus_in");
+    } else {
+        typio_log(TYPIO_LOG_WARNING, "Whisper: failed to reload model on focus_in");
+    }
+}
+
+static void whisper_engine_focus_out([[maybe_unused]] TypioEngine *engine,
+                                      [[maybe_unused]] TypioInputContext *ctx) {
+}
+
+static void whisper_engine_reset([[maybe_unused]] TypioEngine *engine,
+                                  [[maybe_unused]] TypioInputContext *ctx) {
 }
 
 static TypioResult whisper_engine_reload_config(TypioEngine *engine) {
@@ -279,10 +333,28 @@ static TypioResult whisper_engine_reload_config(TypioEngine *engine) {
     return TYPIO_OK;
 }
 
-static const TypioEngineOps whisper_engine_ops = {
+/* ── Voice ops ──────────────────────────────────────────────────────────── */
+
+static char *whisper_engine_process_audio(TypioEngine *engine,
+                                           const float *samples, size_t n_samples) {
+    if (!engine || !engine->user_data) {
+        return NULL;
+    }
+    return whisper_proxy_process((TypioVoiceBackend *)engine->user_data,
+                                  samples, n_samples);
+}
+
+static const TypioVoiceEngineOps whisper_voice_ops = {
+    .process_audio = whisper_engine_process_audio,
+};
+
+static const TypioEngineBaseOps whisper_base_ops = {
     .init = whisper_engine_init,
     .destroy = whisper_engine_destroy,
-    .process_key = whisper_engine_process_key,
+    .deactivate = whisper_engine_deactivate,
+    .focus_in = whisper_engine_focus_in,
+    .focus_out = whisper_engine_focus_out,
+    .reset = whisper_engine_reset,
     .reload_config = whisper_engine_reload_config,
 };
 
@@ -291,5 +363,6 @@ const TypioEngineInfo *typio_engine_get_info_whisper(void) {
 }
 
 TypioEngine *typio_engine_create_whisper(void) {
-    return typio_engine_new(&whisper_engine_info, &whisper_engine_ops);
+    return typio_engine_new(&whisper_engine_info, &whisper_base_ops, nullptr,
+                            &whisper_voice_ops);
 }

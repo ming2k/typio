@@ -723,8 +723,8 @@ TypioResult typio_instance_reload_config(TypioInstance *instance) {
     }
 
     /* Notify keyboard engine to reload its config */
-    if (active && active->ops->reload_config) {
-        active->ops->reload_config(active);
+    if (active && active->base_ops && active->base_ops->reload_config) {
+        active->base_ops->reload_config(active);
     }
 
     /* Sync voice engine to match default_voice_engine config key */
@@ -794,13 +794,13 @@ TypioResult typio_instance_deploy_rime_config(TypioInstance *instance) {
     }
 
     rime = typio_engine_manager_get_engine(instance->engine_manager, "rime");
-    if (!rime || !rime->ops || !rime->ops->reload_config) {
+    if (!rime || !rime->base_ops || !rime->base_ops->reload_config) {
         return TYPIO_ERROR_NOT_FOUND;
     }
 
-    if (!rime->initialized && rime->ops->init) {
+    if (!rime->initialized && rime->base_ops->init) {
         rime->instance = instance;
-        result = rime->ops->init(rime, instance);
+        result = rime->base_ops->init(rime, instance);
         if (result != TYPIO_OK) {
             return result;
         }
@@ -808,7 +808,7 @@ TypioResult typio_instance_deploy_rime_config(TypioInstance *instance) {
     }
 
     instance->rime_deploy_requested = true;
-    result = rime->ops->reload_config(rime);
+    result = rime->base_ops->reload_config(rime);
     instance->rime_deploy_requested = false;
     return result;
 }

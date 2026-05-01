@@ -2,14 +2,13 @@
  * @file voice_service.c
  * @brief Voice input service - state machine, threading, audio buffering
  *
- * Backend-agnostic: delegates speech-to-text to a TypioVoiceBackend
- * obtained from the active voice engine in engine_manager.
+ * Backend-agnostic: delegates speech-to-text to the active voice engine's
+ * TypioVoiceEngineOps::process_audio callback obtained from engine_manager.
  */
 
 #include "typio_build_config.h"
 #include "voice_service.h"
 #include "voice_engine.h"
-#include "voice_backend.h"
 #include "pw_capture.h"
 #include "typio/config.h"
 #include "typio/instance.h"
@@ -26,12 +25,8 @@
 
 #define TYPIO_VOICE_INITIAL_BUFFER_SIZE (16000 * 30) /* 30 seconds at 16kHz */
 
-TypioVoiceBackend *typio_voice_engine_get_backend(TypioEngine *engine) {
-    if (!engine || !engine->info ||
-        engine->info->type != TYPIO_ENGINE_TYPE_VOICE) {
-        return NULL;
-    }
-    return (TypioVoiceBackend *)engine->user_data;
+static bool engine_has_voice(TypioEngine *engine) {
+    return engine && engine->voice && engine->voice->process_audio;
 }
 
 typedef enum {
@@ -64,35 +59,9 @@ struct TypioVoiceService {
 
 static void audio_callback(const float *samples, size_t count, void *user_data);
 
-/**
- * Get the backend from the current voice engine, or NULL if unavailable.
- */
-static TypioVoiceBackend *get_backend(TypioVoiceService *svc) {
-    if (!svc || !svc->voice_engine) {
-        return NULL;
-    }
-    return typio_voice_engine_get_backend(svc->voice_engine);
-}
-
-static bool voice_service_ensure_io(TypioVoiceService *svc) {
-    if (!svc) {
-        return false;
-    }
-
-    if (!svc->capture) {
-        svc->capture = typio_pw_capture_new(audio_callback, svc);
-    }
-    if (svc->event_fd < 0) {
-        svc->event_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-    }
-
-    return svc->capture && svc->event_fd >= 0;
-}
-
 static void voice_service_reload_idle(TypioVoiceService *svc) {
     TypioEngineManager *mgr;
     TypioEngine *new_engine;
-    TypioVoiceBackend *backend;
 
     if (!svc || !svc->instance) {
         return;
@@ -104,14 +73,13 @@ static void voice_service_reload_idle(TypioVoiceService *svc) {
     pthread_mutex_lock(&svc->buffer_mutex);
     svc->voice_engine = new_engine;
     svc->reload_pending = false;
-    backend = get_backend(svc);
     pthread_mutex_unlock(&svc->buffer_mutex);
 
-    if (backend && voice_service_ensure_io(svc)) {
-        typio_log(TYPIO_LOG_INFO, "Voice service reloaded: backend ready");
+    if (engine_has_voice(new_engine) && svc->capture) {
+        typio_log(TYPIO_LOG_INFO, "Voice service reloaded: engine ready");
     } else {
         typio_log(TYPIO_LOG_WARNING,
-                  "Voice service reloaded: no backend available");
+                  "Voice service reloaded: no voice engine available");
     }
 }
 
@@ -151,14 +119,14 @@ static void audio_callback(const float *samples, size_t count, void *user_data) 
 static void *inference_thread(void *arg) {
     TypioVoiceService *svc = arg;
 
-    /* Take ownership of the audio data and snapshot the backend pointer.
+    /* Take ownership of the audio data and snapshot the engine pointer.
      * Both are read under buffer_mutex to establish happens-before with
      * the main thread (which only modifies voice_engine while IDLE,
      * i.e. after joining this thread). */
     pthread_mutex_lock(&svc->buffer_mutex);
     float *audio = svc->audio_buffer;
     size_t audio_len = svc->audio_len;
-    TypioVoiceBackend *backend = get_backend(svc);
+    TypioEngine *engine = svc->voice_engine;
     svc->audio_buffer = nullptr;
     svc->audio_len = 0;
     svc->audio_cap = 0;
@@ -166,8 +134,8 @@ static void *inference_thread(void *arg) {
 
     char *result_text = nullptr;
 
-    if (audio && audio_len > 0 && backend) {
-        result_text = typio_voice_backend_process(backend, audio, audio_len);
+    if (audio && audio_len > 0 && engine_has_voice(engine)) {
+        result_text = engine->voice->process_audio(engine, audio, audio_len);
     }
 
     free(audio);
@@ -207,10 +175,9 @@ TypioVoiceService *typio_voice_service_new(TypioInstance *instance) {
     TypioEngineManager *mgr = typio_instance_get_engine_manager(instance);
     svc->voice_engine = typio_engine_manager_get_active_voice(mgr);
 
-    TypioVoiceBackend *backend = get_backend(svc);
-    if (!backend) {
+    if (!engine_has_voice(svc->voice_engine)) {
         typio_log(TYPIO_LOG_WARNING,
-                  "No voice backend available (voice input disabled)");
+                  "No voice engine available (voice input disabled)");
         return svc;
     }
 
@@ -271,7 +238,7 @@ void typio_voice_service_free(TypioVoiceService *svc) {
         close(svc->event_fd);
     }
 
-    /* Don't destroy the backend or engine - engine_manager owns them */
+    /* Don't destroy the engine - engine_manager owns them */
 
     free(svc->audio_buffer);
     free(svc->result);
@@ -289,7 +256,7 @@ bool typio_voice_service_start(TypioVoiceService *svc) {
 
     /* Allocate fresh audio buffer */
     pthread_mutex_lock(&svc->buffer_mutex);
-    if (!get_backend(svc) || svc->state != TYPIO_VOICE_IDLE || !svc->capture) {
+    if (!engine_has_voice(svc->voice_engine) || svc->state != TYPIO_VOICE_IDLE || !svc->capture) {
         pthread_mutex_unlock(&svc->buffer_mutex);
         return false;
     }
@@ -419,7 +386,7 @@ bool typio_voice_service_is_available(TypioVoiceService *svc) {
     }
 
     pthread_mutex_lock(&svc->buffer_mutex);
-    available = get_backend(svc) && svc->capture;
+    available = engine_has_voice(svc->voice_engine) && svc->capture;
     pthread_mutex_unlock(&svc->buffer_mutex);
     return available;
 }
@@ -450,7 +417,6 @@ void typio_voice_service_reload(TypioVoiceService *svc) {
 }
 
 const char *typio_voice_service_get_unavail_reason(TypioVoiceService *svc) {
-    TypioVoiceBackend *backend;
     TypioEngine *voice_engine;
     bool has_capture;
 
@@ -458,16 +424,15 @@ const char *typio_voice_service_get_unavail_reason(TypioVoiceService *svc) {
         return "voice service not created";
 
     pthread_mutex_lock(&svc->buffer_mutex);
-    backend = get_backend(svc);
     voice_engine = svc->voice_engine;
     has_capture = svc->capture != NULL;
     pthread_mutex_unlock(&svc->buffer_mutex);
 
-    if (backend && has_capture)
+    if (engine_has_voice(voice_engine) && has_capture)
         return nullptr;
     if (!voice_engine)
         return "no voice engine active";
-    if (!backend)
-        return "voice backend failed to initialize";
+    if (!engine_has_voice(voice_engine))
+        return "voice engine missing process_audio";
     return "audio capture unavailable";
 }

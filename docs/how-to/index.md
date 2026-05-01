@@ -10,6 +10,7 @@ Task-oriented recipes for specific goals. Each guide assumes you have already co
 ## Development and Integration
 
 - [Create a Custom Engine](create-custom-engine.md) — Build a shared-library input engine using the public C ABI.
+- [Integrate an Engine](integrate-engine.md) — Add a built-in or plugin engine to Typio (keyboard or voice).
 
 ## Operations
 

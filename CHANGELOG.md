@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [3.2.0] - 2026-05-01
+
+### Added
+
+- **ABI version validation**: Engine plugins now validate both API version range
+  (`TYPIO_ABI_MIN_VERSION` / `TYPIO_ABI_MAX_VERSION`) and struct size
+  (`TypioEngineInfo.struct_size`) at load time to prevent silent ABI mismatches.
+- **Standardized error handling**: New `src/core/utils/result.h` with
+  `TYPIO_RETURN_IF_ERROR`, `TYPIO_GOTO_IF_ERROR`, and
+  `typio_result_to_string()` macros for uniform `TypioResult` propagation.
+- **Ownership-aware memory helpers**: New `src/core/utils/memory.h` with
+  `TypioOwnership` enum and `TYPIO_FREE_IF_OWNED` / `TYPIO_ASSIGN` macros for
+  explicit lifetime tracking.
+- **Optional-subsystem strategy pattern**: Replaced `#ifdef`-polluted event-loop
+  branches with `TypioWlAuxHandler` runtime registration. New files:
+  `aux_handler.h/c`, `aux_adapters.h/c`.
+- **XKB isolation**: Extracted all XKB keymap/state logic from `wl_keyboard.c`
+  into new `keyboard_xkb.c` module.
+- **Watchdog extraction**: Moved watchdog thread implementation from
+  `wl_frontend.c` to dedicated `wl_watchdog.c`.
+- **C++ render facade**: New `src/render/render_api.h` defines a pure C API
+  boundary so the main daemon can avoid linking a C++ runtime.
+- **Integration test skeleton**: New `tests/integration/mock_compositor.h/c` and
+  `test_basic_flow.c` for headless Wayland compositor testing.
+
+### Changed
+
+- **Event-loop refactor**: `wl_event_loop.c` now builds `pollfd` arrays by
+  iterating over `aux_handlers[]` instead of hard-coding `#ifdef` branches per
+  subsystem. `TypioWlFrontend` struct layout is now stable across build
+  configurations.
+- **Keyboard grab cleanup**: `wl_keyboard.c` reduced from 621 lines to ~350
+  lines. Removed duplicated modifier-sync, guard, and tracking logic.
+- **Voice initialization**: Extracted from `typio_wl_frontend_new()` into
+  `frontend_init_voice()` helper; added `typio_wl_frontend_new_with_voice()`.
+- **Config precedence**: `engine_manager_switch_threshold_ms` now reads
+  `engine.switch_stable_threshold_ms` from config first, with environment
+  variable `TYPIO_SWITCH_STABLE_THRESHOLD_MS` as backward-compatible override.
+- **All built-in and plugin engines** updated to set `struct_size` field.
+
+### Documentation
+
+- Added comprehensive engine documentation.
+  - [`docs/reference/engines.md`](docs/reference/engines.md) — Reference for all
+    built-in keyboard engines (`basic`, `rime`, `mozc`) and voice engines
+    (`whisper`, `sherpa-onnx`), including config keys, capabilities, mode tables,
+    model layout, and plugin ABI.
+  - [`docs/explanation/voice-input.md`](docs/explanation/voice-input.md) —
+    Architecture explanation covering the voice state machine, backend proxy
+    pattern, audio pipeline, and reload semantics.
+  - [`docs/how-to/integrate-engine.md`](docs/how-to/integrate-engine.md) —
+    Step-by-step guide for integrating a new built-in or plugin engine
+    (keyboard or voice) into Typio.
+
 ## [3.1.0] - 2026-04-30
 
 ### Added

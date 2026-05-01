@@ -16,12 +16,14 @@ Typio is a native Wayland input method daemon written in C. Choose the section t
   - [CLI Reference](reference/cli.md)
   - [Configuration Reference](reference/configuration.md)
   - [D-Bus Interface Reference](reference/dbus-interface.md)
+  - [Engine Reference](reference/engines.md) — Keyboard and voice engine configs, capabilities, and ABI
 - **[Explanation](explanation/)** — Understanding-oriented design documents.
   - [Architecture Overview](explanation/architecture-overview.md)
   - [State Management](explanation/state-management.md)
   - [Timing Model](explanation/timing-model.md)
   - [Control Surfaces](explanation/control-surfaces.md)
   - [Configuration System](explanation/configuration-system.md)
+  - [Voice Input Architecture](explanation/voice-input.md)
 - **[Architecture Decisions](adr/)** — Immutable records of past design decisions.
 - **[Developer Documentation](dev/)** — Contributor-oriented docs.
   - [Developer Setup](dev/setup.md)

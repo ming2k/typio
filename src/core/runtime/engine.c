@@ -4,6 +4,7 @@
  */
 
 #include "typio/engine.h"
+#include "typio/instance.h"
 #include "../utils/log.h"
 #include "../utils/string.h"
 
@@ -11,8 +12,10 @@
 #include <string.h>
 
 TypioEngine *typio_engine_new(const TypioEngineInfo *info,
-                               const TypioEngineOps *ops) {
-    if (!info || !ops) {
+                               const TypioEngineBaseOps *base_ops,
+                               const TypioKeyboardEngineOps *keyboard,
+                               const TypioVoiceEngineOps *voice) {
+    if (!info || !base_ops) {
         return nullptr;
     }
 
@@ -22,7 +25,9 @@ TypioEngine *typio_engine_new(const TypioEngineInfo *info,
     }
 
     engine->info = info;
-    engine->ops = ops;
+    engine->base_ops = base_ops;
+    engine->keyboard = keyboard;
+    engine->voice = voice;
     engine->active = false;
 
     return engine;
@@ -33,8 +38,8 @@ void typio_engine_free(TypioEngine *engine) {
         return;
     }
 
-    if (engine->initialized && engine->ops && engine->ops->destroy) {
-        engine->ops->destroy(engine);
+    if (engine->initialized && engine->base_ops && engine->base_ops->destroy) {
+        engine->base_ops->destroy(engine);
         engine->initialized = false;
     }
 
@@ -100,8 +105,8 @@ TypioResult typio_engine_activate(TypioEngine *engine, TypioInstance *instance) 
 
     engine->instance = instance;
 
-    if (!engine->initialized && engine->ops && engine->ops->init) {
-        TypioResult result = engine->ops->init(engine, instance);
+    if (!engine->initialized && engine->base_ops && engine->base_ops->init) {
+        TypioResult result = engine->base_ops->init(engine, instance);
         if (result != TYPIO_OK) {
             typio_log_error("Failed to initialize engine: %s",
                             engine->info->name);
@@ -120,6 +125,10 @@ TypioResult typio_engine_activate(TypioEngine *engine, TypioInstance *instance) 
 void typio_engine_deactivate(TypioEngine *engine) {
     if (!engine || !engine->active) {
         return;
+    }
+
+    if (engine->base_ops && engine->base_ops->deactivate) {
+        engine->base_ops->deactivate(engine);
     }
 
     engine->active = false;

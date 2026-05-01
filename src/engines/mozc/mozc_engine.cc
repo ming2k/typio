@@ -1148,19 +1148,23 @@ static const TypioEngineInfo mozc_engine_info = {
     .capabilities = TYPIO_CAP_PREEDIT | TYPIO_CAP_CANDIDATES |
                     TYPIO_CAP_PREDICTION | TYPIO_CAP_LEARNING,
     .api_version = TYPIO_API_VERSION,
+    .struct_size = TYPIO_ENGINE_INFO_SIZE,
 };
 
 /* clang-format off */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-static const TypioEngineOps mozc_engine_ops = {
+static const TypioEngineBaseOps mozc_base_ops = {
     .init = mozc_init,
     .destroy = mozc_destroy,
     .focus_in = mozc_focus_in,
     .focus_out = mozc_focus_out,
     .reset = mozc_reset,
-    .process_key = mozc_process_key,
     .reload_config = mozc_reload_config,
+};
+
+static const TypioKeyboardEngineOps mozc_keyboard_ops = {
+    .process_key = mozc_process_key,
     .get_mode = mozc_get_mode,
     .set_mode = mozc_set_mode,
 };
@@ -1174,7 +1178,8 @@ const TypioEngineInfo *typio_engine_get_info(void) {
 }
 
 TypioEngine *typio_engine_create(void) {
-    return typio_engine_new(&mozc_engine_info, &mozc_engine_ops);
+    return typio_engine_new(&mozc_engine_info, &mozc_base_ops,
+                            &mozc_keyboard_ops, nullptr);
 }
 
 } /* extern "C" */

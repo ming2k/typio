@@ -135,11 +135,24 @@ static const TypioEngineInfo mock_engine_info = {
     .api_version = TYPIO_API_VERSION,
 };
 
-static const TypioEngineOps mock_engine_ops = {
+static void mock_reset([[maybe_unused]] TypioEngine *engine,
+                        [[maybe_unused]] TypioInputContext *ctx) {
+}
+
+static TypioResult mock_reload_config([[maybe_unused]] TypioEngine *engine) {
+    return TYPIO_OK;
+}
+
+static const TypioEngineBaseOps mock_base_ops = {
     .init = mock_init,
     .destroy = mock_destroy,
     .focus_in = mock_focus_in,
     .focus_out = mock_focus_out,
+    .reset = mock_reset,
+    .reload_config = mock_reload_config,
+};
+
+static const TypioKeyboardEngineOps mock_keyboard_ops = {
     .process_key = mock_process_key,
 };
 
@@ -148,7 +161,8 @@ static const TypioEngineInfo *mock_get_info(void) {
 }
 
 static TypioEngine *mock_create(void) {
-    return typio_engine_new(&mock_engine_info, &mock_engine_ops);
+    return typio_engine_new(&mock_engine_info, &mock_base_ops,
+                            &mock_keyboard_ops, nullptr);
 }
 
 /* Second mock engine */
@@ -170,7 +184,8 @@ static const TypioEngineInfo *mock2_get_info(void) {
 }
 
 static TypioEngine *mock2_create(void) {
-    return typio_engine_new(&mock2_engine_info, &mock_engine_ops);
+    return typio_engine_new(&mock2_engine_info, &mock_base_ops,
+                            &mock_keyboard_ops, nullptr);
 }
 
 static TypioResult failing_init([[maybe_unused]] TypioEngine *engine,
@@ -178,9 +193,32 @@ static TypioResult failing_init([[maybe_unused]] TypioEngine *engine,
     return TYPIO_ERROR;
 }
 
-static const TypioEngineOps failing_engine_ops = {
+static void failing_focus_in([[maybe_unused]] TypioEngine *engine,
+                              [[maybe_unused]] TypioInputContext *ctx) {
+}
+
+static void failing_focus_out([[maybe_unused]] TypioEngine *engine,
+                               [[maybe_unused]] TypioInputContext *ctx) {
+}
+
+static void failing_reset([[maybe_unused]] TypioEngine *engine,
+                           [[maybe_unused]] TypioInputContext *ctx) {
+}
+
+static TypioResult failing_reload_config([[maybe_unused]] TypioEngine *engine) {
+    return TYPIO_OK;
+}
+
+static const TypioEngineBaseOps failing_base_ops = {
     .init = failing_init,
     .destroy = mock_destroy,
+    .focus_in = failing_focus_in,
+    .focus_out = failing_focus_out,
+    .reset = failing_reset,
+    .reload_config = failing_reload_config,
+};
+
+static const TypioKeyboardEngineOps failing_keyboard_ops = {
     .process_key = mock_process_key,
 };
 
@@ -202,7 +240,8 @@ static const TypioEngineInfo *failing_get_info(void) {
 }
 
 static TypioEngine *failing_create(void) {
-    return typio_engine_new(&failing_engine_info, &failing_engine_ops);
+    return typio_engine_new(&failing_engine_info, &failing_base_ops,
+                            &failing_keyboard_ops, nullptr);
 }
 
 /* Mock voice engine */
@@ -223,8 +262,19 @@ static const TypioEngineInfo *mock_voice_get_info(void) {
     return &mock_voice_info;
 }
 
+static char *mock_voice_process_audio([[maybe_unused]] TypioEngine *engine,
+                                       [[maybe_unused]] const float *samples,
+                                       [[maybe_unused]] size_t n_samples) {
+    return NULL;
+}
+
+static const TypioVoiceEngineOps mock_voice_ops = {
+    .process_audio = mock_voice_process_audio,
+};
+
 static TypioEngine *mock_voice_create(void) {
-    return typio_engine_new(&mock_voice_info, &mock_engine_ops);
+    return typio_engine_new(&mock_voice_info, &mock_base_ops, NULL,
+                            &mock_voice_ops);
 }
 
 static const TypioEngineInfo failing_voice_info = {
@@ -245,7 +295,8 @@ static const TypioEngineInfo *failing_voice_get_info(void) {
 }
 
 static TypioEngine *failing_voice_create(void) {
-    return typio_engine_new(&failing_voice_info, &failing_engine_ops);
+    return typio_engine_new(&failing_voice_info, &failing_base_ops, NULL,
+                            &mock_voice_ops);
 }
 
 /* Test: Engine manager creation */

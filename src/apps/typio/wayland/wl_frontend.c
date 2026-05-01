@@ -65,132 +65,27 @@ static const struct wl_output_listener output_listener = {
     .scale = output_handle_scale,
 };
 
-#define TYPIO_WL_WATCHDOG_TIMEOUT_MS 5000
-#define TYPIO_WL_WATCHDOG_POLL_US 200000
-
-static void *frontend_watchdog_thread_main(void *data);
-static void frontend_fill_runtime_state(void *user_data,
-                                        TypioStatusRuntimeState *state);
-static const char *frontend_loop_stage_name(TypioWlLoopStage stage);
-
-void typio_wl_frontend_watchdog_heartbeat(TypioWlFrontend *frontend) {
-    if (!frontend) {
-        return;
-    }
-
-    atomic_store(&frontend->watchdog_heartbeat_ms, typio_wl_monotonic_ms());
-}
-
-static const char *frontend_loop_stage_name(TypioWlLoopStage stage) {
-    switch (stage) {
-        case TYPIO_WL_LOOP_STAGE_IDLE:
-            return "idle";
-        case TYPIO_WL_LOOP_STAGE_POPUP_UPDATE:
-            return "popup_update";
-        case TYPIO_WL_LOOP_STAGE_PREPARE_READ:
-            return "prepare_read";
-        case TYPIO_WL_LOOP_STAGE_FLUSH:
-            return "flush";
-        case TYPIO_WL_LOOP_STAGE_POLL:
-            return "poll";
-        case TYPIO_WL_LOOP_STAGE_READ_EVENTS:
-            return "read_events";
-        case TYPIO_WL_LOOP_STAGE_DISPATCH_PENDING:
-            return "dispatch_pending";
-        case TYPIO_WL_LOOP_STAGE_AUX_IO:
-            return "aux_io";
-        case TYPIO_WL_LOOP_STAGE_REPEAT:
-            return "repeat";
-        case TYPIO_WL_LOOP_STAGE_CONFIG_RELOAD:
-            return "config_reload";
-        default:
-            return "unknown";
-    }
-}
-
-void typio_wl_frontend_watchdog_set_stage(TypioWlFrontend *frontend,
-                                          TypioWlLoopStage stage) {
-    if (!frontend) {
-        return;
-    }
-
-    atomic_store(&frontend->watchdog_loop_stage, (int)stage);
-    atomic_store(&frontend->watchdog_stage_since_ms, typio_wl_monotonic_ms());
-}
-
-void typio_wl_frontend_watchdog_start(TypioWlFrontend *frontend) {
-    if (!frontend || frontend->watchdog_thread_started) {
-        return;
-    }
-
-    typio_wl_frontend_watchdog_heartbeat(frontend);
-    typio_wl_frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
-    atomic_store(&frontend->watchdog_stop, false);
-    atomic_store(&frontend->watchdog_armed, false);
-    if (pthread_create(&frontend->watchdog_thread, nullptr,
-                       frontend_watchdog_thread_main, frontend) == 0) {
-        frontend->watchdog_thread_started = true;
-    } else {
-        typio_log(TYPIO_LOG_WARNING, "Failed to start Wayland watchdog thread");
-    }
-}
-
-void typio_wl_frontend_watchdog_stop(TypioWlFrontend *frontend) {
-    if (!frontend || !frontend->watchdog_thread_started) {
-        return;
-    }
-
-    atomic_store(&frontend->watchdog_armed, false);
-    atomic_store(&frontend->watchdog_stop, true);
-    pthread_join(frontend->watchdog_thread, nullptr);
-    frontend->watchdog_thread_started = false;
-}
-
-static uint32_t frontend_runtime_age_ms(uint64_t now_ms,
-                                        uint64_t since_ms) {
-    uint64_t delta;
-
-    if (since_ms == 0 || now_ms <= since_ms) {
-        return 0;
-    }
-
-    delta = now_ms - since_ms;
-    if (delta > UINT32_MAX) {
-        return UINT32_MAX;
-    }
-
-    return (uint32_t)delta;
+static uint32_t frontend_runtime_age_ms(uint64_t now_ms, uint64_t since_ms) {
+    if (since_ms == 0 || now_ms <= since_ms) return 0;
+    uint64_t delta = now_ms - since_ms;
+    return (delta > UINT32_MAX) ? UINT32_MAX : (uint32_t)delta;
 }
 
 static int32_t frontend_runtime_deadline_remaining_ms(uint64_t now_ms,
                                                       uint64_t deadline_ms) {
-    int64_t delta;
-
-    if (deadline_ms == 0) {
-        return 0;
-    }
-
-    delta = (int64_t)deadline_ms - (int64_t)now_ms;
-    if (delta > INT32_MAX) {
-        return INT32_MAX;
-    }
-    if (delta < INT32_MIN) {
-        return INT32_MIN;
-    }
-
+    if (deadline_ms == 0) return 0;
+    int64_t delta = (int64_t)deadline_ms - (int64_t)now_ms;
+    if (delta > INT32_MAX) return INT32_MAX;
+    if (delta < INT32_MIN) return INT32_MIN;
     return (int32_t)delta;
 }
 
 static void frontend_fill_runtime_state(void *user_data,
                                         TypioStatusRuntimeState *state) {
     TypioWlFrontend *frontend = user_data;
-    uint64_t now_ms;
+    if (!frontend || !state) return;
 
-    if (!frontend || !state) {
-        return;
-    }
-
-    now_ms = typio_wl_monotonic_ms();
+    uint64_t now_ms = typio_wl_monotonic_ms();
     state->frontend_backend = "wayland";
     state->lifecycle_phase = typio_wl_lifecycle_phase_name(frontend->lifecycle_phase);
     state->virtual_keyboard_state = typio_wl_vk_state_name(frontend->virtual_keyboard_state);
@@ -226,62 +121,11 @@ void typio_wl_frontend_emit_runtime_state_changed(TypioWlFrontend *frontend) {
 
 static TypioWlFrontend *frontend_init_failed(TypioWlFrontend *frontend,
                                              const char *message) {
-    if (!frontend) {
-        return nullptr;
-    }
-
+    if (!frontend) return nullptr;
     if (message) {
         snprintf(frontend->error_msg, sizeof(frontend->error_msg), "%s", message);
     }
-
     typio_wl_frontend_destroy(frontend);
-    return nullptr;
-}
-
-static void *frontend_watchdog_thread_main(void *data) {
-    TypioWlFrontend *frontend = data;
-
-    if (!frontend) {
-        return nullptr;
-    }
-
-    while (!atomic_load(&frontend->watchdog_stop)) {
-        struct timespec interval = {
-            .tv_sec = 0,
-            .tv_nsec = TYPIO_WL_WATCHDOG_POLL_US * 1000,
-        };
-        nanosleep(&interval, nullptr);
-
-        if (!atomic_load(&frontend->watchdog_armed)) {
-            continue;
-        }
-
-        uint64_t heartbeat_ms = atomic_load(&frontend->watchdog_heartbeat_ms);
-        uint64_t stage_since_ms = atomic_load(&frontend->watchdog_stage_since_ms);
-        uint64_t now_ms = typio_wl_monotonic_ms();
-        TypioWlLoopStage stage =
-            (TypioWlLoopStage)atomic_load(&frontend->watchdog_loop_stage);
-        if (heartbeat_ms == 0 || now_ms < heartbeat_ms) {
-            continue;
-        }
-
-        if ((now_ms - heartbeat_ms) < TYPIO_WL_WATCHDOG_TIMEOUT_MS) {
-            continue;
-        }
-
-        dprintf(STDERR_FILENO,
-                "[typio] [ERROR] Wayland frontend watchdog timeout: lag=%" PRIu64 "ms stage=%s stage_lag=%" PRIu64 "ms lifecycle=%s vk_state=%s popup_pending=%s, forcing process exit to release keyboard grab\n",
-                now_ms - heartbeat_ms,
-                frontend_loop_stage_name(stage),
-                (stage_since_ms > 0 && now_ms >= stage_since_ms) ? (now_ms - stage_since_ms) : 0,
-                typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
-                typio_wl_vk_state_name(frontend->virtual_keyboard_state),
-                frontend->popup_update_pending ? "yes" : "no");
-        typio_log_dump_recent_to_configured_path();
-        kill(getpid(), SIGKILL);
-        break;
-    }
-
     return nullptr;
 }
 
@@ -450,51 +294,55 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
     }
 
     typio_log(TYPIO_LOG_INFO, "Wayland input method frontend initialized");
+    frontend_setup_config_watch(frontend);
+    return frontend;
+}
 
 #ifdef HAVE_VOICE
-    {
-        TypioEngineManager *mgr = typio_instance_get_engine_manager(instance);
-        TypioConfig *inst_config = typio_instance_get_config(instance);
+static void frontend_init_voice(TypioWlFrontend *frontend,
+                                 TypioInstance *instance) {
+    TypioEngineManager *mgr = typio_instance_get_engine_manager(instance);
+    TypioConfig *inst_config = typio_instance_get_config(instance);
 
-        /* Register voice engine adapters */
 #ifdef HAVE_WHISPER
-        typio_engine_manager_register(mgr, typio_engine_create_whisper,
-                                      typio_engine_get_info_whisper);
+    typio_engine_manager_register(mgr, typio_engine_create_whisper,
+                                  typio_engine_get_info_whisper);
 #endif
 #ifdef HAVE_SHERPA_ONNX
-        typio_engine_manager_register(mgr, typio_engine_create_sherpa,
-                                      typio_engine_get_info_sherpa);
+    typio_engine_manager_register(mgr, typio_engine_create_sherpa,
+                                  typio_engine_get_info_sherpa);
 #endif
 
-        /* Determine which voice engine to activate */
-        const char *voice_engine = typio_config_get_string(inst_config,
-                                                            "default_voice_engine",
-                                                            NULL);
-        if (!voice_engine) {
-            /* Default: try whisper, then sherpa-onnx */
+    const char *voice_engine = typio_config_get_string(inst_config,
+                                                         "default_voice_engine",
+                                                         nullptr);
+    if (!voice_engine) {
 #ifdef HAVE_WHISPER
-            voice_engine = "whisper";
+        voice_engine = "whisper";
 #elif defined(HAVE_SHERPA_ONNX)
-            voice_engine = "sherpa-onnx";
+        voice_engine = "sherpa-onnx";
 #endif
-        }
-        if (voice_engine) {
-            typio_engine_manager_set_active_voice(mgr, voice_engine);
-        }
     }
+    if (voice_engine)
+        typio_engine_manager_set_active_voice(mgr, voice_engine);
 
     frontend->voice = typio_voice_service_new(instance);
-    if (frontend->voice && typio_voice_service_is_available(frontend->voice)) {
+    if (frontend->voice && typio_voice_service_is_available(frontend->voice))
         typio_log(TYPIO_LOG_INFO, "Voice input service ready");
-    } else if (frontend->voice) {
-        typio_log(TYPIO_LOG_INFO, "Voice input service created but no model available");
-    } else {
+    else if (frontend->voice)
+        typio_log(TYPIO_LOG_INFO, "Voice input service created but no model");
+    else
         typio_log(TYPIO_LOG_WARNING, "Failed to create voice input service");
-    }
+}
 #endif
 
-    frontend_setup_config_watch(frontend);
-
+TypioWlFrontend *typio_wl_frontend_new_with_voice(TypioInstance *instance,
+                                                   const TypioWlFrontendConfig *config) {
+    TypioWlFrontend *frontend = typio_wl_frontend_new(instance, config);
+#ifdef HAVE_VOICE
+    if (frontend)
+        frontend_init_voice(frontend, instance);
+#endif
     return frontend;
 }
 
@@ -551,6 +399,7 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
         frontend->config_reload_timer_fd = -1;
     }
 
+    /* Clean up optional subsystems */
 #ifdef HAVE_VOICE
     if (frontend->voice) {
         typio_voice_service_free(frontend->voice);

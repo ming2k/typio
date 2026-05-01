@@ -160,6 +160,7 @@ static const TypioEngineInfo sherpa_engine_info = {
     .type = TYPIO_ENGINE_TYPE_VOICE,
     .capabilities = TYPIO_CAP_VOICE_INPUT,
     .api_version = TYPIO_API_VERSION,
+    .struct_size = TYPIO_ENGINE_INFO_SIZE,
 };
 
 static TypioResult sherpa_engine_init(TypioEngine *engine,
@@ -196,11 +197,62 @@ static void sherpa_engine_destroy(TypioEngine *engine) {
     }
 }
 
-static TypioKeyProcessResult sherpa_engine_process_key(
-        [[maybe_unused]] TypioEngine *engine,
-        [[maybe_unused]] TypioInputContext *ctx,
-        [[maybe_unused]] const TypioKeyEvent *event) {
-    return TYPIO_KEY_NOT_HANDLED;
+static void sherpa_engine_deactivate(TypioEngine *engine) {
+    SherpaProxy *proxy = engine->user_data;
+    if (!proxy) {
+        return;
+    }
+
+    pthread_mutex_lock(&proxy->lock);
+    if (proxy->impl) {
+        typio_voice_backend_destroy(proxy->impl);
+        proxy->impl = NULL;
+    }
+    pthread_mutex_unlock(&proxy->lock);
+
+    typio_log(TYPIO_LOG_INFO, "Sherpa-ONNX: model freed on deactivate");
+}
+
+static void sherpa_engine_focus_in(TypioEngine *engine,
+                                     [[maybe_unused]] TypioInputContext *ctx) {
+    SherpaProxy *proxy = engine->user_data;
+    if (!proxy || proxy->impl) {
+        return;
+    }
+
+    /* Lazily reload the model if it was freed during deactivate */
+    pthread_mutex_lock(&proxy->lock);
+    if (proxy->impl || proxy->reload_running) {
+        pthread_mutex_unlock(&proxy->lock);
+        return;
+    }
+
+    const char *data_dir = typio_instance_get_data_dir(engine->instance);
+    const char *language = NULL;
+    const char *model    = NULL;
+
+    TypioConfig *ecfg = typio_instance_get_engine_config(engine->instance, "sherpa-onnx");
+    if (ecfg) {
+        language = typio_config_get_string(ecfg, "language", NULL);
+        model    = typio_config_get_string(ecfg, "model", NULL);
+    }
+
+    proxy->impl = typio_voice_backend_sherpa_new(data_dir, language, model);
+    pthread_mutex_unlock(&proxy->lock);
+
+    if (proxy->impl) {
+        typio_log(TYPIO_LOG_INFO, "Sherpa-ONNX: model reloaded on focus_in");
+    } else {
+        typio_log(TYPIO_LOG_WARNING, "Sherpa-ONNX: failed to reload model on focus_in");
+    }
+}
+
+static void sherpa_engine_focus_out([[maybe_unused]] TypioEngine *engine,
+                                      [[maybe_unused]] TypioInputContext *ctx) {
+}
+
+static void sherpa_engine_reset([[maybe_unused]] TypioEngine *engine,
+                                 [[maybe_unused]] TypioInputContext *ctx) {
 }
 
 static TypioResult sherpa_engine_reload_config(TypioEngine *engine) {
@@ -257,10 +309,28 @@ static TypioResult sherpa_engine_reload_config(TypioEngine *engine) {
     return TYPIO_OK;
 }
 
-static const TypioEngineOps sherpa_engine_ops = {
+/* ── Voice ops ──────────────────────────────────────────────────────────── */
+
+static char *sherpa_engine_process_audio(TypioEngine *engine,
+                                          const float *samples, size_t n_samples) {
+    if (!engine || !engine->user_data) {
+        return NULL;
+    }
+    return sherpa_proxy_process((TypioVoiceBackend *)engine->user_data,
+                                 samples, n_samples);
+}
+
+static const TypioVoiceEngineOps sherpa_voice_ops = {
+    .process_audio = sherpa_engine_process_audio,
+};
+
+static const TypioEngineBaseOps sherpa_base_ops = {
     .init = sherpa_engine_init,
     .destroy = sherpa_engine_destroy,
-    .process_key = sherpa_engine_process_key,
+    .deactivate = sherpa_engine_deactivate,
+    .focus_in = sherpa_engine_focus_in,
+    .focus_out = sherpa_engine_focus_out,
+    .reset = sherpa_engine_reset,
     .reload_config = sherpa_engine_reload_config,
 };
 
@@ -269,5 +339,6 @@ const TypioEngineInfo *typio_engine_get_info_sherpa(void) {
 }
 
 TypioEngine *typio_engine_create_sherpa(void) {
-    return typio_engine_new(&sherpa_engine_info, &sherpa_engine_ops);
+    return typio_engine_new(&sherpa_engine_info, &sherpa_base_ops, nullptr,
+                           &sherpa_voice_ops);
 }

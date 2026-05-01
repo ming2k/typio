@@ -7,6 +7,7 @@ Understanding-oriented documents that explain *why* Typio works the way it does.
 - [Timing Model](timing-model.md) — Event ordering, lifecycle phases, keyboard safety, and virtual-keyboard state machine
 - [Control Surfaces](control-surfaces.md) — Design rules for `typio-control`, tray menu, and future UI integrations
 - [Configuration System](configuration-system.md) — Why the schema table is the single source of truth for all config fields
+- [Voice Input Architecture](voice-input.md) — State machine, backend proxy pattern, audio pipeline, and reload semantics
 
 ## Looking for something else?
 

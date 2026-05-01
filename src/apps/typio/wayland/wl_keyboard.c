@@ -1,355 +1,256 @@
 /**
  * @file wl_keyboard.c
- * @brief Keyboard grab and XKB handling
+ * @brief Keyboard grab lifecycle and event dispatch
  *
- * Key events from the compositor flow through a per-key state machine
- * (TypioKeyTrackState on TypioWlFrontend) that unifies startup-key
- * suppression, forwarded-key tracking, and force-release suppression
- * into a single enum per keycode.
+ * This file is intentionally thin: XKB logic lives in keyboard_xkb.c,
+ * key routing lives in key_route.c, repeat logic lives in keyboard_repeat.c,
+ * and guard / tracking utilities live in key_tracking.c.  Only grab
+ * lifecycle and the top-level Wayland dispatcher remain here.
+ *
+ * @see docs/explanation/timing-model.md
+ * @see ADR-003: Keyboard grab lifecycle
  */
 
-
+#include "wl_frontend_internal.h"
+#include "keyboard_xkb.h"
 #include "key_arbiter.h"
 #include "key_debug.h"
-#include "key_tracking_access.h"
-#include "monotonic_time.h"
-#include "wl_frontend_internal.h"
-#include "wl_trace.h"
-#include "modifier_policy.h"
 #include "key_route.h"
+#include "key_tracking_access.h"
 #include "keyboard_repeat.h"
+#include "modifier_policy.h"
 #include "repeat_guard.h"
-#include "shortcut_chord.h"
+#include "monotonic_time.h"
 #include "startup_guard.h"
 #include "vk_bridge.h"
+#include "wl_trace.h"
 #include "xkb_modifiers.h"
 #include "typio/typio.h"
-#include "typio/engine_manager.h"
 #include "utils/log.h"
-#include "utils/string.h"
 
-#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/mman.h>
 #include <sys/timerfd.h>
+#include <unistd.h>
+#include <inttypes.h>
 
-#define TYPIO_WL_GUARD_REJECT_FAILSAFE_WINDOW_MS 1500
-#define TYPIO_WL_GUARD_REJECT_FAILSAFE_THRESHOLD 8
+#define GUARD_FAILSAFE_WINDOW_MS  1500
+#define GUARD_FAILSAFE_THRESHOLD  8
 
-/* ── Helpers ─────────────────────────────────────────────────────── */
+/* ── Tracing ─────────────────────────────────────────────────────── */
 
-static void keyboard_trace_event(TypioWlKeyboard *keyboard,
-                                 const char *stage,
-                                 uint32_t key,
-                                 uint32_t keysym,
-                                 uint32_t modifiers,
-                                 uint32_t unicode,
-                                 TypioKeyTrackState state,
-                                 const char *detail);
-
-static void keyboard_trace_event(TypioWlKeyboard *keyboard,
-                                 const char *stage,
-                                 uint32_t key,
-                                 uint32_t keysym,
-                                 uint32_t modifiers,
-                                 uint32_t unicode,
-                                 TypioKeyTrackState state,
-                                 const char *detail) {
-    uint32_t xkb_mods = 0;
-    char keysym_desc[64];
-    char unicode_desc[64];
-
-    if (!keyboard)
-        return;
-
-    if (keyboard->xkb_state)
-        xkb_mods = typio_wl_xkb_effective_modifiers(keyboard);
+static void trace_key(TypioWlKeyboard *kb, const char *stage,
+                      uint32_t key, uint32_t keysym,
+                      uint32_t modifiers, uint32_t unicode,
+                      TypioKeyTrackState state, const char *detail) {
+    if (!kb) return;
+    uint32_t xkb_mods = kb->xkb_state ? typio_wl_xkb_effective_modifiers(kb) : 0;
+    char keysym_desc[64], unicode_desc[64];
     typio_wl_key_debug_format_keysym(keysym, keysym_desc, sizeof(keysym_desc));
     typio_wl_key_debug_format(unicode, unicode_desc, sizeof(unicode_desc));
-
-    typio_wl_trace(keyboard->frontend,
-                   "key",
-                   "stage=%s keycode=%u keysym=0x%x %s route=%s mods=0x%x phys=0x%x xkb=0x%x keygen=%u activegen=%u %s detail=%s",
-                   stage ? stage : "unknown",
-                   key,
-                   keysym,
-                   keysym_desc,
-                   typio_wl_key_tracking_state_name(state),
-                   modifiers,
-                   keyboard->physical_modifiers,
-                   xkb_mods,
-                   key_get_generation(keyboard->frontend, key),
-                   keyboard->frontend->active_key_generation,
-                   unicode_desc,
-                   detail ? detail : "-");
+    typio_wl_trace(kb->frontend, "key",
+        "stage=%s keycode=%u keysym=0x%x %s route=%s mods=0x%x phys=0x%x xkb=0x%x keygen=%u activegen=%u %s detail=%s",
+        stage, key, keysym, keysym_desc,
+        typio_wl_key_tracking_state_name(state),
+        modifiers, kb->physical_modifiers, xkb_mods,
+        key_get_generation(kb->frontend, key),
+        kb->frontend->active_key_generation,
+        unicode_desc, detail ? detail : "-");
 }
 
-static uint32_t keyboard_event_modifiers(TypioWlKeyboard *keyboard,
-                                         uint32_t keysym,
-                                         uint32_t state) {
-    return typio_wl_modifier_policy_effective_modifiers(
-        keyboard->physical_modifiers,
-        typio_wl_xkb_effective_modifiers(keyboard),
-        keyboard->frontend->active_generation_owned_keys,
-        keysym,
-        state);
-}
+/* ── Guard / failsafe ────────────────────────────────────────────── */
 
-static void keyboard_update_physical_modifier_state(TypioWlKeyboard *keyboard,
-                                                    uint32_t keysym,
-                                                    uint32_t state) {
-    uint32_t bit;
-
-    if (!keyboard)
-        return;
-
-    bit = typio_wl_modifier_policy_effective_modifiers(
-        TYPIO_MOD_NONE, TYPIO_MOD_NONE, true, keysym,
-        WL_KEYBOARD_KEY_STATE_PRESSED);
-    bit &= TYPIO_MOD_SHIFT | TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER;
-    if (bit == TYPIO_MOD_NONE)
-        return;
-
-    if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
-        keyboard->physical_modifiers |= bit;
-    else
-        keyboard->physical_modifiers &= ~bit;
-
-    if ((keyboard->physical_modifiers &
-         (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0) {
-        keyboard->saw_blocking_modifier = true;
-    }
-}
-
-static void keyboard_sync_physical_modifiers(TypioWlKeyboard *keyboard) {
-    if (!keyboard || !keyboard->xkb_state)
-        return;
-
-    keyboard->physical_modifiers =
-        typio_wl_modifier_policy_sync_physical_modifiers(
-            keyboard->physical_modifiers,
-            typio_wl_xkb_effective_modifiers(keyboard));
-}
-
-static const char *keyboard_guard_reject_reason(TypioWlFrontend *frontend) {
-    if (!frontend)
-        return "frontend_missing";
-    if (!frontend->session)
-        return "session_missing";
-    if (!typio_wl_lifecycle_phase_allows_key_events(frontend->lifecycle_phase))
+static const char *guard_reason(TypioWlFrontend *fe) {
+    if (!fe) return "no_frontend";
+    if (!fe->session) return "no_session";
+    if (!typio_wl_lifecycle_phase_allows_key_events(fe->lifecycle_phase))
         return "lifecycle_not_active";
-    if (!frontend->session->ctx)
-        return "context_missing";
-    if (!typio_input_context_is_focused(frontend->session->ctx))
-        return "context_not_focused";
-    return "unknown";
+    if (!fe->session->ctx) return "no_context";
+    if (!typio_input_context_is_focused(fe->session->ctx)) return "not_focused";
+    return nullptr;
 }
 
-static void keyboard_reset_guard_reject_tracking(TypioWlFrontend *frontend) {
-    if (!frontend)
-        return;
-
-    frontend->guard_reject_press_streak = 0;
-    frontend->guard_reject_press_window_start_ms = 0;
+static void guard_reset(TypioWlFrontend *fe) {
+    if (!fe) return;
+    fe->guard_reject_press_streak = 0;
+    fe->guard_reject_press_window_start_ms = 0;
 }
 
-static void keyboard_trigger_guard_reject_fail_safe(TypioWlKeyboard *keyboard,
-                                                    const char *reason,
-                                                    uint32_t key,
-                                                    uint32_t keysym,
-                                                    uint32_t modifiers) {
-    TypioWlFrontend *frontend;
-
-    if (!keyboard || !keyboard->frontend)
-        return;
-
-    frontend = keyboard->frontend;
+static void guard_trigger_failsafe(TypioWlKeyboard *kb, const char *reason,
+                                   uint32_t key, uint32_t keysym,
+                                   uint32_t modifiers) {
+    if (!kb || !kb->frontend) return;
+    TypioWlFrontend *fe = kb->frontend;
     typio_log(TYPIO_LOG_ERROR,
-              "Keyboard routing guard stuck: reason=%s phase=%s keycode=%u keysym=0x%x mods=0x%x streak=%" PRIu64 ", releasing keyboard grab to recover",
-              reason ? reason : "unknown",
-              typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
-              key, keysym, modifiers,
-              frontend->guard_reject_press_streak);
+        "Guard stuck: reason=%s phase=%s key=%u keysym=0x%x mods=0x%x streak=%" PRIu64
+        "; releasing grab and stopping",
+        reason, typio_wl_lifecycle_phase_name(fe->lifecycle_phase),
+        key, keysym, modifiers, fe->guard_reject_press_streak);
     typio_log_dump_recent_to_configured_path();
-    typio_wl_keyboard_release_grab(keyboard);
-    typio_wl_frontend_stop(frontend);
+    typio_wl_keyboard_release_grab(kb);
+    typio_wl_frontend_stop(fe);
 }
 
-static void keyboard_note_guard_reject(TypioWlKeyboard *keyboard,
-                                       uint32_t key,
-                                       uint32_t keysym,
-                                       uint32_t modifiers,
-                                       uint32_t state) {
-    TypioWlFrontend *frontend;
-    uint64_t now_ms;
-    const char *reason;
-    bool session_present;
-    bool ctx_present;
-    bool ctx_focused;
-    bool keyboard_grab_active;
+static void guard_note_reject(TypioWlKeyboard *kb, uint32_t key,
+                              uint32_t keysym, uint32_t modifiers,
+                              uint32_t state) {
+    if (!kb || !kb->frontend) return;
+    TypioWlFrontend *fe = kb->frontend;
+    const char *reason = guard_reason(fe);
 
-    if (!keyboard || !keyboard->frontend)
-        return;
+    typio_log(state == WL_KEYBOARD_KEY_STATE_PRESSED ? TYPIO_LOG_WARNING : TYPIO_LOG_DEBUG,
+        "Key rejected: reason=%s phase=%s key=%u keysym=0x%x mods=0x%x",
+        reason, typio_wl_lifecycle_phase_name(fe->lifecycle_phase),
+        key, keysym, modifiers);
 
-    frontend = keyboard->frontend;
-    reason = keyboard_guard_reject_reason(frontend);
-    session_present = frontend->session != nullptr;
-    ctx_present = session_present && frontend->session->ctx != nullptr;
-    ctx_focused = ctx_present &&
-                  typio_input_context_is_focused(frontend->session->ctx);
-    keyboard_grab_active = keyboard->grab != nullptr;
+    if (state != WL_KEYBOARD_KEY_STATE_PRESSED) return;
 
-    typio_log(state == WL_KEYBOARD_KEY_STATE_PRESSED ? TYPIO_LOG_WARNING
-                                                     : TYPIO_LOG_DEBUG,
-              "Keyboard event rejected by routing guard: reason=%s phase=%s keycode=%u keysym=0x%x mods=0x%x session=%s ctx=%s focused=%s keyboard_grab=%s pending_active=%s pending_reactivation=%s",
-              reason,
-              typio_wl_lifecycle_phase_name(frontend->lifecycle_phase),
-              key, keysym, modifiers,
-              session_present ? "yes" : "no",
-              ctx_present ? "yes" : "no",
-              ctx_focused ? "yes" : "no",
-              keyboard_grab_active ? "yes" : "no",
-              session_present && frontend->session->pending.active ? "yes" : "no",
-              frontend->pending_reactivation ? "yes" : "no");
-
-    if (state != WL_KEYBOARD_KEY_STATE_PRESSED || !keyboard_grab_active) {
-        return;
-    }
-
-    now_ms = typio_wl_monotonic_ms();
-    if (frontend->guard_reject_press_window_start_ms == 0 ||
-        now_ms < frontend->guard_reject_press_window_start_ms ||
-        now_ms - frontend->guard_reject_press_window_start_ms >
-            TYPIO_WL_GUARD_REJECT_FAILSAFE_WINDOW_MS) {
-        frontend->guard_reject_press_window_start_ms = now_ms;
-        frontend->guard_reject_press_streak = 1;
+    uint64_t now = typio_wl_monotonic_ms();
+    if (fe->guard_reject_press_window_start_ms == 0 ||
+        now - fe->guard_reject_press_window_start_ms > GUARD_FAILSAFE_WINDOW_MS) {
+        fe->guard_reject_press_window_start_ms = now;
+        fe->guard_reject_press_streak = 1;
     } else {
-        frontend->guard_reject_press_streak++;
+        fe->guard_reject_press_streak++;
     }
 
-    if (frontend->guard_reject_press_streak >=
-            TYPIO_WL_GUARD_REJECT_FAILSAFE_THRESHOLD &&
-        frontend->lifecycle_phase != TYPIO_WL_PHASE_ACTIVATING) {
-        keyboard_trigger_guard_reject_fail_safe(keyboard, reason, key, keysym,
-                                                modifiers);
+    if (fe->guard_reject_press_streak >= GUARD_FAILSAFE_THRESHOLD &&
+        fe->lifecycle_phase != TYPIO_WL_PHASE_ACTIVATING) {
+        guard_trigger_failsafe(kb, reason, key, keysym, modifiers);
     }
 }
 
-/* ── Per-key state machine ───────────────────────────────────────── */
+/* ── Tracking helpers ────────────────────────────────────────────── */
 
-static void keyboard_reset_tracking(TypioWlFrontend *frontend) {
-    if (!frontend)
-        return;
-
-    typio_wl_key_tracking_reset(frontend->key_states,
-                                TYPIO_WL_MAX_TRACKED_KEYS);
-    typio_wl_key_tracking_reset_generations(frontend->key_generations,
+static void tracking_reset(TypioWlFrontend *fe) {
+    if (!fe) return;
+    typio_wl_key_tracking_reset(fe->key_states, TYPIO_WL_MAX_TRACKED_KEYS);
+    typio_wl_key_tracking_reset_generations(fe->key_generations,
                                             TYPIO_WL_MAX_TRACKED_KEYS);
-    keyboard_reset_guard_reject_tracking(frontend);
+    guard_reset(fe);
 }
 
-/* ── Keyboard grab event handler declarations ────────────────────── */
+/* ── Wayland listeners ───────────────────────────────────────────── */
 
-static void kb_handle_keymap(void *data,
-                             struct zwp_input_method_keyboard_grab_v2 *kb,
-                             uint32_t format, int32_t fd, uint32_t size);
-static void kb_handle_key(void *data,
-                          struct zwp_input_method_keyboard_grab_v2 *kb,
-                          uint32_t serial, uint32_t time, uint32_t key,
-                          uint32_t state);
-static void kb_handle_modifiers(void *data,
-                                struct zwp_input_method_keyboard_grab_v2 *kb,
-                                uint32_t serial, uint32_t mods_depressed,
-                                uint32_t mods_latched, uint32_t mods_locked,
-                                uint32_t group);
-static void kb_handle_repeat_info(void *data,
-                                  struct zwp_input_method_keyboard_grab_v2 *kb,
-                                  int32_t rate, int32_t delay);
+static void on_keymap(void *data,
+                      [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
+                      uint32_t format, int32_t fd, uint32_t size) {
+    TypioWlKeyboard *keyboard = data;
+    typio_wl_trace(keyboard ? keyboard->frontend : nullptr,
+                   "keymap", "stage=received format=%u size=%u", format, size);
+    typio_wl_keyboard_handle_keymap(keyboard, format, fd, size);
+}
 
-static const struct zwp_input_method_keyboard_grab_v2_listener keyboard_grab_listener = {
-    .keymap = kb_handle_keymap,
-    .key = kb_handle_key,
-    .modifiers = kb_handle_modifiers,
-    .repeat_info = kb_handle_repeat_info,
+static void on_key(void *data,
+                   [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
+                   [[maybe_unused]] uint32_t serial, uint32_t time,
+                   uint32_t key, uint32_t state);
+
+static void on_modifiers(void *data,
+                         [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
+                         [[maybe_unused]] uint32_t serial,
+                         uint32_t mods_depressed, uint32_t mods_latched,
+                         uint32_t mods_locked, uint32_t group) {
+    TypioWlKeyboard *keyboard = data;
+    if (!keyboard) return;
+
+    uint32_t prev = keyboard->xkb_state ? typio_wl_xkb_effective_modifiers(keyboard) : 0;
+    typio_wl_keyboard_handle_modifiers(keyboard, mods_depressed, mods_latched,
+                                        mods_locked, group);
+    uint32_t cur = keyboard->xkb_state ? typio_wl_xkb_effective_modifiers(keyboard) : 0;
+
+    if ((cur & (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0)
+        keyboard->saw_blocking_modifier = true;
+
+    if (keyboard->repeating &&
+        typio_wl_repeat_should_cancel_on_modifier_transition(prev, cur)) {
+        typio_wl_keyboard_repeat_stop(keyboard);
+    }
+
+    typio_wl_vk_forward_modifiers(keyboard, mods_depressed, mods_latched,
+                                  mods_locked, group);
+}
+
+static void on_repeat_info(void *data,
+                           [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
+                           int32_t rate, int32_t delay) {
+    TypioWlKeyboard *keyboard = data;
+    if (!keyboard) return;
+    keyboard->repeat_rate = rate;
+    keyboard->repeat_delay = delay;
+    typio_wl_trace(keyboard->frontend, "repeat",
+                   "stage=info rate=%d delay=%d", rate, delay);
+}
+
+static const struct zwp_input_method_keyboard_grab_v2_listener grab_listener = {
+    .keymap = on_keymap,
+    .key = on_key,
+    .modifiers = on_modifiers,
+    .repeat_info = on_repeat_info,
 };
 
-/* ── Keyboard grab lifecycle ─────────────────────────────────────── */
+/* ── Lifecycle ───────────────────────────────────────────────────── */
 
 TypioWlKeyboard *typio_wl_keyboard_create(TypioWlFrontend *frontend) {
-    if (!frontend || !frontend->input_method)
-        return nullptr;
+    if (!frontend || !frontend->input_method) return nullptr;
 
-    TypioWlKeyboard *keyboard = calloc(1, sizeof(TypioWlKeyboard));
-    if (!keyboard)
-        return nullptr;
+    TypioWlKeyboard *kb = calloc(1, sizeof(TypioWlKeyboard));
+    if (!kb) return nullptr;
 
     frontend->active_key_generation++;
-    if (frontend->active_key_generation == 0)
-        frontend->active_key_generation = 1;
+    if (frontend->active_key_generation == 0) frontend->active_key_generation = 1;
     frontend->active_generation_owned_keys = false;
     frontend->active_generation_vk_dirty = false;
     atomic_store(&frontend->watchdog_armed, true);
-    keyboard_reset_tracking(frontend);
-    keyboard->frontend = frontend;
-    keyboard->suppress_stale_keys = true;
-    keyboard->created_at_epoch = frontend->dispatch_epoch;
-    typio_wl_key_arbiter_init(&keyboard->arbiter);
+    tracking_reset(frontend);
 
-    keyboard->repeat_timer_fd = timerfd_create(CLOCK_MONOTONIC,
-                                               TFD_CLOEXEC | TFD_NONBLOCK);
-    if (keyboard->repeat_timer_fd < 0)
+    kb->frontend = frontend;
+    kb->suppress_stale_keys = true;
+    kb->created_at_epoch = frontend->dispatch_epoch;
+    typio_wl_key_arbiter_init(&kb->arbiter);
+
+    kb->repeat_timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+    if (kb->repeat_timer_fd < 0)
         typio_log(TYPIO_LOG_WARNING, "Failed to create repeat timerfd");
 
-    keyboard->xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-    if (!keyboard->xkb_context) {
+    kb->xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    if (!kb->xkb_context) {
         typio_log(TYPIO_LOG_ERROR, "Failed to create XKB context");
-        if (keyboard->repeat_timer_fd >= 0)
-            close(keyboard->repeat_timer_fd);
-        free(keyboard);
-        return nullptr;
+        goto fail;
     }
 
-    keyboard->grab = zwp_input_method_v2_grab_keyboard(frontend->input_method);
-    if (!keyboard->grab) {
+    kb->grab = zwp_input_method_v2_grab_keyboard(frontend->input_method);
+    if (!kb->grab) {
         typio_log(TYPIO_LOG_ERROR, "Failed to grab keyboard");
-        xkb_context_unref(keyboard->xkb_context);
-        if (keyboard->repeat_timer_fd >= 0)
-            close(keyboard->repeat_timer_fd);
-        free(keyboard);
-        return nullptr;
+        goto fail;
     }
 
-    zwp_input_method_keyboard_grab_v2_add_listener(keyboard->grab,
-                                                    &keyboard_grab_listener,
-                                                    keyboard);
-
+    zwp_input_method_keyboard_grab_v2_add_listener(kb->grab, &grab_listener, kb);
     typio_wl_trace(frontend, "grab", "action=create status=ok");
     typio_log(TYPIO_LOG_DEBUG, "Keyboard grab created");
     typio_wl_frontend_emit_runtime_state_changed(frontend);
-    return keyboard;
+    return kb;
+
+fail:
+    if (kb->repeat_timer_fd >= 0) close(kb->repeat_timer_fd);
+    if (kb->xkb_context) xkb_context_unref(kb->xkb_context);
+    free(kb);
+    return nullptr;
 }
 
 void typio_wl_keyboard_destroy(TypioWlKeyboard *keyboard) {
-    if (!keyboard)
-        return;
-
+    if (!keyboard) return;
     atomic_store(&keyboard->frontend->watchdog_armed, false);
     typio_wl_vk_release_forwarded_keys(keyboard->frontend,
-                                       typio_wl_key_tracking_state_name);
+                                        typio_wl_key_tracking_state_name);
     typio_wl_keyboard_release_grab(keyboard);
     typio_wl_keyboard_repeat_stop(keyboard);
-    keyboard_reset_tracking(keyboard->frontend);
+    tracking_reset(keyboard->frontend);
 
-    if (keyboard->repeat_timer_fd >= 0)
-        close(keyboard->repeat_timer_fd);
-    if (keyboard->xkb_state)
-        xkb_state_unref(keyboard->xkb_state);
-    if (keyboard->xkb_keymap)
-        xkb_keymap_unref(keyboard->xkb_keymap);
-    if (keyboard->xkb_context)
-        xkb_context_unref(keyboard->xkb_context);
+    if (keyboard->repeat_timer_fd >= 0) close(keyboard->repeat_timer_fd);
+    if (keyboard->xkb_state) xkb_state_unref(keyboard->xkb_state);
+    if (keyboard->xkb_keymap) xkb_keymap_unref(keyboard->xkb_keymap);
+    if (keyboard->xkb_context) xkb_context_unref(keyboard->xkb_context);
 
     typio_wl_trace(keyboard->frontend, "grab", "action=destroy status=ok");
     typio_log(TYPIO_LOG_DEBUG, "Keyboard destroyed");
@@ -358,106 +259,29 @@ void typio_wl_keyboard_destroy(TypioWlKeyboard *keyboard) {
 }
 
 void typio_wl_keyboard_release_grab(TypioWlKeyboard *keyboard) {
-    if (keyboard && keyboard->grab) {
-        zwp_input_method_keyboard_grab_v2_release(keyboard->grab);
-        keyboard->grab = nullptr;
-        typio_wl_trace(keyboard->frontend, "grab", "action=release status=ok");
-        typio_log(TYPIO_LOG_DEBUG, "Keyboard grab released");
-        typio_wl_frontend_emit_runtime_state_changed(keyboard->frontend);
-    }
+    if (!keyboard || !keyboard->grab) return;
+    zwp_input_method_keyboard_grab_v2_release(keyboard->grab);
+    keyboard->grab = nullptr;
+    typio_wl_trace(keyboard->frontend, "grab", "action=release status=ok");
+    typio_log(TYPIO_LOG_DEBUG, "Keyboard grab released");
+    typio_wl_frontend_emit_runtime_state_changed(keyboard->frontend);
 }
 
-/* ── Keyboard grab event handlers ────────────────────────────────── */
-
-static void kb_handle_keymap(void *data,
-                             [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
-                             uint32_t format, int32_t fd, uint32_t size) {
-    TypioWlKeyboard *keyboard = data;
-
-    typio_wl_trace(keyboard ? keyboard->frontend : nullptr,
-                   "keymap",
-                   "stage=received format=%u size=%u",
-                   format, size);
-
-    if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
-        typio_log(TYPIO_LOG_WARNING, "Unsupported keymap format: %u", format);
-        close(fd);
-        return;
-    }
-
-    char *map_str = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (map_str == MAP_FAILED) {
-        typio_log(TYPIO_LOG_ERROR, "Failed to mmap keymap");
-        close(fd);
-        return;
-    }
-
-    /* Forward keymap to virtual keyboard */
-    typio_wl_vk_forward_keymap(keyboard->frontend, format, fd, size);
-
-    close(fd);
-
-    /* Replace keymap and state */
-    if (keyboard->xkb_state) {
-        xkb_state_unref(keyboard->xkb_state);
-        keyboard->xkb_state = nullptr;
-    }
-    if (keyboard->xkb_keymap) {
-        xkb_keymap_unref(keyboard->xkb_keymap);
-        keyboard->xkb_keymap = nullptr;
-    }
-
-    keyboard->xkb_keymap = xkb_keymap_new_from_string(keyboard->xkb_context,
-                                                      map_str,
-                                                      XKB_KEYMAP_FORMAT_TEXT_V1,
-                                                      XKB_KEYMAP_COMPILE_NO_FLAGS);
-    munmap(map_str, size);
-
-    if (!keyboard->xkb_keymap) {
-        typio_log(TYPIO_LOG_ERROR, "Failed to compile keymap");
-        return;
-    }
-
-    keyboard->xkb_state = xkb_state_new(keyboard->xkb_keymap);
-    if (!keyboard->xkb_state) {
-        typio_log(TYPIO_LOG_ERROR, "Failed to create XKB state");
-        xkb_keymap_unref(keyboard->xkb_keymap);
-        keyboard->xkb_keymap = nullptr;
-        return;
-    }
-
-    keyboard->mod_shift = xkb_keymap_mod_get_index(keyboard->xkb_keymap, XKB_MOD_NAME_SHIFT);
-    keyboard->mod_ctrl  = xkb_keymap_mod_get_index(keyboard->xkb_keymap, XKB_MOD_NAME_CTRL);
-    keyboard->mod_alt   = xkb_keymap_mod_get_index(keyboard->xkb_keymap, XKB_MOD_NAME_ALT);
-    keyboard->mod_super = xkb_keymap_mod_get_index(keyboard->xkb_keymap, XKB_MOD_NAME_LOGO);
-    keyboard->mod_caps  = xkb_keymap_mod_get_index(keyboard->xkb_keymap, XKB_MOD_NAME_CAPS);
-    keyboard->mod_num   = xkb_keymap_mod_get_index(keyboard->xkb_keymap, XKB_MOD_NAME_NUM);
-
-    typio_log(TYPIO_LOG_INFO, "XKB keymap loaded");
-}
-
-/* ── Key press handler ───────────────────────────────────────────── */
+/* ── Public process helpers ──────────────────────────────────────── */
 
 void typio_wl_keyboard_process_key_press(TypioWlKeyboard *keyboard,
                                          TypioWlSession *session,
                                          uint32_t key, uint32_t keysym,
                                          uint32_t modifiers, uint32_t unicode,
                                          uint32_t time) {
-    TypioKeyTrackState state_before_repeat;
-
     typio_wl_key_route_process_press(keyboard, session, key, keysym,
-                                     modifiers, unicode, time);
-
-    state_before_repeat = key_get_state(keyboard->frontend, key);
-
+                                      modifiers, unicode, time);
     if (keyboard->repeat_rate > 0 && keyboard->xkb_keymap &&
-        typio_wl_repeat_should_run_for_state(state_before_repeat) &&
+        typio_wl_repeat_should_run_for_state(key_get_state(keyboard->frontend, key)) &&
         xkb_keymap_key_repeats(keyboard->xkb_keymap, key + 8)) {
         typio_wl_keyboard_repeat_maybe_start(keyboard, key, time, modifiers);
     }
 }
-
-/* ── Key release handler ─────────────────────────────────────────── */
 
 void typio_wl_keyboard_process_key_release(TypioWlKeyboard *keyboard,
                                            TypioWlSession *session,
@@ -466,151 +290,92 @@ void typio_wl_keyboard_process_key_release(TypioWlKeyboard *keyboard,
                                            uint32_t time) {
     if (keyboard->repeating && keyboard->repeat_key == key)
         typio_wl_keyboard_repeat_stop(keyboard);
-
     typio_wl_key_route_process_release(keyboard, session, key, keysym,
-                                       modifiers, unicode, time);
+                                        modifiers, unicode, time);
 }
 
-/* ── Main key event dispatcher ───────────────────────────────────── */
+/* ── Main dispatcher ─────────────────────────────────────────────── */
 
-static void kb_handle_key(void *data,
-                          [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
-                          [[maybe_unused]] uint32_t serial, uint32_t time, uint32_t key,
-                          uint32_t state) {
+static void on_key(void *data,
+                   [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
+                   [[maybe_unused]] uint32_t serial, uint32_t time,
+                   uint32_t key, uint32_t state) {
     TypioWlKeyboard *keyboard = data;
     TypioWlFrontend *frontend = keyboard->frontend;
-    xkb_keysym_t keysym;
-    uint32_t unicode;
-    uint32_t modifiers;
+    if (!keyboard->xkb_state) return;
 
-    if (!keyboard->xkb_state)
-        return;
+    uint32_t keysym = typio_wl_keyboard_keysym(keyboard, key);
+    uint32_t unicode = typio_wl_keyboard_unicode(keyboard, key);
+    uint32_t modifiers = keyboard->physical_modifiers;
+    if (keyboard->xkb_state)
+        modifiers = typio_wl_modifier_policy_effective_modifiers(
+            keyboard->physical_modifiers,
+            typio_wl_xkb_effective_modifiers(keyboard),
+            frontend->active_generation_owned_keys,
+            keysym, state);
 
-    keysym = xkb_state_key_get_one_sym(keyboard->xkb_state, key + 8);
-    unicode = xkb_state_key_get_utf32(keyboard->xkb_state, key + 8);
-    modifiers = keyboard_event_modifiers(keyboard, (uint32_t)keysym, state);
-
+    /* Emergency exit shortcut */
     if (state == WL_KEYBOARD_KEY_STATE_PRESSED &&
-        typio_wl_key_route_reserved_action(&frontend->shortcuts,
-                                           (uint32_t)keysym, modifiers) ==
-            TYPIO_WL_RESERVED_ACTION_EMERGENCY_EXIT) {
-        keyboard_trace_event(keyboard,
-                             "dispatch-stop",
-                             key, (uint32_t)keysym, modifiers, unicode,
-                             key_get_state(frontend, key),
-                             "emergency exit early path");
+        typio_wl_key_route_reserved_action(&frontend->shortcuts, keysym, modifiers) ==
+        TYPIO_WL_RESERVED_ACTION_EMERGENCY_EXIT) {
+        trace_key(keyboard, "emergency-exit", key, keysym, modifiers, unicode,
+                  key_get_state(frontend, key), "early path");
         typio_log(TYPIO_LOG_WARNING,
-                  "Emergency exit shortcut triggered before normal routing: keycode=%u keysym=0x%x mods=0x%x phase=%s",
-                  key, (uint32_t)keysym, modifiers,
-                  typio_wl_lifecycle_phase_name(frontend->lifecycle_phase));
+            "Emergency exit: key=%u keysym=0x%x mods=0x%x phase=%s",
+            key, keysym, modifiers,
+            typio_wl_lifecycle_phase_name(frontend->lifecycle_phase));
         typio_log_dump_recent_to_configured_path();
         typio_wl_keyboard_release_grab(keyboard);
         typio_wl_frontend_stop(frontend);
         return;
     }
 
-    if (!frontend->session ||
-        !typio_wl_lifecycle_phase_allows_key_events(frontend->lifecycle_phase) ||
-        !frontend->session->ctx ||
-        !typio_input_context_is_focused(frontend->session->ctx)) {
-        keyboard_note_guard_reject(keyboard, key, (uint32_t)keysym, modifiers,
-                                   state);
-        keyboard_trace_event(keyboard,
-                             state == WL_KEYBOARD_KEY_STATE_PRESSED ? "guard-reject-press" : "guard-reject-release",
-                             key, (uint32_t)keysym, modifiers, unicode,
-                             key_get_state(frontend, key),
-                             typio_wl_lifecycle_phase_name(frontend->lifecycle_phase));
-        /* Even though we cannot route this event, honour key releases
-         * so that the repeat timer does not keep firing forever after
-         * the physical key has been lifted. */
+    /* Routing guard */
+    if (guard_reason(frontend)) {
+        guard_note_reject(keyboard, key, keysym, modifiers, state);
+        trace_key(keyboard,
+                  state == WL_KEYBOARD_KEY_STATE_PRESSED ? "guard-reject-press" : "guard-reject-release",
+                  key, keysym, modifiers, unicode,
+                  key_get_state(frontend, key),
+                  typio_wl_lifecycle_phase_name(frontend->lifecycle_phase));
         if (state == WL_KEYBOARD_KEY_STATE_RELEASED &&
-            keyboard->repeating && keyboard->repeat_key == key) {
+            keyboard->repeating && keyboard->repeat_key == key)
             typio_wl_keyboard_repeat_stop(keyboard);
-        }
         return;
     }
 
-    keyboard_reset_guard_reject_tracking(frontend);
+    guard_reset(frontend);
+    trace_key(keyboard,
+              state == WL_KEYBOARD_KEY_STATE_PRESSED ? "dispatch-press" : "dispatch-release",
+              key, keysym, modifiers, unicode,
+              key_get_state(frontend, key), "dispatch");
 
-    TypioWlSession *session = frontend->session;
-
-    keyboard_trace_event(keyboard,
-                         state == WL_KEYBOARD_KEY_STATE_PRESSED ? "dispatch-press" : "dispatch-release",
-                         key, (uint32_t)keysym, modifiers, unicode,
-                         key_get_state(frontend, key),
-                         "dispatch");
-
-    /* Update physical modifier state BEFORE the arbiter so it has
-     * accurate knowledge of which modifiers are physically held. */
-    keyboard_update_physical_modifier_state(keyboard, (uint32_t)keysym, state);
+    /* Update physical modifier state before routing */
+    if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+        if (keysym == XKB_KEY_Shift_L || keysym == XKB_KEY_Shift_R)
+            keyboard->physical_modifiers |= TYPIO_MOD_SHIFT;
+        else if (keysym == XKB_KEY_Control_L || keysym == XKB_KEY_Control_R)
+            keyboard->physical_modifiers |= TYPIO_MOD_CTRL;
+        else if (keysym == XKB_KEY_Alt_L || keysym == XKB_KEY_Alt_R)
+            keyboard->physical_modifiers |= TYPIO_MOD_ALT;
+        else if (keysym == XKB_KEY_Super_L || keysym == XKB_KEY_Super_R)
+            keyboard->physical_modifiers |= TYPIO_MOD_SUPER;
+    } else {
+        if (keysym == XKB_KEY_Shift_L || keysym == XKB_KEY_Shift_R)
+            keyboard->physical_modifiers &= ~TYPIO_MOD_SHIFT;
+        else if (keysym == XKB_KEY_Control_L || keysym == XKB_KEY_Control_R)
+            keyboard->physical_modifiers &= ~TYPIO_MOD_CTRL;
+        else if (keysym == XKB_KEY_Alt_L || keysym == XKB_KEY_Alt_R)
+            keyboard->physical_modifiers &= ~TYPIO_MOD_ALT;
+        else if (keysym == XKB_KEY_Super_L || keysym == XKB_KEY_Super_R)
+            keyboard->physical_modifiers &= ~TYPIO_MOD_SUPER;
+    }
 
     if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
-        typio_wl_key_arbiter_press(&keyboard->arbiter, keyboard, session,
-                                   key, (uint32_t)keysym, modifiers,
-                                   unicode, time);
+        typio_wl_key_arbiter_press(&keyboard->arbiter, keyboard, frontend->session,
+                                   key, keysym, modifiers, unicode, time);
     else
-        typio_wl_key_arbiter_release(&keyboard->arbiter, keyboard, session,
-                                     key, (uint32_t)keysym, modifiers,
-                                     unicode, time);
-}
-
-/* ── Modifier event handler ──────────────────────────────────────── */
-
-static void kb_handle_modifiers(void *data,
-                                [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
-                                [[maybe_unused]] uint32_t serial, uint32_t mods_depressed,
-                                uint32_t mods_latched, uint32_t mods_locked,
-                                uint32_t group) {
-    TypioWlKeyboard *keyboard = data;
-
-    if (!keyboard->xkb_state)
-        return;
-    if (!typio_wl_lifecycle_phase_allows_modifier_events(
-            keyboard->frontend->lifecycle_phase))
-        return;
-
-    uint32_t prev_mods = typio_wl_xkb_effective_modifiers(keyboard);
-
-    xkb_state_update_mask(keyboard->xkb_state,
-                          mods_depressed, mods_latched, mods_locked,
-                          0, 0, group);
-    keyboard->mods_depressed = mods_depressed;
-    keyboard->mods_latched = mods_latched;
-    keyboard->mods_locked = mods_locked;
-    keyboard->mods_group = group;
-    uint32_t cur_mods = typio_wl_xkb_effective_modifiers(keyboard);
-    keyboard_sync_physical_modifiers(keyboard);
-    if ((cur_mods & (TYPIO_MOD_CTRL | TYPIO_MOD_ALT | TYPIO_MOD_SUPER)) != 0)
-        keyboard->saw_blocking_modifier = true;
-
-    /* Cancel IME-side key repeat on blocking modifier transition */
-    if (keyboard->repeating &&
-        typio_wl_repeat_should_cancel_on_modifier_transition(prev_mods,
-                                                             cur_mods)) {
-        typio_wl_keyboard_repeat_stop(keyboard);
-        typio_log(TYPIO_LOG_DEBUG,
-                  "Stopped key repeat after modifier transition");
-    }
-
-    /* Forward modifier state to virtual keyboard */
-    typio_wl_vk_forward_modifiers(keyboard, mods_depressed, mods_latched,
-                                  mods_locked, group);
-
-    typio_wl_trace(keyboard->frontend,
-                   "modifiers",
-                   "stage=update depressed=0x%x latched=0x%x locked=0x%x group=%u",
-                   mods_depressed, mods_latched, mods_locked, group);
-}
-
-static void kb_handle_repeat_info(void *data,
-                                  [[maybe_unused]] struct zwp_input_method_keyboard_grab_v2 *kb,
-                                  int32_t rate, int32_t delay) {
-    TypioWlKeyboard *keyboard = data;
-
-    keyboard->repeat_rate = rate;
-    keyboard->repeat_delay = delay;
-    typio_wl_trace(keyboard->frontend,
-                   "repeat",
-                   "stage=info rate=%d delay_ms=%d",
-                   rate, delay);
+        typio_wl_key_arbiter_release(
+            &keyboard->arbiter, keyboard, frontend->session,
+            key, keysym, modifiers, unicode, time);
 }

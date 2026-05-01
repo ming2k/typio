@@ -68,46 +68,93 @@ Engines expose their sub-mode (e.g. Rime Chinese/Latin, Mozc Hiragana/Katakana) 
 
 ## Engine Operations
 
+Typio separates engine operations into two layers:
+
+1. **`TypioEngineBaseOps`** — mandatory for **every** engine (keyboard and voice).
+2. **`TypioKeyboardEngineOps`** — mandatory only for **keyboard** engines.
+
+This separation enforces interface segregation: a voice engine cannot accidentally register a `process_key` callback, and the compiler (not a runtime NULL check) guarantees that a keyboard engine provides `process_key`.
+
 ```c
-typedef struct TypioEngineOps {
+typedef struct TypioEngineBaseOps {
     TypioResult (*init)(TypioEngine *engine, TypioInstance *instance);
     void (*destroy)(TypioEngine *engine);
-
+    void (*deactivate)(TypioEngine *engine);
     void (*focus_in)(TypioEngine *engine, TypioInputContext *ctx);
     void (*focus_out)(TypioEngine *engine, TypioInputContext *ctx);
     void (*reset)(TypioEngine *engine, TypioInputContext *ctx);
+    TypioResult (*reload_config)(TypioEngine *engine);
+} TypioEngineBaseOps;
 
+typedef struct TypioKeyboardEngineOps {
     TypioKeyProcessResult (*process_key)(TypioEngine *engine,
                                          TypioInputContext *ctx,
                                          const TypioKeyEvent *event);
-
-    TypioResult (*voice_start)(TypioEngine *engine, TypioInputContext *ctx);
-    TypioResult (*voice_stop)(TypioEngine *engine, TypioInputContext *ctx);
-    TypioResult (*voice_process)(TypioEngine *engine,
-                                 TypioInputContext *ctx,
-                                 const void *audio_data,
-                                 size_t size,
-                                 int sample_rate,
-                                 int channels);
-
-    TypioResult (*get_config)(TypioEngine *engine, TypioConfig **config);
-    TypioResult (*set_config)(TypioEngine *engine, const TypioConfig *config);
-    TypioResult (*reload_config)(TypioEngine *engine);
-    const char *(*get_preedit)(TypioEngine *engine, TypioInputContext *ctx);
-    TypioCandidateList *(*get_candidates)(TypioEngine *engine, TypioInputContext *ctx);
-    const char *(*get_status_icon)(TypioEngine *engine, TypioInputContext *ctx);
     const TypioEngineMode *(*get_mode)(TypioEngine *engine, TypioInputContext *ctx);
-} TypioEngineOps;
+    TypioResult (*set_mode)(TypioEngine *engine,
+                            TypioInputContext *ctx,
+                            const char *mode_id);
+} TypioKeyboardEngineOps;
 ```
 
-Engines should implement `get_mode` to report their current sub-mode. The framework prefers `get_mode` over `get_status_icon` when both are set. Engines notify mode changes by calling `typio_instance_notify_mode()`.
+### Base operations (all engines)
 
-## Engine Utilities
+| Callback | When called | What the engine must do |
+|----------|-------------|------------------------|
+| `init` | Once before the engine becomes active | Allocate state (via `typio_engine_set_user_data`), load config |
+| `destroy` | Once on unload / exit | Free every resource allocated by `init` |
+| `focus_in` | Input context gains focus | Restore visible UI state (preedit, candidates). No-op if the engine has no per-context state. |
+| `focus_out` | Input context loses focus | Clear visible composition UI, **preserve** session state (e.g. `ascii_mode`) |
+| `reset` | Explicit reset (e.g. Escape) | Cancel active composition, restore default mode |
+| `reload_config` | User edits config or issues reload | Re-parse engine-specific settings without restart. Return `TYPIO_OK` if the engine does not support runtime reload. |
+
+All six callbacks are mandatory.  Engines that do not need a particular behaviour should supply a no-op (e.g. an empty function or a function that simply returns `TYPIO_OK`).
+
+### Keyboard operations (keyboard engines only)
+
+| Callback | Required? | When called | Use case |
+|----------|-----------|-------------|----------|
+| `process_key` | **Yes** | For every key event the framework routes to the engine | Return `HANDLED`/`COMPOSING`/`COMMITTED` if consumed, otherwise `NOT_HANDLED` |
+| `get_mode` | No | After focus-in or engine switch | Report current sub-mode (Chinese, Latin, Hiragana, …) |
+| `set_mode` | No | User requests mode change via tray/D-Bus | Switch to the requested mode |
+
+The framework validates at registration time that a keyboard engine provides `process_key`.  `get_mode` and `set_mode` are optional.
+
+## Engine Instance
 
 ```c
-TypioEngine *typio_engine_new(const TypioEngineInfo *info, const TypioEngineOps *ops);
-void typio_engine_free(TypioEngine *engine);
+struct TypioEngine {
+    const TypioEngineInfo *info;
+    const TypioEngineBaseOps *base_ops;        /* Mandatory */
+    const TypioKeyboardEngineOps *keyboard;    /* Keyboard engines only */
+    const TypioVoiceEngineOps *voice;          /* Voice engines only */
+    TypioInstance *instance;
+    void *user_data;
+    bool active;
+    bool initialized;
+    char *config_path;
+};
+```
 
+## Lifecycle
+
+```c
+TypioEngine *typio_engine_new(const TypioEngineInfo *info,
+                               const TypioEngineBaseOps *base_ops,
+                               const TypioKeyboardEngineOps *keyboard,
+                               const TypioVoiceEngineOps *voice);
+void typio_engine_free(TypioEngine *engine);
+```
+
+`typio_engine_new` takes four arguments:
+- `info` — engine metadata (must not be NULL)
+- `base_ops` — mandatory base operations (must not be NULL)
+- `keyboard` — keyboard vtable.  Must be non-NULL for keyboard engines; must be NULL for voice engines.
+- `voice` — voice vtable.  Must be non-NULL for voice engines; must be NULL for keyboard engines.
+
+## Utilities
+
+```c
 const char *typio_engine_get_name(const TypioEngine *engine);
 TypioEngineType typio_engine_get_type(const TypioEngine *engine);
 uint32_t typio_engine_get_capabilities(const TypioEngine *engine);

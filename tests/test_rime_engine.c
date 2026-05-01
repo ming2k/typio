@@ -440,7 +440,7 @@ TEST(refocus_preserves_latin_mode) {
     active = typio_engine_manager_get_active(manager);
     ASSERT_NOT_NULL(active);
     {
-        const TypioEngineMode *mode = active->ops->get_mode ? active->ops->get_mode(active, ctx) : nullptr;
+        const TypioEngineMode *mode = active->keyboard->get_mode ? active->keyboard->get_mode(active, ctx) : nullptr;
         ASSERT_NOT_NULL(mode);
         icon = mode->icon_name;
     }
@@ -515,7 +515,7 @@ TEST(engine_switch_preserves_latin_mode_within_context) {
     active = typio_engine_manager_get_active(manager);
     ASSERT_NOT_NULL(active);
     {
-        const TypioEngineMode *mode = active->ops->get_mode ? active->ops->get_mode(active, ctx) : nullptr;
+        const TypioEngineMode *mode = active->keyboard->get_mode ? active->keyboard->get_mode(active, ctx) : nullptr;
         ASSERT_NOT_NULL(mode);
         icon = mode->icon_name;
     }

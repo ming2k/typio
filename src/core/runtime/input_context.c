@@ -208,8 +208,8 @@ void typio_input_context_focus_in(TypioInputContext *ctx) {
     /* Notify engine */
     TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
     TypioEngine *engine = typio_engine_manager_get_active(manager);
-    if (engine && engine->ops && engine->ops->focus_in) {
-        engine->ops->focus_in(engine, ctx);
+    if (engine && engine->base_ops) {
+        engine->base_ops->focus_in(engine, ctx);
     }
 }
 
@@ -221,8 +221,8 @@ void typio_input_context_focus_out(TypioInputContext *ctx) {
     /* Notify engine */
     TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
     TypioEngine *engine = typio_engine_manager_get_active(manager);
-    if (engine && engine->ops && engine->ops->focus_out) {
-        engine->ops->focus_out(engine, ctx);
+    if (engine && engine->base_ops) {
+        engine->base_ops->focus_out(engine, ctx);
     }
 
     ctx->focused = false;
@@ -247,8 +247,8 @@ void typio_input_context_reset(TypioInputContext *ctx) {
     /* Notify engine */
     TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
     TypioEngine *engine = typio_engine_manager_get_active(manager);
-    if (engine && engine->ops && engine->ops->reset) {
-        engine->ops->reset(engine, ctx);
+    if (engine && engine->base_ops) {
+        engine->base_ops->reset(engine, ctx);
     }
 }
 
@@ -261,11 +261,11 @@ bool typio_input_context_process_key(TypioInputContext *ctx,
     TypioEngineManager *manager = typio_instance_get_engine_manager(ctx->instance);
     TypioEngine *engine = typio_engine_manager_get_active(manager);
 
-    if (!engine || !engine->ops || !engine->ops->process_key) {
+    if (!engine || !engine->keyboard || !engine->keyboard->process_key) {
         return false;
     }
 
-    TypioKeyProcessResult result = engine->ops->process_key(engine, ctx, event);
+    TypioKeyProcessResult result = engine->keyboard->process_key(engine, ctx, event);
 
     return (result != TYPIO_KEY_NOT_HANDLED);
 }

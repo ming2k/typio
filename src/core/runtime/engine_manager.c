@@ -1,6 +1,10 @@
 /**
  * @file engine_manager.c
  * @brief Engine manager implementation
+ *
+ * @see docs/explanation/architecture-overview.md § Engine Manager Model
+ * @see docs/reference/engines.md
+ * @see ADR-002: Plugin engine ABI with dual-category (keyboard/voice) slots
  */
 
 #include "typio/engine_manager.h"
@@ -10,6 +14,8 @@
 #include "../utils/log.h"
 #include "../utils/string.h"
 #include "../utils/list.h"
+#include "../utils/result.h"
+#include "../utils/memory.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -20,16 +26,23 @@
 #include <time.h>
 
 #define TYPIO_ENGINE_CONFIG_SUFFIX ".toml"
-#define TYPIO_SWITCH_STABLE_THRESHOLD_MS_DEFAULT 1000
 
-static uint64_t engine_manager_switch_threshold_ms(void)
-{
-	const char *env = getenv("TYPIO_SWITCH_STABLE_THRESHOLD_MS");
-	if (env) {
-		unsigned long v = strtoul(env, NULL, 10);
-		if (v > 0) return (uint64_t)v;
-	}
-	return TYPIO_SWITCH_STABLE_THRESHOLD_MS_DEFAULT;
+static uint64_t engine_manager_switch_threshold_ms(TypioInstance *instance) {
+    /* Environment variable overrides config for backward compat */
+    const char *env = getenv("TYPIO_SWITCH_STABLE_THRESHOLD_MS");
+    if (env) {
+        unsigned long v = strtoul(env, NULL, 10);
+        if (v > 0) return (uint64_t)v;
+    }
+
+    TypioConfig *cfg = instance ? typio_instance_get_config(instance) : nullptr;
+    if (cfg) {
+        int val = typio_config_get_int(cfg,
+                                        "engine.switch_stable_threshold_ms",
+                                        1000);
+        if (val > 0) return (uint64_t)val;
+    }
+    return 1000;
 }
 #define TYPIO_ENGINE_STATE_FILE "engine-state.toml"
 #define TYPIO_ENGINE_STATE_PRIMARY_KEY "recent.primary"
@@ -463,10 +476,22 @@ TypioResult typio_engine_manager_load(TypioEngineManager *manager,
         return TYPIO_ERROR_ENGINE_LOAD_FAILED;
     }
 
-    /* Check API version */
-    if (info->api_version > TYPIO_API_VERSION) {
-        typio_log_error("Engine requires newer API version: %s (need %d, have %d)",
-                        info->name, info->api_version, TYPIO_API_VERSION);
+    /* ABI version compatibility: reject engines that are too new or too old */
+    if (info->api_version < TYPIO_ABI_MIN_VERSION ||
+        info->api_version > TYPIO_ABI_MAX_VERSION) {
+        typio_log_error("Engine ABI version mismatch: %s (need %d–%d, engine has %d)",
+                        info->name, TYPIO_ABI_MIN_VERSION, TYPIO_ABI_MAX_VERSION,
+                        info->api_version);
+        dlclose(handle);
+        return TYPIO_ERROR_ENGINE_LOAD_FAILED;
+    }
+
+    /* Struct size validation: non-zero struct_size indicates a modern engine
+     * that was built against a known TypioEngineInfo layout. */
+    if (info->struct_size != 0 && info->struct_size != TYPIO_ENGINE_INFO_SIZE) {
+        typio_log_error("Engine struct size mismatch: %s (engine %zu, daemon %zu). "
+                        "Rebuild the engine against the current typio headers.",
+                        info->name, info->struct_size, TYPIO_ENGINE_INFO_SIZE);
         dlclose(handle);
         return TYPIO_ERROR_ENGINE_LOAD_FAILED;
     }
@@ -798,30 +823,24 @@ static void engine_manager_rebind_focused_context(TypioEngineManager *manager,
         return;
     }
 
-    if (old_engine && old_engine->ops && old_engine->ops->focus_out) {
-        old_engine->ops->focus_out(old_engine, ctx);
+    if (old_engine && old_engine->base_ops) {
+        old_engine->base_ops->focus_out(old_engine, ctx);
     }
-    /* The old engine's focus_out may have emitted a status icon/mode update
+    /* The old engine's focus_out may have emitted a mode update
      * (e.g. Rime refreshes its icon during reset).  Clear the stale
      * value so the new engine starts with a clean slate. */
     typio_instance_clear_status_icon(manager->instance);
     typio_instance_clear_mode(manager->instance);
-    if (new_engine && new_engine->ops && new_engine->ops->reset) {
-        new_engine->ops->reset(new_engine, ctx);
+    if (new_engine && new_engine->base_ops) {
+        new_engine->base_ops->reset(new_engine, ctx);
     }
-    if (new_engine && new_engine->ops && new_engine->ops->focus_in) {
-        new_engine->ops->focus_in(new_engine, ctx);
+    if (new_engine && new_engine->base_ops) {
+        new_engine->base_ops->focus_in(new_engine, ctx);
     }
-    /* Prefer structured get_mode; fall back to legacy get_status_icon. */
-    if (new_engine && new_engine->ops && new_engine->ops->get_mode) {
-        const TypioEngineMode *mode = new_engine->ops->get_mode(new_engine, ctx);
+    if (new_engine && new_engine->keyboard && new_engine->keyboard->get_mode) {
+        const TypioEngineMode *mode = new_engine->keyboard->get_mode(new_engine, ctx);
         if (mode) {
             typio_instance_notify_mode(manager->instance, mode);
-        }
-    } else if (new_engine && new_engine->ops && new_engine->ops->get_status_icon) {
-        const char *icon = new_engine->ops->get_status_icon(new_engine, ctx);
-        if (icon) {
-            typio_instance_notify_status_icon(manager->instance, icon);
         }
     }
 }
@@ -842,6 +861,47 @@ static TypioResult engine_manager_ensure_entry_instance(TypioEngineManager *mana
     if (!entry->instance) {
         typio_log_error("Failed to create engine instance: %s", entry->name);
         return TYPIO_ERROR_ENGINE_LOAD_FAILED;
+    }
+
+    /* Validate mandatory base_ops */
+    if (!entry->instance->base_ops) {
+        typio_log_error("Engine %s: missing base_ops", entry->name);
+        typio_engine_free(entry->instance);
+        entry->instance = nullptr;
+        return TYPIO_ERROR_INVALID_ARGUMENT;
+    }
+
+    /* Validate type-specific requirements */
+    if (entry->info->type == TYPIO_ENGINE_TYPE_KEYBOARD) {
+        if (!entry->instance->keyboard) {
+            typio_log_error("Engine %s: keyboard engine missing keyboard ops",
+                            entry->name);
+            typio_engine_free(entry->instance);
+            entry->instance = nullptr;
+            return TYPIO_ERROR_INVALID_ARGUMENT;
+        }
+        if (!entry->instance->keyboard->process_key) {
+            typio_log_error("Engine %s: keyboard engine missing process_key",
+                            entry->name);
+            typio_engine_free(entry->instance);
+            entry->instance = nullptr;
+            return TYPIO_ERROR_INVALID_ARGUMENT;
+        }
+    } else if (entry->info->type == TYPIO_ENGINE_TYPE_VOICE) {
+        if (!entry->instance->voice) {
+            typio_log_error("Engine %s: voice engine missing voice ops",
+                            entry->name);
+            typio_engine_free(entry->instance);
+            entry->instance = nullptr;
+            return TYPIO_ERROR_INVALID_ARGUMENT;
+        }
+        if (!entry->instance->voice->process_audio) {
+            typio_log_error("Engine %s: voice engine missing process_audio",
+                            entry->name);
+            typio_engine_free(entry->instance);
+            entry->instance = nullptr;
+            return TYPIO_ERROR_INVALID_ARGUMENT;
+        }
     }
 
     config_path = get_engine_config_path(manager, entry->name);
@@ -1047,7 +1107,7 @@ static const char *engine_manager_resolve_switch(TypioEngineManager *manager,
     uint64_t elapsed = now_ms - manager->last_switch_ms;
 
     /* Slow switch: toggle between recent committed pair */
-    if (elapsed > engine_manager_switch_threshold_ms()) {
+    if (elapsed > engine_manager_switch_threshold_ms(manager->instance)) {
         size_t partner = engine_manager_recent_partner_index(manager);
         if (partner != (size_t)-1) {
             return manager->entries[partner]->name;

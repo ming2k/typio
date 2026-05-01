@@ -70,8 +70,8 @@ static void runtime_config_refresh(TypioWlFrontend *frontend) {
         }
 
         TypioEngine *voice = typio_engine_manager_get_active_voice(mgr);
-        if (voice && voice->ops && voice->ops->reload_config) {
-            voice->ops->reload_config(voice);
+        if (voice && voice->base_ops && voice->base_ops->reload_config) {
+            voice->base_ops->reload_config(voice);
         }
 
         if (frontend->voice) {

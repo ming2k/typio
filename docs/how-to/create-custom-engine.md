@@ -20,16 +20,47 @@ const TypioEngineInfo *typio_engine_get_info(void);
 TypioEngine *typio_engine_create(void);
 ```
 
-## Minimal engine
+## Minimal keyboard engine
 
 ```c
 #include <typio/typio.h>
+
+/* ── Base operations (mandatory for every engine) ─────────────────────── */
 
 static TypioResult my_init(TypioEngine *engine, TypioInstance *instance) {
     (void)engine;
     (void)instance;
     return TYPIO_OK;
 }
+
+static void my_destroy(TypioEngine *engine) {
+    (void)engine;
+}
+
+static void my_focus_in(TypioEngine *engine, TypioInputContext *ctx) {
+    (void)engine;
+    (void)ctx;
+    /* No per-context state to restore. */
+}
+
+static void my_focus_out(TypioEngine *engine, TypioInputContext *ctx) {
+    (void)engine;
+    /* Cancel any pending composition on focus loss. */
+    typio_input_context_clear_preedit(ctx);
+}
+
+static void my_reset(TypioEngine *engine, TypioInputContext *ctx) {
+    (void)engine;
+    /* Cancel any pending composition on explicit reset. */
+    typio_input_context_clear_preedit(ctx);
+}
+
+static TypioResult my_reload_config(TypioEngine *engine) {
+    (void)engine;
+    return TYPIO_OK;
+}
+
+/* ── Keyboard operations (mandatory for keyboard engines) ─────────────── */
 
 static TypioKeyProcessResult my_process_key(TypioEngine *engine,
                                             TypioInputContext *ctx,
@@ -48,6 +79,8 @@ static TypioKeyProcessResult my_process_key(TypioEngine *engine,
     return TYPIO_KEY_NOT_HANDLED;
 }
 
+/* ── Metadata ────────────────────────────────────────────────────────── */
+
 static const TypioEngineInfo my_info = {
     .name = "my-engine",
     .display_name = "My Engine",
@@ -61,16 +94,53 @@ static const TypioEngineInfo my_info = {
     .api_version = TYPIO_API_VERSION,
 };
 
-static const TypioEngineOps my_ops = {
+static const TypioEngineBaseOps my_base_ops = {
     .init = my_init,
+    .destroy = my_destroy,
+    .focus_in = my_focus_in,
+    .focus_out = my_focus_out,
+    .reset = my_reset,
+    .reload_config = my_reload_config,
+};
+
+static const TypioKeyboardEngineOps my_keyboard_ops = {
     .process_key = my_process_key,
 };
 
 static TypioEngine *my_create(void) {
-    return typio_engine_new(&my_info, &my_ops);
+    return typio_engine_new(&my_info, &my_base_ops, &my_keyboard_ops, NULL);
 }
 
 TYPIO_ENGINE_DEFINE(my_info, my_create)
+```
+
+## Minimal voice engine
+
+Voice engines provide base operations **and** a `TypioVoiceEngineOps` vtable:
+
+```c
+static char *my_voice_process_audio(TypioEngine *engine,
+                                     const float *samples, size_t n_samples) {
+    /* Run inference, return heap-allocated text or NULL */
+}
+
+static const TypioVoiceEngineOps my_voice_ops = {
+    .process_audio = my_voice_process_audio,
+};
+
+static const TypioEngineBaseOps my_voice_base_ops = {
+    .init = my_voice_init,
+    .destroy = my_voice_destroy,
+    .focus_in = my_voice_focus_in,
+    .focus_out = my_voice_focus_out,
+    .reset = my_voice_reset,
+    .reload_config = my_voice_reload_config,
+};
+
+static TypioEngine *my_voice_create(void) {
+    return typio_engine_new(&my_voice_info, &my_voice_base_ops,
+                            NULL, &my_voice_ops);
+}
 ```
 
 ## Build example
@@ -109,10 +179,35 @@ typio --engine my-engine --verbose
 
 ## Practical guidance
 
+### Base-ops checklist (all engines)
+
+Every engine must provide all seven base callbacks.  If your engine does not need a particular behaviour, implement it as a no-op.
+
+| Callback | Required | Reason |
+|----------|----------|--------|
+| `init` | **Yes** | Allocate `user_data`, load config |
+| `destroy` | **Yes** | Free resources |
+| `deactivate` | **Yes** | Free large resources when switched away (or no-op) |
+| `focus_in` | **Yes** | Restore UI state (or no-op) |
+| `focus_out` | **Yes** | Clear UI, preserve session state |
+| `reset` | **Yes** | Cancel composition on Escape |
+| `reload_config` | **Yes** | Re-parse config (or no-op) |
+
+### Keyboard-ops checklist (keyboard engines only)
+
+| Callback | Required | Reason |
+|----------|----------|--------|
+| `process_key` | **Yes** | Core input handling |
+| `get_mode` | No | Sub-mode reporting (tray icon, popup) |
+| `set_mode` | No | Mode switching via tray/D-Bus |
+
+### Rules of thumb
+
 - Keep engine state in `engine->user_data` or context properties.
 - Do not block inside `process_key`.
 - Return `TYPIO_KEY_NOT_HANDLED` for keys you want the compositor or client to keep.
 - Use `typio_input_context_set_preedit()` and `typio_input_context_set_candidates()` only when your engine owns composition.
+- The framework validates at registration time that keyboard engines provide `keyboard->process_key`.
 
 ## See also
 

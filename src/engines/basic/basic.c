@@ -53,6 +53,11 @@ static void basic_destroy(TypioEngine *engine) {
     }
 }
 
+static void basic_focus_in([[maybe_unused]] TypioEngine *engine,
+                            [[maybe_unused]] TypioInputContext *ctx) {
+    /* Basic engine has no per-context UI state to restore. */
+}
+
 static void basic_reset(TypioEngine *engine, TypioInputContext *ctx) {
     BasicEngineData *data = basic_get_data(engine);
     if (!data || !data->compose) {
@@ -67,6 +72,11 @@ static void basic_reset(TypioEngine *engine, TypioInputContext *ctx) {
 static void basic_focus_out(TypioEngine *engine, TypioInputContext *ctx) {
     /* Cancel any pending composition on focus loss to avoid stale preedit. */
     basic_reset(engine, ctx);
+}
+
+static TypioResult basic_reload_config([[maybe_unused]] TypioEngine *engine) {
+    /* Basic engine has no runtime-reloadable configuration. */
+    return TYPIO_OK;
 }
 
 static bool basic_has_blocking_modifiers(const TypioKeyEvent *event) {
@@ -230,14 +240,20 @@ static const TypioEngineInfo basic_engine_info = {
     .type = TYPIO_ENGINE_TYPE_KEYBOARD,
     .capabilities = TYPIO_CAP_NONE,
     .api_version = TYPIO_API_VERSION,
+    .struct_size = TYPIO_ENGINE_INFO_SIZE,
 };
 
-static const TypioEngineOps basic_engine_ops = {
+static const TypioEngineBaseOps basic_base_ops = {
     .init = basic_init,
     .destroy = basic_destroy,
-    .process_key = basic_process_key,
-    .reset = basic_reset,
+    .focus_in = basic_focus_in,
     .focus_out = basic_focus_out,
+    .reset = basic_reset,
+    .reload_config = basic_reload_config,
+};
+
+static const TypioKeyboardEngineOps basic_keyboard_ops = {
+    .process_key = basic_process_key,
 };
 
 const TypioEngineInfo *typio_engine_get_info_basic(void) {
@@ -245,5 +261,6 @@ const TypioEngineInfo *typio_engine_get_info_basic(void) {
 }
 
 TypioEngine *typio_engine_create_basic(void) {
-    return typio_engine_new(&basic_engine_info, &basic_engine_ops);
+    return typio_engine_new(&basic_engine_info, &basic_base_ops,
+                            &basic_keyboard_ops, nullptr);
 }
