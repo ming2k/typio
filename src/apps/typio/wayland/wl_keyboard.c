@@ -138,6 +138,8 @@ static void on_keymap(void *data,
     TypioWlKeyboard *keyboard = data;
     typio_wl_trace(keyboard ? keyboard->frontend : nullptr,
                    "keymap", "stage=received format=%u size=%u", format, size);
+    if (keyboard)
+        typio_wl_vk_forward_keymap(keyboard->frontend, format, fd, size);
     typio_wl_keyboard_handle_keymap(keyboard, format, fd, size);
 }
 
@@ -362,13 +364,13 @@ static void on_key(void *data,
             keyboard->physical_modifiers |= TYPIO_MOD_SUPER;
     } else {
         if (keysym == XKB_KEY_Shift_L || keysym == XKB_KEY_Shift_R)
-            keyboard->physical_modifiers &= ~TYPIO_MOD_SHIFT;
+            keyboard->physical_modifiers &= ~(uint32_t)TYPIO_MOD_SHIFT;
         else if (keysym == XKB_KEY_Control_L || keysym == XKB_KEY_Control_R)
-            keyboard->physical_modifiers &= ~TYPIO_MOD_CTRL;
+            keyboard->physical_modifiers &= ~(uint32_t)TYPIO_MOD_CTRL;
         else if (keysym == XKB_KEY_Alt_L || keysym == XKB_KEY_Alt_R)
-            keyboard->physical_modifiers &= ~TYPIO_MOD_ALT;
+            keyboard->physical_modifiers &= ~(uint32_t)TYPIO_MOD_ALT;
         else if (keysym == XKB_KEY_Super_L || keysym == XKB_KEY_Super_R)
-            keyboard->physical_modifiers &= ~TYPIO_MOD_SUPER;
+            keyboard->physical_modifiers &= ~(uint32_t)TYPIO_MOD_SUPER;
     }
 
     if (state == WL_KEYBOARD_KEY_STATE_PRESSED)

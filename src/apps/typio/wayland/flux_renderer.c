@@ -195,8 +195,8 @@ static bool upload_glyph(flux_context *ctx, FT_Face face,
     }
 
     for (int row = 0; row < (int)bm->rows; ++row) {
-        memcpy(buf + row * bm->width,
-               bm->buffer + row * bm->pitch,
+        memcpy(buf + (size_t)row * bm->width,
+               bm->buffer + (size_t)row * (size_t)bm->pitch,
                bm->width);
     }
 
