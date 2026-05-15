@@ -335,6 +335,15 @@ static TypioResult whisper_engine_reload_config(TypioEngine *engine) {
 
 /* ── Voice ops ──────────────────────────────────────────────────────────── */
 
+static bool whisper_engine_is_ready(TypioEngine *engine) {
+    WhisperProxy *proxy = engine ? engine->user_data : NULL;
+    if (!proxy) return false;
+    pthread_mutex_lock(&proxy->lock);
+    bool ready = proxy->impl != NULL;
+    pthread_mutex_unlock(&proxy->lock);
+    return ready;
+}
+
 static char *whisper_engine_process_audio(TypioEngine *engine,
                                            const float *samples, size_t n_samples) {
     if (!engine || !engine->user_data) {
@@ -345,6 +354,7 @@ static char *whisper_engine_process_audio(TypioEngine *engine,
 }
 
 static const TypioVoiceEngineOps whisper_voice_ops = {
+    .is_ready      = whisper_engine_is_ready,
     .process_audio = whisper_engine_process_audio,
 };
 

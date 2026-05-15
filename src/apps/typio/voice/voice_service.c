@@ -24,9 +24,17 @@
 #include <unistd.h>
 
 #define TYPIO_VOICE_INITIAL_BUFFER_SIZE (16000 * 30) /* 30 seconds at 16kHz */
+#define TYPIO_VOICE_SAMPLE_RATE 16000
+#define TYPIO_VOICE_TRIM_THRESHOLD 0.003f
+#define TYPIO_VOICE_TRIM_PADDING_SAMPLES (TYPIO_VOICE_SAMPLE_RATE / 10)
+#define TYPIO_VOICE_MIN_ACTIVE_SAMPLES (TYPIO_VOICE_SAMPLE_RATE / 5)
 
 static bool engine_has_voice(TypioEngine *engine) {
-    return engine && engine->voice && engine->voice->process_audio;
+    if (!engine || !engine->voice || !engine->voice->process_audio)
+        return false;
+    if (engine->voice->is_ready)
+        return engine->voice->is_ready(engine);
+    return true;
 }
 
 typedef enum {
@@ -58,6 +66,69 @@ struct TypioVoiceService {
 };
 
 static void audio_callback(const float *samples, size_t count, void *user_data);
+
+static float sample_abs(float v) {
+    return v < 0.0f ? -v : v;
+}
+
+static size_t prepare_audio_for_inference(float *audio, size_t audio_len) {
+    float peak = 0.0f;
+    double abs_sum = 0.0;
+    size_t first_active = audio_len;
+    size_t last_active = 0;
+
+    if (!audio || audio_len == 0) {
+        return 0;
+    }
+
+    for (size_t i = 0; i < audio_len; i++) {
+        float amp = sample_abs(audio[i]);
+        if (amp > peak) {
+            peak = amp;
+        }
+        abs_sum += amp;
+        if (amp >= TYPIO_VOICE_TRIM_THRESHOLD) {
+            if (first_active == audio_len) {
+                first_active = i;
+            }
+            last_active = i;
+        }
+    }
+
+    typio_log(TYPIO_LOG_INFO,
+              "Voice audio level: duration=%.2fs peak=%.5f mean_abs=%.5f",
+              (double)audio_len / (double)TYPIO_VOICE_SAMPLE_RATE,
+              (double)peak,
+              abs_sum / (double)audio_len);
+
+    if (first_active == audio_len ||
+        last_active <= first_active ||
+        last_active - first_active + 1 < TYPIO_VOICE_MIN_ACTIVE_SAMPLES) {
+        typio_log(TYPIO_LOG_WARNING,
+                  "Voice audio discarded: no usable microphone signal detected");
+        return 0;
+    }
+
+    size_t start = first_active > TYPIO_VOICE_TRIM_PADDING_SAMPLES
+        ? first_active - TYPIO_VOICE_TRIM_PADDING_SAMPLES
+        : 0;
+    size_t end = last_active + TYPIO_VOICE_TRIM_PADDING_SAMPLES + 1;
+    if (end > audio_len) {
+        end = audio_len;
+    }
+
+    if (start > 0 || end < audio_len) {
+        size_t trimmed_len = end - start;
+        memmove(audio, audio + start, trimmed_len * sizeof(float));
+        typio_log(TYPIO_LOG_INFO,
+                  "Voice audio trimmed: %.2fs -> %.2fs",
+                  (double)audio_len / (double)TYPIO_VOICE_SAMPLE_RATE,
+                  (double)trimmed_len / (double)TYPIO_VOICE_SAMPLE_RATE);
+        return trimmed_len;
+    }
+
+    return audio_len;
+}
 
 static void voice_service_reload_idle(TypioVoiceService *svc) {
     TypioEngineManager *mgr;
@@ -133,9 +204,26 @@ static void *inference_thread(void *arg) {
     pthread_mutex_unlock(&svc->buffer_mutex);
 
     char *result_text = nullptr;
+    size_t raw_audio_len = audio_len;
+    audio_len = prepare_audio_for_inference(audio, audio_len);
 
-    if (audio && audio_len > 0 && engine_has_voice(engine)) {
+    if (!audio || audio_len == 0) {
+        typio_log(TYPIO_LOG_WARNING,
+                  "Voice inference: no audio captured or usable (%zu raw samples)",
+                  raw_audio_len);
+    } else if (!engine || !engine->voice || !engine->voice->process_audio) {
+        typio_log(TYPIO_LOG_WARNING, "Voice inference: no engine available");
+    } else if (engine->voice->is_ready && !engine->voice->is_ready(engine)) {
+        typio_log(TYPIO_LOG_WARNING, "Voice inference: model not loaded");
+    } else {
+        typio_log(TYPIO_LOG_INFO, "Voice inference: processing %zu samples", audio_len);
         result_text = engine->voice->process_audio(engine, audio, audio_len);
+        if (result_text) {
+            typio_log(TYPIO_LOG_INFO, "Voice inference: got result (%zu chars)",
+                      strlen(result_text));
+        } else {
+            typio_log(TYPIO_LOG_WARNING, "Voice inference: engine returned NULL");
+        }
     }
 
     free(audio);
@@ -378,6 +466,33 @@ void typio_voice_service_dispatch(TypioVoiceService *svc,
     free(text);
 }
 
+char *typio_voice_service_collect(TypioVoiceService *svc) {
+    bool reload_pending;
+
+    if (!svc) return nullptr;
+
+    uint64_t val;
+    if (read(svc->event_fd, &val, sizeof(val)) < 0)
+        return nullptr;
+
+    pthread_join(svc->infer_thread, nullptr);
+
+    pthread_mutex_lock(&svc->result_mutex);
+    char *text = svc->result;
+    svc->result = nullptr;
+    pthread_mutex_unlock(&svc->result_mutex);
+
+    pthread_mutex_lock(&svc->buffer_mutex);
+    svc->state = TYPIO_VOICE_IDLE;
+    reload_pending = svc->reload_pending;
+    pthread_mutex_unlock(&svc->buffer_mutex);
+
+    if (reload_pending)
+        voice_service_reload_idle(svc);
+
+    return text;
+}
+
 bool typio_voice_service_is_available(TypioVoiceService *svc) {
     bool available;
 
@@ -428,11 +543,13 @@ const char *typio_voice_service_get_unavail_reason(TypioVoiceService *svc) {
     has_capture = svc->capture != NULL;
     pthread_mutex_unlock(&svc->buffer_mutex);
 
-    if (engine_has_voice(voice_engine) && has_capture)
-        return nullptr;
     if (!voice_engine)
         return "no voice engine active";
-    if (!engine_has_voice(voice_engine))
+    if (!voice_engine->voice || !voice_engine->voice->process_audio)
         return "voice engine missing process_audio";
-    return "audio capture unavailable";
+    if (voice_engine->voice->is_ready && !voice_engine->voice->is_ready(voice_engine))
+        return "voice model not loaded";
+    if (!has_capture)
+        return "audio capture unavailable";
+    return nullptr;
 }

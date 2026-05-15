@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(typio VERSION 3.2.0 LANGUAGES C CXX)
+project(typio VERSION 3.2.1 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -178,16 +178,31 @@ configure_file(
 
 include(FetchContent)
 
-# Prefer local flux checkout if available; otherwise fetch from upstream.
-set(FETCHCONTENT_SOURCE_DIR_FLUX "/home/ming/projects/flux" CACHE PATH
-    "Path to local flux source checkout")
+# Allow local flux override.  Checked in order:
+#   1. CMake cache variable   -DFETCHCONTENT_SOURCE_DIR_FLUX=...
+#   2. Environment variable   FLUX_SOURCE_DIR
+#   3. Sibling directory      ${CMAKE_CURRENT_SOURCE_DIR}/../flux
+if(NOT FETCHCONTENT_SOURCE_DIR_FLUX)
+    if(DEFINED ENV{FLUX_SOURCE_DIR})
+        set(_flux_local "$ENV{FLUX_SOURCE_DIR}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../flux/CMakeLists.txt")
+        set(_flux_local "${CMAKE_CURRENT_SOURCE_DIR}/../flux")
+    endif()
+    if(_flux_local)
+        set(FETCHCONTENT_SOURCE_DIR_FLUX "${_flux_local}" CACHE PATH
+            "Path to local flux source checkout (override FetchContent)")
+    endif()
+endif()
 
 FetchContent_Declare(
     flux
-    GIT_REPOSITORY git@github.com:ming2k/flux.git
-    GIT_TAG        d473071  # v0.2.3 + CMake + warning fixes
+    GIT_REPOSITORY https://github.com/ming2k/flux.git
+    GIT_TAG        d473071  # v0.2.3 + warning fixes
+    GIT_SHALLOW    OFF
 )
 FetchContent_MakeAvailable(flux)
+
+message(STATUS "flux: ${flux_SOURCE_DIR} @ d473071")
 
 add_subdirectory(src/core)
 add_subdirectory(src/engines)

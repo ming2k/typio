@@ -15,34 +15,68 @@ By the end of this tutorial you will have:
 - CMake 3.20+
 - C11 and C++17 compiler
 - `pkg-config`
-- Wayland client development files
-- `xkbcommon` development files
-- `wayland-scanner`
-- Vulkan, FreeType, HarfBuzz, and fontconfig development files
-- `glslangValidator`
 - A running Wayland session
 
-### Distro packages
+### Default build dependencies
 
-Debian/Ubuntu:
+These are required for the default build (all builtin options left at their defaults):
+
+| Component | Debian/Ubuntu | Arch Linux | Fedora |
+|---|---|---|---|
+| Wayland client | `libwayland-dev` | `wayland` | `wayland-devel` |
+| xkbcommon | `libxkbcommon-dev` | `libxkbcommon` | `libxkbcommon-devel` |
+| wayland-protocols | `wayland-protocols` | `wayland-protocols` | `wayland-protocols-devel` |
+| Vulkan | `libvulkan-dev` | `vulkan-headers` | `vulkan-loader-devel` |
+| FreeType | `libfreetype6-dev` | `freetype2` | `freetype-devel` |
+| HarfBuzz | `libharfbuzz-dev` | `harfbuzz` | `harfbuzz-devel` |
+| fontconfig | `libfontconfig-dev` | `fontconfig` | `fontconfig-devel` |
+| D-Bus | `libdbus-1-dev` | `dbus` | `dbus-devel` |
+| glslang | `glslang-tools` | `glslang` | `glslang` |
+
+> **Note:** `flux` (the rendering framework) is **not** a system dependency. CMake downloads it automatically via FetchContent during configuration.
+
+### Optional dependencies
+
+| Feature | CMake option | Debian/Ubuntu | Arch Linux | Fedora |
+|---|---|---|---|---|
+| Rime engine | `-DBUILD_RIME_ENGINE=ON` | `librime-dev` | `librime` | `librime-devel` |
+| GTK4 control panel | `-DBUILD_CONTROL_PANEL=ON` | `libgtk-4-dev` | `gtk4` | `gtk4-devel` |
+| StatusNotifierItem tray | `-DENABLE_SYSTRAY=ON` | `libdbus-1-dev` | `dbus` | `dbus-devel` |
+| Voice input (Whisper) | `-DBUILD_WHISPER=ON` | whisper.cpp (see below) | whisper.cpp (see below) | whisper.cpp (see below) |
+| Voice input (Sherpa) | `-DBUILD_SHERPA_ONNX=ON` | sherpa-onnx (see below) | sherpa-onnx (see below) | sherpa-onnx (see below) |
+
+Voice backends require **PipeWire**: `libpipewire-0.3-dev` (Debian), `pipewire` (Arch), `pipewire-devel` (Fedora).
+
+`whisper.cpp` and `sherpa-onnx` are not in most distro repositories. See [How to install](install.md) for build instructions.
+
+### One-liner installs
+
+Debian/Ubuntu (default build only):
 
 ```bash
-sudo apt install build-essential cmake pkg-config libwayland-dev libxkbcommon-dev wayland-protocols
+sudo apt install build-essential cmake pkg-config \
+    libwayland-dev libxkbcommon-dev wayland-protocols \
+    libvulkan-dev libfreetype6-dev libharfbuzz-dev libfontconfig-dev \
+    libdbus-1-dev glslang-tools
 ```
 
-Arch Linux:
+Arch Linux (default build only):
 
 ```bash
-sudo pacman -S base-devel cmake pkgconf wayland libxkbcommon wayland-protocols
+sudo pacman -S base-devel cmake pkgconf \
+    wayland libxkbcommon wayland-protocols \
+    vulkan-headers freetype2 harfbuzz fontconfig \
+    dbus glslang
 ```
 
-Fedora:
+Fedora (default build only):
 
 ```bash
-sudo dnf install gcc cmake pkgconf-pkg-config wayland-devel libxkbcommon-devel wayland-protocols-devel
+sudo dnf install gcc cmake pkgconf-pkg-config \
+    wayland-devel libxkbcommon-devel wayland-protocols-devel \
+    vulkan-loader-devel freetype-devel harfbuzz-devel fontconfig-devel \
+    dbus-devel glslang
 ```
-
-Also install your distribution's Vulkan, FreeType, HarfBuzz, fontconfig, and glslang packages.
 
 ## Step 1: Clone and configure
 

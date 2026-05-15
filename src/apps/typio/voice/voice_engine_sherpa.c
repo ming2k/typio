@@ -311,6 +311,15 @@ static TypioResult sherpa_engine_reload_config(TypioEngine *engine) {
 
 /* ── Voice ops ──────────────────────────────────────────────────────────── */
 
+static bool sherpa_engine_is_ready(TypioEngine *engine) {
+    SherpaProxy *proxy = engine ? engine->user_data : NULL;
+    if (!proxy) return false;
+    pthread_mutex_lock(&proxy->lock);
+    bool ready = proxy->impl != NULL;
+    pthread_mutex_unlock(&proxy->lock);
+    return ready;
+}
+
 static char *sherpa_engine_process_audio(TypioEngine *engine,
                                           const float *samples, size_t n_samples) {
     if (!engine || !engine->user_data) {
@@ -321,6 +330,7 @@ static char *sherpa_engine_process_audio(TypioEngine *engine,
 }
 
 static const TypioVoiceEngineOps sherpa_voice_ops = {
+    .is_ready      = sherpa_engine_is_ready,
     .process_audio = sherpa_engine_process_audio,
 };
 

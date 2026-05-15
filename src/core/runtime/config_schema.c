@@ -61,6 +61,13 @@ static const TypioConfigField schema_fields[] = {
         .ui_min = 6, .ui_max = 72, .ui_step = 1,
     },
     {
+        .key = "display.font_family",
+        .type = TYPIO_FIELD_STRING,
+        .def.s = "",
+        .ui_label = "Font family",
+        .ui_section = "display",
+    },
+    {
         .key = "display.popup_mode_indicator",
         .type = TYPIO_FIELD_BOOL,
         .def.b = true,

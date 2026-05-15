@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Candidate popup colour channels**: changed Wayland SHM buffer format from
+  `WL_SHM_FORMAT_ARGB8888` to `WL_SHM_FORMAT_ABGR8888` to match flux's
+  `flux_surface_read_pixels` RGBA8 output, fixing the red/blue channel swap
+  that caused the selection highlight to appear orange instead of blue.
+- **Candidate popup font weight**: added FreeType variable-font `wght` axis
+  support in `flux_renderer.c` so that Medium / SemiBold / Bold requests are
+  actually rendered at the correct weight instead of always falling back to
+  Regular. Font object cache now keys on `(path, size, weight)`.
+
+### Changed
+
+- **Default popup font weight**: changed from `Medium` (500) to `SemiBold` (600).
+
+## [3.2.1] - 2026-05-15
+
+### Fixed
+
+- **Candidate popup CJK font fallback**: `layout_has_missing_glyphs` now correctly
+  detects `.notdef` glyphs (missing characters) by inspecting the low 16 bits of
+  the global glyph ID, allowing the renderer to fall back to system CJK fonts
+  when the primary font lacks Chinese/Japanese/Korean glyphs.
+
+### Added
+
+- **Config schema**: `display.font_family` is now registered in the config schema
+  so it appears in the control-panel UI.
+- **Voice engine readiness**: New optional `is_ready` callback in
+  `TypioVoiceEngineOps` for engines that load models asynchronously.
+
+### Changed
+
+- **Voice initialization**: Moved voice setup into the standard frontend
+  constructor and integrated it with the `TypioWlAuxHandler` subsystem instead of
+  a separate `typio_wl_frontend_new_with_voice()` entry point.
+- **PipeWire capture**: Refactored `pw_capture.c` for better buffer lifecycle
+  management and reduced lock contention.
+- **CI**: Removed `.github/workflows/ci.yml` (superseded by local build scripts).
+
 ## [3.2.0] - 2026-05-01
 
 ### Added

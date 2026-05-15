@@ -7,6 +7,7 @@ This section is for contributors who will modify Typio source code. **If you onl
 - [Code Style](code-style.md) — C/C++ conventions and project norms
 - [Project Layout](project-layout.md) — Tour of the source tree
 - [Maintenance Manual](maintenance.md) — Rules for the Wayland keyboard pipeline
+- [Popup Appearance](popup-appearance.md) — Rendering, pixel formats, variable fonts, and theme resolution
 - [Release Process](release-process.md) — This section is under construction
 
 ## Before submitting a PR

@@ -10,6 +10,7 @@
 
 #include <pipewire/pipewire.h>
 #include <spa/param/audio/format-utils.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -24,13 +25,30 @@ struct TypioPwCapture {
     void *user_data;
 
     bool capturing;
+    uint32_t frames_received;  /* diagnostic counter */
 };
+
+static void on_state_changed(void *data, enum pw_stream_state old,
+                              enum pw_stream_state state, const char *error) {
+    TypioPwCapture *cap = data;
+    typio_log(TYPIO_LOG_INFO, "PipeWire stream state: %s -> %s%s%s",
+              pw_stream_state_as_string(old),
+              pw_stream_state_as_string(state),
+              error ? " error=" : "",
+              error ? error : "");
+
+    if (state == PW_STREAM_STATE_ERROR && cap) {
+        cap->capturing = false;
+        typio_log(TYPIO_LOG_ERROR, "PipeWire stream error, capture halted");
+    }
+}
 
 static void on_process(void *data) {
     TypioPwCapture *cap = data;
     struct pw_buffer *buf;
     struct spa_buffer *spa_buf;
     const float *samples;
+    const struct spa_chunk *chunk;
     uint32_t n_samples;
 
     if (!cap->capturing) {
@@ -43,16 +61,34 @@ static void on_process(void *data) {
     }
 
     spa_buf = buf->buffer;
-    if (!spa_buf->datas[0].data) {
+    if (!spa_buf->datas[0].data || !spa_buf->datas[0].chunk) {
         pw_stream_queue_buffer(cap->stream, buf);
         return;
     }
 
-    samples = spa_buf->datas[0].data;
-    n_samples = spa_buf->datas[0].chunk->size / sizeof(float);
+    chunk = spa_buf->datas[0].chunk;
+    if (chunk->size == 0 ||
+        (chunk->offset % sizeof(float)) != 0 ||
+        (chunk->size % sizeof(float)) != 0 ||
+        chunk->offset > spa_buf->datas[0].maxsize ||
+        chunk->size > spa_buf->datas[0].maxsize - chunk->offset) {
+        pw_stream_queue_buffer(cap->stream, buf);
+        return;
+    }
 
-    if (cap->callback && n_samples > 0) {
-        cap->callback(samples, (size_t)n_samples, cap->user_data);
+    samples = (const float *)((const uint8_t *)spa_buf->datas[0].data +
+                              chunk->offset);
+    n_samples = chunk->size / sizeof(float);
+
+    if (n_samples > 0) {
+        cap->frames_received++;
+        if (cap->frames_received == 1) {
+            typio_log(TYPIO_LOG_INFO,
+                      "PipeWire: first audio buffer received (%u samples)", n_samples);
+        }
+        if (cap->callback) {
+            cap->callback(samples, (size_t)n_samples, cap->user_data);
+        }
     }
 
     pw_stream_queue_buffer(cap->stream, buf);
@@ -60,6 +96,7 @@ static void on_process(void *data) {
 
 static const struct pw_stream_events stream_events = {
     PW_VERSION_STREAM_EVENTS,
+    .state_changed = on_state_changed,
     .process = on_process,
 };
 
@@ -82,31 +119,10 @@ TypioPwCapture *typio_pw_capture_new(TypioPwCaptureCallback cb,
         return nullptr;
     }
 
-    struct pw_properties *props = pw_properties_new(
-        PW_KEY_MEDIA_TYPE, "Audio",
-        PW_KEY_MEDIA_CATEGORY, "Capture",
-        PW_KEY_MEDIA_ROLE, "Communication",
-        PW_KEY_APP_NAME, "Typio",
-        PW_KEY_NODE_NAME, "typio-voice-capture",
-        nullptr);
-
-    cap->stream = pw_stream_new_simple(
-        pw_thread_loop_get_loop(cap->loop),
-        "typio-capture",
-        props,
-        &stream_events,
-        cap);
-
-    if (!cap->stream) {
-        typio_log(TYPIO_LOG_ERROR, "Failed to create PipeWire stream");
-        pw_thread_loop_destroy(cap->loop);
-        free(cap);
-        return nullptr;
-    }
+    /* Stream is created fresh on each typio_pw_capture_start call. */
 
     if (pw_thread_loop_start(cap->loop) < 0) {
         typio_log(TYPIO_LOG_ERROR, "Failed to start PipeWire thread loop");
-        pw_stream_destroy(cap->stream);
         pw_thread_loop_destroy(cap->loop);
         free(cap);
         return nullptr;
@@ -134,8 +150,43 @@ void typio_pw_capture_free(TypioPwCapture *cap) {
     free(cap);
 }
 
+static struct pw_stream *pw_capture_make_stream(TypioPwCapture *cap) {
+    struct pw_properties *props = pw_properties_new(
+        PW_KEY_MEDIA_TYPE, "Audio",
+        PW_KEY_MEDIA_CATEGORY, "Capture",
+        PW_KEY_MEDIA_ROLE, "Communication",
+        PW_KEY_NODE_LATENCY, "256/16000",
+        PW_KEY_APP_NAME, "Typio",
+        PW_KEY_NODE_NAME, "typio-voice-capture",
+        nullptr);
+
+    return pw_stream_new_simple(
+        pw_thread_loop_get_loop(cap->loop),
+        "typio-capture",
+        props,
+        &stream_events,
+        cap);
+}
+
 bool typio_pw_capture_start(TypioPwCapture *cap) {
     if (!cap || cap->capturing) {
+        return false;
+    }
+
+    pw_thread_loop_lock(cap->loop);
+
+    /* Recreate stream each session — pw_stream_connect cannot be called
+     * twice on the same stream object after a disconnect. */
+    if (cap->stream) {
+        pw_stream_destroy(cap->stream);
+        cap->stream = nullptr;
+    }
+    cap->frames_received = 0;
+
+    cap->stream = pw_capture_make_stream(cap);
+    if (!cap->stream) {
+        typio_log(TYPIO_LOG_ERROR, "Failed to create PipeWire stream");
+        pw_thread_loop_unlock(cap->loop);
         return false;
     }
 
@@ -151,8 +202,6 @@ bool typio_pw_capture_start(TypioPwCapture *cap) {
     };
     params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat, &info);
 
-    pw_thread_loop_lock(cap->loop);
-
     int ret = pw_stream_connect(
         cap->stream,
         PW_DIRECTION_INPUT,
@@ -162,6 +211,8 @@ bool typio_pw_capture_start(TypioPwCapture *cap) {
 
     if (ret < 0) {
         typio_log(TYPIO_LOG_ERROR, "Failed to connect PipeWire stream: %d", ret);
+        pw_stream_destroy(cap->stream);
+        cap->stream = nullptr;
         pw_thread_loop_unlock(cap->loop);
         return false;
     }
@@ -180,10 +231,13 @@ void typio_pw_capture_stop(TypioPwCapture *cap) {
 
     pw_thread_loop_lock(cap->loop);
     cap->capturing = false;
-    pw_stream_disconnect(cap->stream);
+    if (cap->stream) {
+        pw_stream_disconnect(cap->stream);
+    }
     pw_thread_loop_unlock(cap->loop);
 
-    typio_log(TYPIO_LOG_INFO, "PipeWire capture stopped");
+    typio_log(TYPIO_LOG_INFO, "PipeWire capture stopped (%u frames received)",
+              cap->frames_received);
 }
 
 int typio_pw_capture_get_fd(TypioPwCapture *cap) {

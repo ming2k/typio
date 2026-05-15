@@ -7,6 +7,7 @@
 #include <harfbuzz/hb-ft.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_MULTIPLE_MASTERS_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -86,6 +87,7 @@ static void font_file_cache_insert(const char *family, int32_t weight, const cha
 typedef struct {
     char      *path;
     float      size;
+    int32_t    weight;
     FT_Face    face;
     hb_font_t *hb_font;
     uint32_t   font_id;
@@ -107,10 +109,11 @@ static void font_obj_cache_clear(void)
     font_obj_cache_count = 0;
 }
 
-static FontObjEntry *font_obj_cache_lookup(const char *path, float size)
+static FontObjEntry *font_obj_cache_lookup(const char *path, float size, int32_t weight)
 {
     for (size_t i = 0; i < font_obj_cache_count; ++i) {
         if (font_obj_cache[i].size == size &&
+            font_obj_cache[i].weight == weight &&
             strcmp(font_obj_cache[i].path, path) == 0) {
             return &font_obj_cache[i];
         }
@@ -118,13 +121,14 @@ static FontObjEntry *font_obj_cache_lookup(const char *path, float size)
     return NULL;
 }
 
-static void font_obj_cache_insert(const char *path, float size,
+static void font_obj_cache_insert(const char *path, float size, int32_t weight,
                                   FT_Face face, hb_font_t *hb_font, uint32_t font_id)
 {
     if (font_obj_cache_count < FONT_OBJ_CACHE_CAP) {
         FontObjEntry *e = &font_obj_cache[font_obj_cache_count++];
         e->path = strdup(path);
         e->size = size;
+        e->weight = weight;
         e->face = face;
         e->hb_font = hb_font;
         e->font_id = font_id;
@@ -139,22 +143,63 @@ static void font_obj_cache_insert(const char *path, float size,
         FontObjEntry *e = &font_obj_cache[FONT_OBJ_CACHE_CAP - 1];
         e->path = strdup(path);
         e->size = size;
+        e->weight = weight;
         e->face = face;
         e->hb_font = hb_font;
         e->font_id = font_id;
     }
 }
 
+static bool set_face_weight(FT_Face face, int32_t weight)
+{
+    FT_MM_Var *amaster = NULL;
+    FT_Fixed  *coords  = NULL;
+    FT_Error   err;
+    FT_UInt    i;
+    bool       ok = false;
+
+    err = FT_Get_MM_Var(face, &amaster);
+    if (err != 0) return false;
+
+    coords = (FT_Fixed *)calloc(amaster->num_axis, sizeof(FT_Fixed));
+    if (!coords) goto done;
+
+    err = FT_Get_Var_Design_Coordinates(face, amaster->num_axis, coords);
+    if (err != 0) goto done;
+
+    for (i = 0; i < amaster->num_axis; ++i) {
+        if (amaster->axis[i].tag == ((FT_ULong)'w' << 24 |
+                                     (FT_ULong)'g' << 16 |
+                                     (FT_ULong)'h' << 8  | 't')) {
+            coords[i] = (FT_Fixed)weight * 65536;
+            ok = true;
+            break;
+        }
+    }
+
+    if (ok) {
+        err = FT_Set_Var_Design_Coordinates(face, amaster->num_axis, coords);
+        ok = (err == 0);
+    }
+
+done:
+    free(coords);
+    FT_Done_MM_Var(ft_library, amaster);
+    return ok;
+}
+
 static FontObjEntry *get_or_create_font(flux_context *ctx, const char *path,
                                         float size, int32_t weight)
 {
-    (void)weight;
     (void)ctx;
-    FontObjEntry *entry = font_obj_cache_lookup(path, size);
+    FontObjEntry *entry = font_obj_cache_lookup(path, size, weight);
     if (entry) return entry;
 
     FT_Face face = NULL;
     if (FT_New_Face(ft_library, path, 0, &face) != 0) return NULL;
+
+    set_face_weight(face, weight);
+
     if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)(size + 0.5f)) != 0) {
         FT_Done_Face(face);
         return NULL;
@@ -167,8 +212,8 @@ static FontObjEntry *get_or_create_font(flux_context *ctx, const char *path,
     }
 
     uint32_t font_id = next_font_id++;
-    font_obj_cache_insert(path, size, face, hb_font, font_id);
-    return font_obj_cache_lookup(path, size);
+    font_obj_cache_insert(path, size, weight, face, hb_font, font_id);
+    return font_obj_cache_lookup(path, size, weight);
 }
 
 /* ── Glyph upload helper ────────────────────────────────────────────── */
@@ -456,7 +501,11 @@ static bool layout_has_missing_glyphs(const TypioTextLayout *layout)
     size_t count = flux_glyph_run_count(layout->run);
     const flux_glyph *glyphs = flux_glyph_run_data(layout->run);
     for (size_t i = 0; i < count; ++i) {
-        if (glyphs[i].glyph_id == 0) return true;
+        /* glyph_id stored in the run is actually the global_id
+         * (font_id << 16) | glyph_id).  The original HarfBuzz
+         * glyph id lives in the low 16 bits.  A value of 0 there
+         * means .notdef — i.e. the font is missing this glyph. */
+        if ((glyphs[i].glyph_id & 0xFFFFu) == 0) return true;
     }
     return false;
 }

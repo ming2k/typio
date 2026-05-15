@@ -7,6 +7,7 @@
 #include "identity.h"
 #include "monotonic_time.h"
 #include "wl_frontend_internal.h"
+#include "aux_adapters.h"
 #include "typio/typio.h"
 #include "utils/log.h"
 #ifdef HAVE_VOICE
@@ -179,6 +180,10 @@ static void frontend_setup_config_watch(TypioWlFrontend *frontend) {
     }
 }
 
+#ifdef HAVE_VOICE
+static void frontend_init_voice(TypioWlFrontend *frontend, TypioInstance *instance);
+#endif
+
 TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
                                         const TypioWlFrontendConfig *config) {
     if (!instance) {
@@ -295,6 +300,9 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
 
     typio_log(TYPIO_LOG_INFO, "Wayland input method frontend initialized");
     frontend_setup_config_watch(frontend);
+#ifdef HAVE_VOICE
+    frontend_init_voice(frontend, instance);
+#endif
     return frontend;
 }
 
@@ -333,18 +341,14 @@ static void frontend_init_voice(TypioWlFrontend *frontend,
         typio_log(TYPIO_LOG_INFO, "Voice input service created but no model");
     else
         typio_log(TYPIO_LOG_WARNING, "Failed to create voice input service");
-}
-#endif
 
-TypioWlFrontend *typio_wl_frontend_new_with_voice(TypioInstance *instance,
-                                                   const TypioWlFrontendConfig *config) {
-    TypioWlFrontend *frontend = typio_wl_frontend_new(instance, config);
-#ifdef HAVE_VOICE
-    if (frontend)
-        frontend_init_voice(frontend, instance);
-#endif
-    return frontend;
+    if (frontend->voice && frontend->aux_handler_count < 4) {
+        TypioWlAuxHandler *h = typio_wl_aux_handler_for_voice(frontend->voice, frontend);
+        if (h)
+            frontend->aux_handlers[frontend->aux_handler_count++] = h;
+    }
 }
+#endif
 
 void typio_wl_frontend_stop(TypioWlFrontend *frontend) {
     if (frontend) {
@@ -406,6 +410,11 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
         frontend->voice = nullptr;
     }
 #endif
+    for (size_t i = 0; i < frontend->aux_handler_count; i++) {
+        typio_wl_aux_handler_free(frontend->aux_handlers[i]);
+        frontend->aux_handlers[i] = nullptr;
+    }
+    frontend->aux_handler_count = 0;
 
     /* Clean up Wayland objects */
     if (frontend->virtual_keyboard) {
@@ -599,6 +608,11 @@ void typio_wl_frontend_set_tray([[maybe_unused]] TypioWlFrontend *frontend,
 #ifdef HAVE_SYSTRAY
     if (frontend) {
         frontend->tray = (TypioTray *)tray;
+        if (frontend->aux_handler_count < 4) {
+            TypioWlAuxHandler *h = typio_wl_aux_handler_for_tray((TypioTray *)tray);
+            if (h)
+                frontend->aux_handlers[frontend->aux_handler_count++] = h;
+        }
     }
 #endif
 }
@@ -611,6 +625,12 @@ void typio_wl_frontend_set_status_bus([[maybe_unused]] TypioWlFrontend *frontend
         typio_status_bus_set_runtime_state_callback(frontend->status_bus,
                                                     frontend_fill_runtime_state,
                                                     frontend);
+        if (frontend->aux_handler_count < 4) {
+            TypioWlAuxHandler *h =
+                typio_wl_aux_handler_for_status_bus((TypioStatusBus *)status_bus);
+            if (h)
+                frontend->aux_handlers[frontend->aux_handler_count++] = h;
+        }
     }
 #endif
 }

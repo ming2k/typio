@@ -100,7 +100,7 @@ bool typio_candidate_popup_buffer_create(TypioCandidatePopupBuffer *buffer,
     }
 
     buffer->buffer = wl_shm_pool_create_buffer(pool, 0, width, height, stride,
-                                               WL_SHM_FORMAT_ARGB8888);
+                                               WL_SHM_FORMAT_ABGR8888);
     wl_shm_pool_destroy(pool);
 
     if (!buffer->buffer) {

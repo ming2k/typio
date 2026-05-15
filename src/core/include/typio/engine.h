@@ -163,6 +163,15 @@ typedef struct TypioKeyboardEngineOps {
  */
 typedef struct TypioVoiceEngineOps {
     /**
+     * @brief Return true if the engine is ready to process audio.
+     *
+     * Optional — if NULL the engine is assumed ready whenever process_audio
+     * is set.  Engines that load models asynchronously should implement this
+     * and return false until the model is in memory.
+     */
+    bool (*is_ready)(TypioEngine *engine);
+
+    /**
      * @brief Run speech-to-text inference on a buffer of audio samples.
      *
      * @param engine    The voice engine instance.

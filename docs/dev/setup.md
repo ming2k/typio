@@ -19,6 +19,24 @@ Optional:
 - `gtk4` for `BUILD_CONTROL_PANEL=ON`
 - `dbus-1` for `ENABLE_STATUS_BUS=ON` or `ENABLE_SYSTRAY=ON`
 
+## External dependencies
+
+| Dependency | Source | Resolved version | You need to install it? |
+|---|---|---|---|
+| **flux** (rendering framework) | CMake FetchContent | `d473071` (v0.2.3) | **No** — downloaded automatically |
+
+flux is fetched automatically during CMake configuration from
+`https://github.com/ming2k/flux.git`.  To use a local checkout instead,
+set the environment variable `FLUX_SOURCE_DIR` or pass
+`-DFETCHCONTENT_SOURCE_DIR_FLUX=/path/to/flux` to CMake.
+
+System libraries are discovered via `pkg-config`.  CMake does not enforce
+upper-bound versions, but the project is regularly tested against the
+packages shipped in the latest Arch Linux and Fedora releases.
+
+For the concrete distro package names required for a default build, see
+[Getting Started: Prerequisites](../tutorials/01-getting-started.md).
+
 ## Clone and build
 
 Use a debug build with compile commands when editing code:

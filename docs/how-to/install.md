@@ -12,10 +12,18 @@ Use this approach when you want a permanent system installation or are preparing
 - A Wayland compositor that exposes `zwp_input_method_manager_v2`
 - Applications using a working `zwp_text_input_manager_v3` path
 
-Optional dependencies:
+### Optional runtime/build dependencies
 
-- `librime` development files if building with `-DBUILD_RIME_ENGINE=ON`
-- `dbus-1` development files if building with `-ENABLE_SYSTRAY=ON`
+See the [Getting Started tutorial](../tutorials/01-getting-started.md) for the full package-name table by distro.  Quick reference:
+
+| Feature | CMake option | Packages needed |
+|---|---|---|
+| Rime engine | `-DBUILD_RIME_ENGINE=ON` | `librime` dev files |
+| GTK4 control panel | `-DBUILD_CONTROL_PANEL=ON` | `gtk4` dev files |
+| StatusNotifierItem tray | `-DENABLE_SYSTRAY=ON` | `dbus-1` dev files |
+| Voice input | `-DBUILD_WHISPER=ON` or `-DBUILD_SHERPA_ONNX=ON` | PipeWire dev files + voice backend library |
+
+> **Voice backends:** `whisper.cpp` and `sherpa-onnx` are typically not packaged by distributions.  You must build and install them manually before enabling the corresponding CMake option.  See the voice-input explanation doc for details.
 
 ## Build
 

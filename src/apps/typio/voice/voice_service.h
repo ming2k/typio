@@ -26,6 +26,7 @@ void typio_voice_service_stop(TypioVoiceService *svc);
 int typio_voice_service_get_fd(TypioVoiceService *svc);
 void typio_voice_service_dispatch(TypioVoiceService *svc,
                                    TypioInputContext *ctx);
+char *typio_voice_service_collect(TypioVoiceService *svc);
 bool typio_voice_service_is_available(TypioVoiceService *svc);
 void typio_voice_service_reload(TypioVoiceService *svc);
 
