@@ -1,7 +1,12 @@
 #include "flux_renderer.h"
 
+#include <flux/flux.h>
+
 #include <fontconfig/fontconfig.h>
 #include <harfbuzz/hb.h>
+#include <harfbuzz/hb-ft.h>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,27 +14,27 @@
 #include <strings.h>
 
 struct TypioTextLayout {
-    fx_font      *font;
-    fx_glyph_run *run;
-    fx_paint      paint;
-    float         width;
-    float         height;
-    float         baseline;
+    flux_glyph_run *run;
+    flux_paint     *paint;
+    float           width;
+    float           height;
+    float           baseline;
 };
 
 typedef struct {
-    fx_context *ctx;
+    flux_context *ctx;
 } FluxTextEnginePriv;
 
-static fx_context *global_ctx;
+static flux_context *global_ctx;
+static FT_Library    ft_library;
 
 /* ── Font file cache ────────────────────────────────────────────────── */
 #define FONT_FILE_CACHE_CAP 8
 
 typedef struct {
-    char   family[128];
+    char    family[128];
     int32_t weight;
-    char  *path;
+    char   *path;
 } FontFileEntry;
 
 static FontFileEntry font_file_cache[FONT_FILE_CACHE_CAP];
@@ -75,73 +80,134 @@ static void font_file_cache_insert(const char *family, int32_t weight, const cha
     }
 }
 
-/* ── Font object cache ──────────────────────────────────────────────── */
+/* ── Font object cache (FT_Face + hb_font_t) ────────────────────────── */
 #define FONT_OBJ_CACHE_CAP 16
 
 typedef struct {
-    char  *path;
-    float  size;
-    fx_font *font;
+    char      *path;
+    float      size;
+    FT_Face    face;
+    hb_font_t *hb_font;
+    uint32_t   font_id;
 } FontObjEntry;
 
 static FontObjEntry font_obj_cache[FONT_OBJ_CACHE_CAP];
 static size_t       font_obj_cache_count = 0;
+static uint32_t     next_font_id = 1;
 
 static void font_obj_cache_clear(void)
 {
     for (size_t i = 0; i < font_obj_cache_count; ++i) {
-        fx_font_destroy(font_obj_cache[i].font);
+        if (font_obj_cache[i].hb_font)
+            hb_font_destroy(font_obj_cache[i].hb_font);
+        if (font_obj_cache[i].face)
+            FT_Done_Face(font_obj_cache[i].face);
         free(font_obj_cache[i].path);
     }
     font_obj_cache_count = 0;
 }
 
-static fx_font *font_obj_cache_lookup(const char *path, float size)
+static FontObjEntry *font_obj_cache_lookup(const char *path, float size)
 {
     for (size_t i = 0; i < font_obj_cache_count; ++i) {
         if (font_obj_cache[i].size == size &&
             strcmp(font_obj_cache[i].path, path) == 0) {
-            return font_obj_cache[i].font;
+            return &font_obj_cache[i];
         }
     }
     return NULL;
 }
 
-static void font_obj_cache_insert(const char *path, float size, fx_font *font)
+static void font_obj_cache_insert(const char *path, float size,
+                                  FT_Face face, hb_font_t *hb_font, uint32_t font_id)
 {
     if (font_obj_cache_count < FONT_OBJ_CACHE_CAP) {
         FontObjEntry *e = &font_obj_cache[font_obj_cache_count++];
         e->path = strdup(path);
         e->size = size;
-        e->font = font;
+        e->face = face;
+        e->hb_font = hb_font;
+        e->font_id = font_id;
     } else {
         free(font_obj_cache[0].path);
+        if (font_obj_cache[0].hb_font)
+            hb_font_destroy(font_obj_cache[0].hb_font);
+        if (font_obj_cache[0].face)
+            FT_Done_Face(font_obj_cache[0].face);
         for (size_t i = 1; i < FONT_OBJ_CACHE_CAP; ++i)
             font_obj_cache[i - 1] = font_obj_cache[i];
         FontObjEntry *e = &font_obj_cache[FONT_OBJ_CACHE_CAP - 1];
         e->path = strdup(path);
         e->size = size;
-        e->font = font;
+        e->face = face;
+        e->hb_font = hb_font;
+        e->font_id = font_id;
     }
 }
 
-static fx_font *get_or_create_font(fx_context *ctx, const char *path, float size, int32_t weight)
+static FontObjEntry *get_or_create_font(flux_context *ctx, const char *path,
+                                        float size, int32_t weight)
 {
-    fx_font *font = font_obj_cache_lookup(path, size);
-    if (font) return font;
+    (void)weight;
+    (void)ctx;
+    FontObjEntry *entry = font_obj_cache_lookup(path, size);
+    if (entry) return entry;
 
-    fx_font_desc desc = {
-        .family = "",
-        .source_name = path,
-        .size = size,
-        .weight = weight,
-        .italic = false,
-    };
-    font = fx_font_create(ctx, &desc);
-    if (font) {
-        font_obj_cache_insert(path, size, font);
+    FT_Face face = NULL;
+    if (FT_New_Face(ft_library, path, 0, &face) != 0) return NULL;
+    if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)(size + 0.5f)) != 0) {
+        FT_Done_Face(face);
+        return NULL;
     }
-    return font;
+
+    hb_font_t *hb_font = hb_ft_font_create_referenced(face);
+    if (!hb_font) {
+        FT_Done_Face(face);
+        return NULL;
+    }
+
+    uint32_t font_id = next_font_id++;
+    font_obj_cache_insert(path, size, face, hb_font, font_id);
+    return font_obj_cache_lookup(path, size);
+}
+
+/* ── Glyph upload helper ────────────────────────────────────────────── */
+
+static bool upload_glyph(flux_context *ctx, FT_Face face,
+                         uint32_t glyph_id, uint32_t global_glyph_id)
+{
+    if (FT_Load_Glyph(face, glyph_id,
+                      FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0)
+        return false;
+
+    FT_Bitmap *bm = &face->glyph->bitmap;
+    if (bm->width == 0 || bm->rows == 0)
+        return true;
+
+    uint8_t stack_buf[32 * 32];
+    uint8_t *buf = stack_buf;
+    bool dynamic = false;
+    size_t needed = (size_t)bm->width * bm->rows;
+    if (needed > sizeof(stack_buf)) {
+        buf = (uint8_t *)malloc(needed);
+        if (!buf) return false;
+        dynamic = true;
+    }
+
+    for (int row = 0; row < (int)bm->rows; ++row) {
+        memcpy(buf + row * bm->width,
+               bm->buffer + row * bm->pitch,
+               bm->width);
+    }
+
+    flux_result r = flux_glyph_upload(ctx, global_glyph_id, buf,
+                                      (int)bm->width, (int)bm->rows,
+                                      face->glyph->bitmap_left,
+                                      face->glyph->bitmap_top,
+                                      (int)(face->glyph->advance.x >> 6));
+
+    if (dynamic) free(buf);
+    return r == FLUX_OK;
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -153,29 +219,39 @@ static unsigned char to_u8(float v)
     return (unsigned char)(v * 255.0f + 0.5f);
 }
 
-fx_color typio_flux_color(TypioColor color)
+flux_color typio_flux_color(TypioColor color)
 {
-    return fx_color_rgba(to_u8(color.r), to_u8(color.g), to_u8(color.b), to_u8(color.a));
+    return flux_color_rgba(to_u8(color.r), to_u8(color.g),
+                           to_u8(color.b), to_u8(color.a));
 }
 
-static void flux_log(fx_log_level level, const char *msg, void *user)
+static void flux_log_cb(flux_log_level level,
+                        const char *file, int line,
+                        const char *fmt, const char *msg,
+                        void *user)
 {
-    (void)user;
-    (void)level;
-    (void)msg;
+    (void)level; (void)file; (void)line; (void)fmt; (void)msg; (void)user;
 }
 
-fx_context *typio_flux_context_get(void)
+flux_context *typio_flux_context_get(void)
 {
     if (global_ctx) return global_ctx;
 
-    fx_context_desc desc = {
-        .log = flux_log,
-        .log_user = NULL,
-        .enable_validation = false,
-        .app_name = "typio",
+    if (FT_Init_FreeType(&ft_library) != 0)
+        return NULL;
+
+    flux_context_desc desc = {
+        .size = sizeof(desc),
     };
-    global_ctx = fx_context_create(&desc);
+    desc.log = flux_log_cb;
+    desc.min_log_level = FLUX_LOG_WARN;
+
+    flux_result r = flux_context_create(&desc, &global_ctx);
+    if (r != FLUX_OK) {
+        FT_Done_FreeType(ft_library);
+        ft_library = NULL;
+        return NULL;
+    }
     return global_ctx;
 }
 
@@ -192,7 +268,6 @@ static int32_t parse_weight_keyword(const char *s, size_t len)
     if (len == 8 && strncasecmp(s, "SemiBold", 8) == 0) return 600;
     if (len == 10 && strncasecmp(s, "ExtraLight", 10) == 0) return 200;
     {
-        /* numeric weight like "500" */
         int v = atoi(s);
         if (v >= 100 && v <= 1000) return v;
     }
@@ -261,7 +336,6 @@ static char *match_font_file(const char *family, int32_t weight)
 
     FcPatternAddString(pat, FC_FAMILY,
                        (const FcChar8 *)(family && family[0] ? family : "Sans"));
-    /* Map CSS weight (100-900) to fontconfig weight */
     int fc_weight = FC_WEIGHT_REGULAR;
     if (weight >= 900)      fc_weight = FC_WEIGHT_BLACK;
     else if (weight >= 800) fc_weight = FC_WEIGHT_EXTRABOLD;
@@ -294,14 +368,26 @@ static char *match_font_file(const char *family, int32_t weight)
     return result;
 }
 
+static bool text_has_non_ascii(const char *text)
+{
+    const unsigned char *p = (const unsigned char *)text;
+    while (*p) {
+        if (*p > 127) return true;
+        p++;
+    }
+    return false;
+}
+
 static char *find_fallback_font(const char *text, int32_t weight)
 {
     if (!text || !text[0]) return NULL;
+    if (!text_has_non_ascii(text)) return NULL;
     if (!FcInit()) return NULL;
 
     FcPattern *pat = FcPatternCreate();
     if (!pat) return NULL;
 
+    /* Build charset from text */
     FcCharSet *cs = FcCharSetCreate();
     const char *p = text;
     while (*p) {
@@ -311,7 +397,7 @@ static char *find_fallback_font(const char *text, int32_t weight)
         FcCharSetAddChar(cs, ch);
         p += len;
     }
-    FcPatternAddCharSet(pat, FC_CHARSET, cs);
+
     int fc_weight = FC_WEIGHT_REGULAR;
     if (weight >= 900)      fc_weight = FC_WEIGHT_BLACK;
     else if (weight >= 800) fc_weight = FC_WEIGHT_EXTRABOLD;
@@ -327,15 +413,38 @@ static char *find_fallback_font(const char *text, int32_t weight)
     FcDefaultSubstitute(pat);
 
     FcResult fc_result;
-    FcPattern *match = FcFontMatch(NULL, pat, &fc_result);
+    FcFontSet *set = FcFontSort(NULL, pat, FcTrue, NULL, &fc_result);
     char *result = NULL;
-    if (match) {
-        FcChar8 *file = NULL;
-        if (FcPatternGetString(match, FC_FILE, 0, &file) == FcResultMatch && file) {
-            result = strdup((const char *)file);
+
+    if (set) {
+        for (int i = 0; i < set->nfont; i++) {
+            FcPattern *font = set->fonts[i];
+            FcCharSet *font_cs = NULL;
+            if (FcPatternGetCharSet(font, FC_CHARSET, 0, &font_cs) == FcResultMatch && font_cs) {
+                bool covers_all = true;
+                const char *cp = text;
+                while (*cp) {
+                    FcChar32 ch;
+                    int len = FcUtf8ToUcs4((const FcChar8 *)cp, &ch, (int)strlen(cp));
+                    if (len <= 0) break;
+                    if (!FcCharSetHasChar(font_cs, ch)) {
+                        covers_all = false;
+                        break;
+                    }
+                    cp += len;
+                }
+                if (covers_all) {
+                    FcChar8 *file = NULL;
+                    if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch && file) {
+                        result = strdup((const char *)file);
+                        break;
+                    }
+                }
+            }
         }
-        FcPatternDestroy(match);
+        FcFontSetDestroy(set);
     }
+
     FcCharSetDestroy(cs);
     FcPatternDestroy(pat);
     return result;
@@ -344,8 +453,8 @@ static char *find_fallback_font(const char *text, int32_t weight)
 static bool layout_has_missing_glyphs(const TypioTextLayout *layout)
 {
     if (!layout || !layout->run) return false;
-    size_t count = fx_glyph_run_count(layout->run);
-    const fx_glyph *glyphs = fx_glyph_run_data(layout->run);
+    size_t count = flux_glyph_run_count(layout->run);
+    const flux_glyph *glyphs = flux_glyph_run_data(layout->run);
     for (size_t i = 0; i < count; ++i) {
         if (glyphs[i].glyph_id == 0) return true;
     }
@@ -355,47 +464,62 @@ static bool layout_has_missing_glyphs(const TypioTextLayout *layout)
 static void flux_free_layout_internal(TypioTextLayout *layout)
 {
     if (!layout) return;
-    fx_glyph_run_destroy(layout->run);
+    if (layout->run)
+        flux_glyph_run_release(layout->run);
+    if (layout->paint)
+        flux_paint_release(layout->paint);
     free(layout);
 }
 
-static TypioTextLayout *flux_shape_text(fx_context *ctx,
+static TypioTextLayout *flux_shape_text(flux_context *ctx,
                                         const char *text,
-                                        fx_font *font,
+                                        FontObjEntry *font,
                                         TypioColor color)
 {
     TypioTextLayout *layout = (TypioTextLayout *)calloc(1, sizeof(*layout));
     if (!layout) return NULL;
 
-    layout->font = font;
-    layout->run = fx_glyph_run_create(text ? strlen(text) : 0);
-    if (!layout->run) goto fail;
+    flux_result r = flux_glyph_run_create(ctx,
+                                          text ? strlen(text) : 0,
+                                          &layout->run);
+    if (r != FLUX_OK || !layout->run) goto fail;
 
-    fx_paint_init(&layout->paint, typio_flux_color(color));
-    fx_font_get_metrics(layout->font, &layout->baseline, NULL);
+    r = flux_paint_create(ctx, &layout->paint);
+    if (r != FLUX_OK || !layout->paint) goto fail;
+    flux_paint_set_color(layout->paint, typio_flux_color(color));
+
     {
-        float descender = 0.0f;
-        fx_font_get_metrics(layout->font, NULL, &descender);
-        layout->height = layout->baseline - descender;
+        float ascender  = (float)font->face->size->metrics.ascender / 64.0f;
+        float descender = (float)font->face->size->metrics.descender / 64.0f;
+        layout->baseline = ascender;
+        layout->height   = ascender - descender;
     }
 
     hb_buffer_t *hb = hb_buffer_create();
     if (!hb) goto fail;
     hb_buffer_add_utf8(hb, text ? text : "", -1, 0, -1);
     hb_buffer_guess_segment_properties(hb);
-    hb_shape(fx_font_get_hb_font(layout->font), hb, NULL, 0);
+    hb_shape(font->hb_font, hb, NULL, 0);
 
-    hb_glyph_info_t *infos;
+    hb_glyph_info_t     *infos;
     hb_glyph_position_t *positions;
     unsigned int count = 0;
     infos = hb_buffer_get_glyph_infos(hb, &count);
     positions = hb_buffer_get_glyph_positions(hb, &count);
+
     float pen_x = 0.0f;
     for (unsigned int i = 0; i < count; ++i) {
+        uint32_t glyph_id = infos[i].codepoint;
+        uint32_t global_id = (font->font_id << 16) | glyph_id;
         float x_offset = (float)positions[i].x_offset / 64.0f;
         float y_offset = -(float)positions[i].y_offset / 64.0f;
-        if (!fx_glyph_run_append(layout->run, infos[i].codepoint,
-                                 pen_x + x_offset, y_offset)) {
+
+        if (!upload_glyph(ctx, font->face, glyph_id, global_id)) {
+            hb_buffer_destroy(hb);
+            goto fail;
+        }
+        if (flux_glyph_run_append(layout->run, global_id,
+                                  pen_x + x_offset, y_offset) != FLUX_OK) {
             hb_buffer_destroy(hb);
             goto fail;
         }
@@ -420,7 +544,7 @@ static TypioTextLayout *flux_create_layout(void *engine,
     char *font_file = NULL;
     char *fb_file = NULL;
     float size_px;
-    fx_font *font = NULL;
+    FontObjEntry *font = NULL;
     TypioTextLayout *layout = NULL;
     TypioTextLayout *fb_layout = NULL;
     int32_t weight = 400;
@@ -440,7 +564,7 @@ static TypioTextLayout *flux_create_layout(void *engine,
     if (layout_has_missing_glyphs(layout)) {
         fb_file = find_fallback_font(text, weight);
         if (fb_file && strcmp(fb_file, font_file) != 0) {
-            fx_font *fb_font = get_or_create_font(priv->ctx, fb_file, size_px, weight);
+            FontObjEntry *fb_font = get_or_create_font(priv->ctx, fb_file, size_px, weight);
             if (fb_font) {
                 fb_layout = flux_shape_text(priv->ctx, text, fb_font, color);
                 if (fb_layout && !layout_has_missing_glyphs(fb_layout)) {
@@ -480,19 +604,22 @@ static float flux_get_baseline(TypioTextLayout *layout)
 void typio_flux_layout_free(TypioTextLayout *layout)
 {
     if (!layout) return;
-    fx_glyph_run_destroy(layout->run);
-    /* font is owned by global cache; do not destroy here */
+    if (layout->run)
+        flux_glyph_run_release(layout->run);
+    if (layout->paint)
+        flux_paint_release(layout->paint);
     free(layout);
 }
 
-bool typio_flux_draw_layout(fx_canvas *canvas,
+bool typio_flux_draw_layout(flux_canvas *canvas,
                             TypioTextLayout *layout,
                             float x,
                             float y)
 {
-    if (!canvas || !layout || !layout->font || !layout->run) return false;
-    return fx_draw_glyph_run(canvas, layout->font, layout->run,
-                             x, y + layout->baseline, &layout->paint);
+    if (!canvas || !layout || !layout->run || !layout->paint) return false;
+    return flux_canvas_draw_glyph_run(canvas, layout->run,
+                                      x, y + layout->baseline,
+                                      layout->paint) == FLUX_OK;
 }
 
 static TypioTextEngineVTable flux_engine_vtable = {

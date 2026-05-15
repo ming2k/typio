@@ -12,7 +12,7 @@
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
 
-static fx_color palette_color(double r, double g, double b, double a) {
+static flux_color palette_color(double r, double g, double b, double a) {
     TypioColor c = {(float)r, (float)g, (float)b, (float)a};
     return typio_flux_color(c);
 }
@@ -23,8 +23,8 @@ static bool scaled(int logical, int scale, int *physical) {
     return true;
 }
 
-static fx_rect rect_px(float x, float y, float w, float h, int scale) {
-    return (fx_rect){
+static flux_rect rect_px(float x, float y, float w, float h, int scale) {
+    return (flux_rect){
         .x = x * (float)scale,
         .y = y * (float)scale,
         .w = w * (float)scale,
@@ -32,7 +32,7 @@ static fx_rect rect_px(float x, float y, float w, float h, int scale) {
     };
 }
 
-static bool draw_layout(fx_canvas *canvas,
+static bool draw_layout(flux_canvas *canvas,
                         TypioTextLayout *layout,
                         float x,
                         float y,
@@ -43,7 +43,7 @@ static bool draw_layout(fx_canvas *canvas,
                                   y * (float)scale);
 }
 
-static void draw_row(fx_canvas *canvas,
+static void draw_row(flux_canvas *canvas,
                      const PopupRow *row,
                      bool selected,
                      const TypioCandidatePopupPalette *p,
@@ -51,58 +51,62 @@ static void draw_row(fx_canvas *canvas,
     if (!canvas || !row || !p) return;
 
     if (selected) {
-        fx_rect highlight = rect_px((float)row->x + 1.0f,
+        flux_rect highlight = rect_px((float)row->x + 1.0f,
                                     (float)row->y + 1.0f,
                                     (float)row->w - 2.0f,
                                     (float)row->h - 2.0f,
                                     scale);
-        fx_fill_rect(canvas, &highlight,
+        flux_result _r = flux_canvas_fill_rect(canvas, &highlight,
                      palette_color(p->selection_r, p->selection_g,
                                    p->selection_b, p->selection_a));
+        (void)_r;
         draw_layout(canvas, row->label_layout_sel, row->label_x, row->label_y, scale);
         draw_layout(canvas, row->layout_sel, row->text_x, row->text_y, scale);
         return;
     }
 
-    fx_rect bg = rect_px((float)row->x, (float)row->y,
+    flux_rect bg = rect_px((float)row->x, (float)row->y,
                          (float)row->w, (float)row->h, scale);
-    fx_fill_rect(canvas, &bg, palette_color(p->bg_r, p->bg_g, p->bg_b, p->bg_a));
+    flux_result _r = flux_canvas_fill_rect(canvas, &bg, palette_color(p->bg_r, p->bg_g, p->bg_b, p->bg_a));
+    (void)_r;
     draw_layout(canvas, row->label_layout, row->label_x, row->label_y, scale);
     draw_layout(canvas, row->layout, row->text_x, row->text_y, scale);
 }
 
-static void draw_mode_label(fx_canvas *canvas,
+static void draw_mode_label(flux_canvas *canvas,
                             const PopupGeometry *g,
                             const TypioCandidatePopupPalette *p) {
     if (!canvas || !g || !p || !g->mode_layout) return;
 
     if (g->mode_divider_y >= 0) {
-        fx_rect divider = rect_px((float)POPUP_PAD_X,
+        flux_rect divider = rect_px((float)POPUP_PAD_X,
                                   (float)g->mode_divider_y + 0.5f,
                                   (float)(g->popup_w - 2 * POPUP_PAD_X),
                                   1.0f,
                                   g->scale);
-        fx_fill_rect(canvas, &divider,
+        flux_result _r = flux_canvas_fill_rect(canvas, &divider,
                      palette_color(p->border_r, p->border_g, p->border_b,
                                    p->border_a * 0.5));
+        (void)_r;
     }
 
     draw_layout(canvas, g->mode_layout, g->mode_x, g->mode_y, g->scale);
 }
 
-static void draw_border(fx_canvas *canvas,
+static void draw_border(flux_canvas *canvas,
                         int width,
                         int height,
                         const TypioCandidatePopupPalette *p) {
-    fx_color color = palette_color(p->border_r, p->border_g, p->border_b, p->border_a);
-    fx_rect top = {0.0f, 0.0f, (float)width, 1.0f};
-    fx_rect bottom = {0.0f, (float)height - 1.0f, (float)width, 1.0f};
-    fx_rect left = {0.0f, 0.0f, 1.0f, (float)height};
-    fx_rect right = {(float)width - 1.0f, 0.0f, 1.0f, (float)height};
-    fx_fill_rect(canvas, &top, color);
-    fx_fill_rect(canvas, &bottom, color);
-    fx_fill_rect(canvas, &left, color);
-    fx_fill_rect(canvas, &right, color);
+    flux_color color = palette_color(p->border_r, p->border_g, p->border_b, p->border_a);
+    flux_rect top = {0.0f, 0.0f, (float)width, 1.0f};
+    flux_rect bottom = {0.0f, (float)height - 1.0f, (float)width, 1.0f};
+    flux_rect left = {0.0f, 0.0f, 1.0f, (float)height};
+    flux_rect right = {(float)width - 1.0f, 0.0f, 1.0f, (float)height};
+    flux_result _r;
+    _r = flux_canvas_fill_rect(canvas, &top, color); (void)_r;
+    _r = flux_canvas_fill_rect(canvas, &bottom, color); (void)_r;
+    _r = flux_canvas_fill_rect(canvas, &left, color); (void)_r;
+    _r = flux_canvas_fill_rect(canvas, &right, color); (void)_r;
 }
 
 /* ── Core render (reuses persistent offscreen surface) ──────────────── */
@@ -113,32 +117,39 @@ static bool render_to_buffer(PopupRenderCtx *pc,
                              int bh,
                              const PopupGeometry *geom,
                              int selected) {
-    fx_context *ctx = typio_flux_context_get();
+    flux_context *ctx = typio_flux_context_get();
     if (!ctx || !buf || !buf->data || !geom || !geom->palette) return false;
 
     /* Reuse persistent offscreen surface; recreate only on resize. */
-    if (!pc->flux_surface || pc->flux_surface_w != bw || pc->flux_surface_h != bh) {
-        if (pc->flux_surface) {
-            fx_surface_destroy(pc->flux_surface);
-            pc->flux_surface = NULL;
+    if (!pc->surface || pc->surface_w != bw || pc->surface_h != bh) {
+        if (pc->surface) {
+            flux_surface_release(pc->surface);
+            pc->surface = NULL;
         }
-        pc->flux_surface = fx_surface_create_offscreen(ctx, bw, bh,
-                                                        FX_FMT_BGRA8_UNORM,
-                                                        FX_CS_SRGB);
-        pc->flux_surface_w = bw;
-        pc->flux_surface_h = bh;
+        flux_result r = flux_surface_create_offscreen(ctx, bw, bh,
+                                                        FLUX_FMT_BGRA8_UNORM,
+                                                        FLUX_CS_SRGB,
+                                                        &pc->surface);
+        if (r != FLUX_OK) {
+            pc->surface = NULL;
+            return false;
+        }
+        pc->surface_w = bw;
+        pc->surface_h = bh;
     }
-    if (!pc->flux_surface) return false;
+    if (!pc->surface) return false;
 
-    fx_surface *surface = pc->flux_surface;
-    fx_canvas *canvas = fx_surface_acquire(surface);
+    flux_surface *surface = pc->surface;
+    flux_canvas *canvas = flux_surface_acquire(surface);
     if (!canvas) return false;
 
     const TypioCandidatePopupPalette *p = geom->palette;
 
-    fx_clear(canvas, 0x00000000U);
-    fx_rect bg = {0.0f, 0.0f, (float)bw, (float)bh};
-    fx_fill_rect(canvas, &bg, palette_color(p->bg_r, p->bg_g, p->bg_b, p->bg_a));
+    flux_result _r = flux_canvas_clear(canvas, 0x00000000U);
+    (void)_r;
+    flux_rect bg = {0.0f, 0.0f, (float)bw, (float)bh};
+    _r = flux_canvas_fill_rect(canvas, &bg, palette_color(p->bg_r, p->bg_g, p->bg_b, p->bg_a));
+    (void)_r;
     draw_border(canvas, bw, bh, p);
 
     if (geom->preedit_layout) {
@@ -150,8 +161,9 @@ static bool render_to_buffer(PopupRenderCtx *pc,
     }
     draw_mode_label(canvas, geom, p);
 
-    fx_surface_present(surface);
-    bool ok = fx_surface_read_pixels(surface, buf->data, buf->stride);
+    _r = flux_surface_present(surface);
+    (void)_r;
+    bool ok = flux_surface_read_pixels(surface, buf->data, (size_t)buf->stride) == FLUX_OK;
     return ok;
 }
 

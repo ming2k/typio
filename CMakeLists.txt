@@ -176,7 +176,19 @@ configure_file(
     @ONLY
 )
 
-add_subdirectory(external/flux)
+include(FetchContent)
+
+# Prefer local flux checkout if available; otherwise fetch from upstream.
+set(FETCHCONTENT_SOURCE_DIR_FLUX "/home/ming/projects/flux" CACHE PATH
+    "Path to local flux source checkout")
+
+FetchContent_Declare(
+    flux
+    GIT_REPOSITORY git@github.com:ming2k/flux.git
+    GIT_TAG        d473071  # v0.2.3 + CMake + warning fixes
+)
+FetchContent_MakeAvailable(flux)
+
 add_subdirectory(src/core)
 add_subdirectory(src/engines)
 add_subdirectory(src/apps)

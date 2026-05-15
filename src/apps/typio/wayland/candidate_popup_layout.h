@@ -142,9 +142,9 @@ typedef struct {
     TypioTextEngine     *engine;
     PopupLayoutEntry      entries[POPUP_LAYOUT_CACHE_CAP];
     uint32_t              tick;
-    fx_surface           *flux_surface;
-    int                   flux_surface_w;
-    int                   flux_surface_h;
+    flux_surface         *surface;
+    int                   surface_w;
+    int                   surface_h;
 } PopupRenderCtx;
 
 /* ── Functions ──────────────────────────────────────────────────────── */

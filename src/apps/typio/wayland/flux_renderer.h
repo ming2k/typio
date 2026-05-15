@@ -13,10 +13,10 @@ extern "C" {
 TypioTextEngine *typio_flux_engine_create(void);
 void typio_flux_engine_destroy(TypioTextEngine *engine);
 
-fx_context *typio_flux_context_get(void);
-fx_color typio_flux_color(TypioColor color);
+flux_context *typio_flux_context_get(void);
+flux_color typio_flux_color(TypioColor color);
 
-bool typio_flux_draw_layout(fx_canvas *canvas,
+bool typio_flux_draw_layout(flux_canvas *canvas,
                             TypioTextLayout *layout,
                             float x,
                             float y);

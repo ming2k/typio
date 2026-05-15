@@ -82,9 +82,12 @@ if(HAVE_WAYLAND)
         ${CMAKE_CURRENT_SOURCE_DIR}/wayland
     )
 
+    pkg_check_modules(FREETYPE REQUIRED freetype2)
+
     list(APPEND TYPIO_DAEMON_SYSTEM_INCLUDE_DIRS
         ${WAYLAND_CLIENT_INCLUDE_DIRS}
         ${XKBCOMMON_INCLUDE_DIRS}
+        ${FREETYPE_INCLUDE_DIRS}
     )
 
     list(APPEND TYPIO_DAEMON_LIBRARIES
@@ -93,6 +96,7 @@ if(HAVE_WAYLAND)
         flux::flux
         fontconfig
         harfbuzz
+        ${FREETYPE_LIBRARIES}
         pthread
     )
 endif()
