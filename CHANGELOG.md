@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.4] - 2026-05-22
+
+### Changed
+
+- **Static-link flux into the typio daemon**: the privately-built flux is now
+  produced as `libflux.a` (`meson --default-library=static`) and absorbed
+  into the binary at link time. The install ships no `libflux.so*`, removes
+  one runtime dependency, and is no longer exposed to any host-side flux
+  install. Adds `Vulkan` and `Threads` as explicit CMake `find_package`
+  requirements (previously brought in transitively via the shared flux).
+
+### Fixed
+
+- **`libflux.so.0` not found after install**: packaged installs (e.g. via
+  wright) failed to launch with `error while loading shared libraries:
+  libflux.so.0` because the shared flux only lived in the build tree's
+  `_flux_prefix/`. Resolved by the static-link switch above.
+
 ## [3.2.3] - 2026-05-22
 
 ### Fixed

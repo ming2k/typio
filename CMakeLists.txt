@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(typio VERSION 3.2.3 LANGUAGES C CXX)
+project(typio VERSION 3.2.4 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -198,7 +198,9 @@ endif()
 
 set(_flux_build   "${CMAKE_BINARY_DIR}/_flux_build")
 set(_flux_prefix  "${CMAKE_BINARY_DIR}/_flux_prefix")
-set(_flux_lib     "${_flux_prefix}/lib/libflux.so")
+# Static archive — flux is linked into the typio daemon, so the install
+# ships no libflux.so and is immune to host-side flux installs at runtime.
+set(_flux_lib     "${_flux_prefix}/lib/libflux.a")
 set(_flux_inc     "${_flux_prefix}/include")
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -212,6 +214,7 @@ set(_flux_meson_setup
         --prefix=${_flux_prefix}
         --libdir=lib
         --buildtype=${_flux_buildtype}
+        --default-library=static
         --reconfigure
         -Dcanvas=true
         -Dscene=false
@@ -251,12 +254,18 @@ endif()
 # target_include_directories doesn't error before the first build.
 file(MAKE_DIRECTORY "${_flux_inc}")
 
-add_library(flux::flux SHARED IMPORTED GLOBAL)
+# Transitive dependencies of static libflux.a (mirrors what `Requires:` and
+# `Libs:` would inject if the library were resolved via pkg-config).
+find_package(Vulkan REQUIRED)
+find_package(Threads REQUIRED)
+
+add_library(flux::flux STATIC IMPORTED GLOBAL)
 add_dependencies(flux::flux flux_external)
 set_target_properties(flux::flux PROPERTIES
     IMPORTED_LOCATION             "${_flux_lib}"
     INTERFACE_INCLUDE_DIRECTORIES "${_flux_inc}"
     INTERFACE_COMPILE_DEFINITIONS "FLUX_HAVE_CANVAS=1"
+    INTERFACE_LINK_LIBRARIES      "Vulkan::Vulkan;Threads::Threads;m"
 )
 
 add_subdirectory(src/core)
