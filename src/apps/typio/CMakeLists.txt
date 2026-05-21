@@ -190,6 +190,11 @@ set_target_properties(typio PROPERTIES
     OUTPUT_NAME "typio"
     BUILD_RPATH "${CMAKE_BINARY_DIR}/src/core"
     INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+    # Imported targets (e.g. flux::flux) default to having their interface
+    # include dirs treated as -isystem, which lets a stale flux installed
+    # under any system include path shadow the project-built one. Force
+    # them through -I instead so they sort ahead of every -isystem path.
+    NO_SYSTEM_FROM_IMPORTED       TRUE
 )
 
 install(TARGETS typio

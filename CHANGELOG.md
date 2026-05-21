@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.3] - 2026-05-22
+
+### Fixed
+
+- **flux header shadowing on packaged builds**: link the typio daemon target
+  with `NO_SYSTEM_FROM_IMPORTED` so the project-built flux include directory
+  is emitted as `-I` instead of `-isystem`. A stale `/usr/include/flux/` (or
+  any other system-include flux) would otherwise sort ahead of
+  `_flux_prefix/include` via `-isystem` and shadow the headers, breaking
+  packaged builds (e.g. under wright) that expose the host's `/usr/include`
+  into the build sandbox.
+
 ## [3.2.2] - 2026-05-22
 
 ### Fixed
