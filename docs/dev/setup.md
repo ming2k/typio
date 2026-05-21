@@ -23,12 +23,13 @@ Optional:
 
 | Dependency | Source | Resolved version | You need to install it? |
 |---|---|---|---|
-| **flux** (rendering framework) | CMake FetchContent | `d473071` (v0.2.3) | **No** — downloaded automatically |
+| **flux** (rendering framework) | ExternalProject (Meson) | `44de7ec` (v0.0.1) | **No** — built automatically |
 
-flux is fetched automatically during CMake configuration from
-`https://github.com/ming2k/flux.git`.  To use a local checkout instead,
-set the environment variable `FLUX_SOURCE_DIR` or pass
-`-DFETCHCONTENT_SOURCE_DIR_FLUX=/path/to/flux` to CMake.
+flux is built automatically during the CMake build step via Meson + Ninja.
+A sibling directory `../flux` is used automatically if present; otherwise
+the source is cloned from `https://github.com/ming2k/flux.git`.
+To point at a different checkout, set the environment variable `FLUX_SOURCE_DIR`
+or pass `-DFLUX_SOURCE_DIR=/path/to/flux` to CMake.
 
 System libraries are discovered via `pkg-config`.  CMake does not enforce
 upper-bound versions, but the project is regularly tested against the

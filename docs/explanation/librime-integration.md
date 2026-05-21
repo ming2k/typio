@@ -92,16 +92,15 @@ Supports: preedit text, candidate list, prediction, and user dictionary learning
 2. **Ensure directory exists**: automatically creates `user_data_dir`
 3. **Get API**: calls `rime_get_api()` to obtain the function table
 4. **Log version**: calls `api->get_version()` and logs the linked librime version for troubleshooting
-5. **Install notification handler**: calls `api->set_notification_handler()` before `setup()` so deploy and option events are delivered asynchronously
-6. **Set Traits**:
+5. **Set Traits**:
    ```c
    traits.shared_data_dir = ...;
    traits.user_data_dir = ...;
    traits.distribution_name = "Typio";
    traits.app_name = "rime.typio";
    ```
-7. **Initialize librime**: `setup()` → `initialize()`
-8. **Trigger deployment**: if `build/default.yaml` does not exist, starts an async deployment
+6. **Initialize librime, in order**: `setup(&traits)` → `set_notification_handler()` → `initialize(&traits)`.  librime requires `setup()` to be called before any other API function (see `rime_api.h`), so the notification handler is registered *after* `setup()` but *before* `initialize()`/maintenance — early enough to still receive all deploy and option events.
+7. **Trigger deployment**: if `build/default.yaml` does not exist, starts an async deployment
 
 ### 3.2 Destruction (`typio_rime_destroy`)
 
@@ -193,14 +192,18 @@ if (rime_context.composition.preedit) {
 - Generates `TypioCandidateList`, containing: text, comment, label, page, selected, etc.
 - Small pages (≤10) use stack allocation; large pages use heap allocation
 
-### 6.2 Performance Optimizations
+### 6.2 Synchronization Model
 
-Implements **dual-path synchronization**:
+`sync_context()` performs a single, straightforward **full sync** on every handled key: it pulls the current `RimeContext`, rebuilds the preedit, and rebuilds the candidate list. The engine intentionally does **not** try to detect "selection-only" changes itself. An earlier engine-side dual-path optimisation was removed because it duplicated change-detection already done downstream and recomputed candidate labels twice on a mispredict, adding work on the hot candidate-navigation path without a real payoff.
 
-1. **Selection-only change**: if preedit hasn't changed and only the highlighted candidate moved, directly call `set_candidate_selection()`, skipping full candidate reconstruction
-2. **Full sync**: when preedit or candidate content changes, rebuild everything
+The lag-sensitive work is gated by the Wayland frontend, not by the engine:
 
-Slow-sync detection: if sync takes ≥ 8 ms, log debug info (session_id, candidate count, page number, etc.).
+- The preedit/candidate callbacks only set a `popup_update_pending` flag; the actual render is deferred to the event-loop flush, so a burst of keystrokes (e.g. key auto-repeat) collapses into one render instead of blocking the message loop.
+- At flush time the frontend independently checks whether the preedit text changed and **skips the expensive application protocol round-trip** when only the highlighted candidate moved.
+
+Because that coalescing and the protocol-skip already happen downstream, the engine can safely re-send the (unchanged) preedit and full candidate list each keystroke — copying ~10 short strings is negligible next to the render/IPC it no longer triggers.
+
+Slow-sync detection: if a sync takes ≥ 8 ms (`TYPIO_RIME_SLOW_SYNC_MS`), a debug line is logged (session_id, candidate count, page number, etc.).
 
 ### 6.3 Commit Text (`typio_rime_flush_commit`)
 
@@ -244,7 +247,31 @@ if (api->get_commit(session_id, &commit)) {
 
 - `TYPIO_RIME_SYNC_DEPLOY=1`: force synchronous (blocking) deployment, useful for debugging
 
-## 8. Mode Switching
+## 8. User Dictionary (Learning & Persistence)
+
+### 8.1 Local Learning — Automatic, Works Today
+
+Typio advertises `TYPIO_CAP_LEARNING`, and user-dictionary learning works out of the box. All of it happens **inside librime**: when text is committed, librime's `Memory` module records the choice into a per-schema user database — a LevelDB directory at `<user_data_dir>/<schema>.userdb/` — incrementing the entry's commit count, recency, and decay factor. This is what promotes frequently/recently chosen candidates over time.
+
+Key properties:
+
+- **The engine does not — and cannot — drive this per keystroke.** Typio only calls `process_key` / `get_commit`; librime performs the learning write automatically on each commit via its commit-notifier hook. There is no Rime C-API call to skip or force an individual learning write.
+- **Persistence is incremental and durable.** Each write goes to the userdb's LevelDB write-ahead log immediately and is replayed on reopen, so learning survives restarts. `finalize()` closes the database cleanly on shutdown.
+- **Whether learning happens is controlled by schema config**, not by Typio code. The relevant schema keys are `<translator>/enable_user_dict` (default `true`), `<translator>/user_dict` (which userdb file), and `<translator>/db_class`. To disable learning for a schema, patch `default.custom.yaml`:
+  ```yaml
+  patch:
+    "translator/enable_user_dict": false
+  ```
+
+Because the user database lives under `user_data_dir` (`~/.local/share/typio/rime` by default), it is preserved across restarts and upgrades.
+
+### 8.2 Cross-Device Sync (`sync_user_data`) — Not Planned
+
+librime also exposes `sync_user_data()`, a **separate** cross-installation backup / merge mechanism. One call schedules deployer tasks that export each user dictionary to a plain-text snapshot (`<schema>.userdb.txt`) in a *sync directory* and merge in snapshots that other devices/installations left there — i.e. it lets you carry accumulated learning between machines or keep a portable text backup. It is unrelated to how local learning is normally saved.
+
+**Typio does not call `sync_user_data()`, and implementing it is not planned.** It sits above the scope of a basic input method: Typio's job is typing plus local learning, both of which already work (see 8.1). Cross-device dictionary sync brings extra surface — a configurable sync directory, conflict/merge semantics, scheduling, and UI — that does not belong in the core IME. Users who want it can simply back up / sync `user_data_dir` themselves; it could become an opt-in feature later if there is real demand. This decision affects only *sharing* learning across machines; **local learning and persistence are fully functional and unaffected.**
+
+## 9. Mode Switching
 
 The Rime engine exposes two modes:
 
@@ -259,7 +286,7 @@ The Rime engine exposes two modes:
 - **Explicit toggle**: set `ascii_mode` option via `set_mode("ascii" / "chinese")`
 - **Persistence**: mode state is preserved for the lifetime of the session
 
-## 9. Focus & Lifecycle Events
+## 10. Focus & Lifecycle Events
 
 | Event      | Behavior                                                                 |
 |-----------|--------------------------------------------------------------------------|
@@ -267,9 +294,9 @@ The Rime engine exposes two modes:
 | `focus_out`| `reset()` — clear screen, but keep the session                           |
 | `reset`    | `clear_composition()` + clear Typio preedit / candidates + restore mode notification |
 
-## 10. Interaction Points with the Typio Framework
+## 11. Interaction Points with the Typio Framework
 
-### 10.1 Calling Typio APIs
+### 11.1 Calling Typio APIs
 
 The Rime engine, as a plugin, interacts with Typio core via:
 
@@ -277,7 +304,6 @@ The Rime engine, as a plugin, interacts with Typio core via:
 - `typio_input_context_commit(ctx, text)` — commit text
 - `typio_input_context_set_preedit(ctx, preedit)` — set preedit
 - `typio_input_context_set_candidates(ctx, list)` — set candidates
-- `typio_input_context_set_candidate_selection(ctx, index)` — update selection only
 - `typio_input_context_clear_preedit / clear_candidates` — clear
 
 **Context properties**:
@@ -292,7 +318,7 @@ The Rime engine, as a plugin, interacts with Typio core via:
 - `typio_instance_dup_rime_schema(instance)` — get persisted schema ID
 - `typio_instance_rime_deploy_requested(instance)` — check if deployment was requested
 
-### 10.2 Called by Typio
+### 11.2 Called by Typio
 
 Registered via the dual-vtable architecture (`TypioEngineBaseOps` + `TypioKeyboardEngineOps`):
 
@@ -315,7 +341,7 @@ static const TypioKeyboardEngineOps typio_rime_keyboard_ops = {
 
 This design separates mandatory lifecycle operations from keyboard-specific callbacks, enforced at compile time rather than runtime NULL checks.
 
-### 10.3 Build Integration
+### 11.3 Build Integration
 
 `src/engines/rime/CMakeLists.txt`:
 
@@ -335,7 +361,7 @@ target_link_libraries(typio-engine-rime PRIVATE
 - Installed to `${TYPIO_INSTALL_ENGINEDIR}` (default `${prefix}/lib/typio/engines/`)
 - Discovers and links librime via `pkg_check_modules(RIME rime)`
 
-## 11. librime Documentation & Links
+## 12. librime Documentation & Links
 
 ### Official Resources
 
@@ -361,9 +387,8 @@ target_link_libraries(typio-engine-rime PRIVATE
 - `set_notification_handler`: async deploy / option event delivery (replaces polling)
 - `get_version`: linked librime version string (logged on init for troubleshooting)
 - `get_status` / `free_status`: verify schema selection and read option state
-- `highlight_candidate_on_current_page`: programmatic candidate selection
-- `delete_candidate_on_current_page`: remove a candidate from user dictionary
 - `start_maintenance` / `is_maintenance_mode`: deployment management
+- `sync_user_data`: cross-installation user-dictionary backup/merge — **not used by Typio** (see §8.2); local learning is automatic and does not require it
 
 ### Internal Typio References
 
@@ -374,7 +399,7 @@ target_link_libraries(typio-engine-rime PRIVATE
 | Engine API            | `docs/reference/api/engine.md`          | Full `TypioEngineBaseOps` / `TypioKeyboardEngineOps` definition |
 | Architecture overview | `docs/explanation/architecture-overview.md` | Typio overall architecture     |
 
-## 12. File List
+## 13. File List
 
 ```
 src/engines/rime/
@@ -397,7 +422,7 @@ The implementation is split into focused modules so each file has a single respo
 | File | Lines (approx.) | Responsibility |
 |------|----------------|----------------|
 | `rime_engine.c` | ~370 | Engine entry point, notification handler, `TypioEngineBaseOps` wiring |
-| `rime_sync.c` | ~290 | Convert librime `RimeContext` → `TypioInputContext`, candidate actions |
+| `rime_sync.c` | ~170 | Convert librime `RimeContext` → `TypioInputContext` (preedit, candidates, commit) |
 | `rime_session.c` | ~120 | Create / destroy / validate `RimeSessionId`, schema selection with `get_status` |
 | `rime_deploy.c` | ~120 | Trigger and track librime deployment |
 | `rime_mode.c` | ~90 | ASCII ↔ Chinese mode detection and notification |

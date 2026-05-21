@@ -150,13 +150,6 @@ TypioResult typio_rime_set_mode(TypioEngine *engine,
                                  const char *mode_id);
 
 /* -------------------------------------------------------------------------- */
-/* Candidate actions (librime 1.16.1+)                                        */
-/* -------------------------------------------------------------------------- */
-
-bool typio_rime_highlight_candidate(TypioRimeSession *session, size_t index);
-bool typio_rime_delete_candidate(TypioRimeSession *session, size_t index);
-
-/* -------------------------------------------------------------------------- */
 /* Key handling (rime_key.c)                                                  */
 /* -------------------------------------------------------------------------- */
 

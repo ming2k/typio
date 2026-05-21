@@ -33,7 +33,7 @@ These are required for the default build (all builtin options left at their defa
 | D-Bus | `libdbus-1-dev` | `dbus` | `dbus-devel` |
 | glslang | `glslang-tools` | `glslang` | `glslang` |
 
-> **Note:** `flux` (the rendering framework) is **not** a system dependency. CMake downloads it automatically via FetchContent during configuration.
+> **Note:** `flux` (the rendering framework) is **not** a system dependency. It is built automatically from source (Meson + Ninja) on the first `cmake --build` run. `meson` and `ninja` must be in your `PATH`.
 
 ### Optional dependencies
 

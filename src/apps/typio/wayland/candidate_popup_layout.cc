@@ -99,10 +99,6 @@ void popup_render_ctx_free(PopupRenderCtx *pc) {
             pc->engine->vtable->free_layout(pc->entries[i].label_layout);
         }
     }
-    if (pc->surface) {
-        flux_surface_release(pc->surface);
-        pc->surface = NULL;
-    }
     if (pc->engine) {
         typio_flux_engine_destroy(pc->engine);
     }

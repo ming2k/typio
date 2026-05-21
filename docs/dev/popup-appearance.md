@@ -4,27 +4,24 @@ This document covers the rendering pipeline for the candidate popup (preedit + c
 
 ---
 
-## Pixel format: flux RGBA vs Wayland ARGB8888
+## Pixel format: CPU buffer and WL_SHM_FORMAT_ARGB8888
 
-The popup is painted offscreen via flux, then read back to CPU memory and attached to a `wl_buffer`.
+The popup is painted directly into a CPU-mapped Wayland SHM buffer; there is no GPU offscreen surface or pixel readback step.
 
-| Layer | API / format | Actual memory layout (little-endian) |
-|---|---|---|
-| flux offscreen surface | `FLUX_FMT_BGRA8_UNORM` | Managed by Vulkan / GPU |
-| `flux_surface_read_pixels` | **Always returns RGBA8** | `R G B A` per pixel |
-| Wayland SHM buffer | `WL_SHM_FORMAT_ARGB8888` | `B G R A` per pixel |
+`candidate_popup_paint.cc` fills pixels as `uint32_t` values written as `0xAARRGGBB`. On a little-endian machine this lays out in memory as `B G R A` per pixel, which is exactly what `WL_SHM_FORMAT_ARGB8888` expects.
 
-`flux_surface_read_pixels` ignores the surface creation format and **always returns RGBA8** (this is documented flux behaviour). `WL_SHM_FORMAT_ARGB8888`, however, stores bytes as `B G R A` on little-endian machines. If you copy the pixel data straight across, the **R and B channels are swapped**.
-
-**Real-world symptom:** a blue selection highlight `(0.23, 0.51, 0.97)` turns orange `(0.97, 0.51, 0.23)`.
-
-**Fix:** use `WL_SHM_FORMAT_ABGR8888` for the Wayland buffer. Its little-endian layout is `R G B A`, matching flux readback exactly.
+```c
+// candidate_popup_paint.cc — pack_argb helper
+return (0xffu << 24) | (u8(r) << 16) | (u8(g) << 8) | u8(b);
+```
 
 ```c
 // candidate_popup_buffer.c
 buffer->buffer = wl_shm_pool_create_buffer(pool, 0, width, height, stride,
-                                           WL_SHM_FORMAT_ABGR8888);
+                                           WL_SHM_FORMAT_ARGB8888);
 ```
+
+**Historical note:** flux v0.2.3 rendered into a GPU offscreen surface and read back via `flux_surface_read_pixels`, which always returned RGBA8 bytes — swapping R and B relative to what `WL_SHM_FORMAT_ARGB8888` expects. The workaround was `WL_SHM_FORMAT_ABGR8888`. The current CPU path writes the correct byte order directly, so `ARGB8888` is used without any swap.
 
 ---
 
@@ -104,6 +101,8 @@ Call this **before** `FT_Set_Pixel_Sizes`.
 `font_obj_cache` stores `(path, size, weight)` → `(FT_Face, hb_font_t)`. Because variable fonts need different `wght` coordinates for the same file, the cache key **must include weight**.
 
 If you omit weight from the cache key, Medium (500) and SemiBold (600) would share the same `FT_Face` even after the variable-font fix above, because the face object itself is mutated by `FT_Set_Var_Design_Coordinates`.
+
+The cached `FT_Face` is borrowed by `TypioTextLayout` and used at draw time: `typio_flux_draw_layout` calls `FT_Load_Glyph` per glyph on each render call. Layouts must not outlive their owning font cache entry; `popup_render_ctx_invalidate` frees all layouts before the cache can be evicted.
 
 ---
 

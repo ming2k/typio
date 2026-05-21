@@ -596,7 +596,11 @@ TEST(selection_navigation_only_updates_candidates) {
     reset_update_counters(&capture);
 
     ASSERT(typio_input_context_process_key(ctx, down_key));
-    ASSERT_EQ(capture.preedit_callback_count, 0);
+    /* Navigation re-syncs the full context: the preedit is re-sent unchanged
+     * (callback fires once with identical text) and the candidate list keeps
+     * the same content while only the highlighted index moves. The unchanged
+     * preedit text is what lets the frontend skip the app round-trip. */
+    ASSERT_EQ(capture.preedit_callback_count, 1);
     ASSERT_EQ(capture.candidate_callback_count, 1);
     ASSERT(capture.preedit_text != nullptr);
     ASSERT_STR_EQ(capture.preedit_text, preedit_before);

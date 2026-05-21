@@ -103,10 +103,11 @@ static TypioResult typio_rime_init(TypioEngine *engine, TypioInstance *instance)
     state->traits.app_name = "rime.typio";
     state->traits.min_log_level = 1;
 
-    /* Install notification handler before setup so we catch deploy events */
-    state->api->set_notification_handler(typio_rime_notification, state);
-
+    /* librime requires setup() before any other API call. Register the
+     * notification handler after setup() but before initialize()/maintenance,
+     * so we still receive deploy start/success/failure events. */
     state->api->setup(&state->traits);
+    state->api->set_notification_handler(typio_rime_notification, state);
     state->api->initialize(&state->traits);
 
     state->initialized = true;

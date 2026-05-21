@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(typio VERSION 3.2.1 LANGUAGES C CXX)
+project(typio VERSION 3.2.2 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -176,33 +176,88 @@ configure_file(
     @ONLY
 )
 
-include(FetchContent)
+# ── flux (Meson-based, built via ExternalProject) ────────────────────
+include(ExternalProject)
+find_program(MESON_EXECUTABLE meson REQUIRED)
+find_program(NINJA_EXECUTABLE ninja REQUIRED)
 
-# Allow local flux override.  Checked in order:
-#   1. CMake cache variable   -DFETCHCONTENT_SOURCE_DIR_FLUX=...
-#   2. Environment variable   FLUX_SOURCE_DIR
-#   3. Sibling directory      ${CMAKE_CURRENT_SOURCE_DIR}/../flux
-if(NOT FETCHCONTENT_SOURCE_DIR_FLUX)
-    if(DEFINED ENV{FLUX_SOURCE_DIR})
-        set(_flux_local "$ENV{FLUX_SOURCE_DIR}")
-    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../flux/CMakeLists.txt")
-        set(_flux_local "${CMAKE_CURRENT_SOURCE_DIR}/../flux")
-    endif()
-    if(_flux_local)
-        set(FETCHCONTENT_SOURCE_DIR_FLUX "${_flux_local}" CACHE PATH
-            "Path to local flux source checkout (override FetchContent)")
-    endif()
+# Source resolution order:
+#   1. CMake cache variable  -DFLUX_SOURCE_DIR=...
+#   2. Environment variable  FLUX_SOURCE_DIR
+#   3. Sibling directory     <repo>/../flux
+#   4. Git clone (fallback)
+set(FLUX_SOURCE_DIR "" CACHE PATH "Path to local flux source checkout (leave empty to clone)")
+
+if(FLUX_SOURCE_DIR)
+    set(_flux_src "${FLUX_SOURCE_DIR}")
+elseif(DEFINED ENV{FLUX_SOURCE_DIR})
+    set(_flux_src "$ENV{FLUX_SOURCE_DIR}")
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../flux/meson.build")
+    set(_flux_src "${CMAKE_CURRENT_SOURCE_DIR}/../flux")
 endif()
 
-FetchContent_Declare(
-    flux
-    GIT_REPOSITORY https://github.com/ming2k/flux.git
-    GIT_TAG        d473071  # v0.2.3 + warning fixes
-    GIT_SHALLOW    OFF
-)
-FetchContent_MakeAvailable(flux)
+set(_flux_build   "${CMAKE_BINARY_DIR}/_flux_build")
+set(_flux_prefix  "${CMAKE_BINARY_DIR}/_flux_prefix")
+set(_flux_lib     "${_flux_prefix}/lib/libflux.so")
+set(_flux_inc     "${_flux_prefix}/include")
 
-message(STATUS "flux: ${flux_SOURCE_DIR} @ d473071")
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(_flux_buildtype debug)
+else()
+    set(_flux_buildtype release)
+endif()
+
+set(_flux_meson_setup
+    ${MESON_EXECUTABLE} setup
+        --prefix=${_flux_prefix}
+        --libdir=lib
+        --buildtype=${_flux_buildtype}
+        --reconfigure
+        -Dcanvas=true
+        -Dscene=false
+        -Dcompute=false
+        -Dexamples=false
+        -Dtests=false
+        ${_flux_build}
+)
+
+if(_flux_src)
+    ExternalProject_Add(flux_external
+        SOURCE_DIR      "${_flux_src}"
+        BINARY_DIR      "${_flux_build}"
+        CONFIGURE_COMMAND ${_flux_meson_setup} "${_flux_src}"
+        BUILD_COMMAND   ${NINJA_EXECUTABLE} -C "${_flux_build}"
+        INSTALL_COMMAND ${NINJA_EXECUTABLE} -C "${_flux_build}" install
+        BUILD_BYPRODUCTS "${_flux_lib}"
+    )
+    message(STATUS "flux: ${_flux_src} (local)")
+else()
+    set(_flux_clone_src "${CMAKE_BINARY_DIR}/_flux_src")
+    ExternalProject_Add(flux_external
+        GIT_REPOSITORY  https://github.com/ming2k/flux.git
+        GIT_TAG         44de7ec  # v0.0.1
+        GIT_SHALLOW     OFF
+        SOURCE_DIR      "${_flux_clone_src}"
+        BINARY_DIR      "${_flux_build}"
+        CONFIGURE_COMMAND ${_flux_meson_setup} "${_flux_clone_src}"
+        BUILD_COMMAND   ${NINJA_EXECUTABLE} -C "${_flux_build}"
+        INSTALL_COMMAND ${NINJA_EXECUTABLE} -C "${_flux_build}" install
+        BUILD_BYPRODUCTS "${_flux_lib}"
+    )
+    message(STATUS "flux: cloning v0.0.1 from git")
+endif()
+
+# Ensure the include directory exists at configure time so that
+# target_include_directories doesn't error before the first build.
+file(MAKE_DIRECTORY "${_flux_inc}")
+
+add_library(flux::flux SHARED IMPORTED GLOBAL)
+add_dependencies(flux::flux flux_external)
+set_target_properties(flux::flux PROPERTIES
+    IMPORTED_LOCATION             "${_flux_lib}"
+    INTERFACE_INCLUDE_DIRECTORIES "${_flux_inc}"
+    INTERFACE_COMPILE_DEFINITIONS "FLUX_HAVE_CANVAS=1"
+)
 
 add_subdirectory(src/core)
 add_subdirectory(src/engines)

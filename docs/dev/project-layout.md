@@ -25,10 +25,6 @@ Built-in and pluggable input-engine implementations.
 
 Unit and integration test binaries.
 
-## `external/flux/`
-
-The bundled Flux renderer, built as a static library.
-
 ## Design rationale
 
 This keeps top-level `src/` directories on one axis: reusable core, user-facing applications, and engine implementations. It makes it obvious where a new file belongs and reduces cross-directory coupling.

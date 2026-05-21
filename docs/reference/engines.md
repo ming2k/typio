@@ -74,6 +74,11 @@ Config reload rules:
 - Changing `shared_data_dir` or `user_data_dir` requires restarting Typio.
 - Explicit deploy (via D-Bus or control panel) invalidates generated YAML and triggers a full rebuild.
 
+Learning & persistence:
+- User-dictionary learning is automatic. librime records each commit into a per-schema LevelDB at `<user_data_dir>/<schema>.userdb/` and persists it across restarts (no action needed from Typio).
+- Disable it per schema by patching `translator/enable_user_dict: false` in `default.custom.yaml`.
+- Cross-device dictionary sync (librime's `sync_user_data`) is **not implemented and not planned** — it is out of scope for a basic input method. Back up `user_data_dir` to carry learning between machines. See [librime integration §8](../explanation/librime-integration.md) for details.
+
 ---
 
 ### `mozc`

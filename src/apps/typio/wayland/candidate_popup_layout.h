@@ -11,7 +11,6 @@
 #include "typio/instance.h"
 #include "typio/renderer.h"
 
-#include <flux/flux.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -139,12 +138,9 @@ typedef struct {
 /* ── Persistent text engine + LRU cache ───────────────────────────── */
 
 typedef struct {
-    TypioTextEngine     *engine;
-    PopupLayoutEntry      entries[POPUP_LAYOUT_CACHE_CAP];
-    uint32_t              tick;
-    flux_surface         *surface;
-    int                   surface_w;
-    int                   surface_h;
+    TypioTextEngine  *engine;
+    PopupLayoutEntry  entries[POPUP_LAYOUT_CACHE_CAP];
+    uint32_t          tick;
 } PopupRenderCtx;
 
 /* ── Functions ──────────────────────────────────────────────────────── */

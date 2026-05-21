@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.2] - 2026-05-22
+
 ### Fixed
 
 - **Candidate popup colour channels**: changed Wayland SHM buffer format from
@@ -17,10 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   support in `flux_renderer.c` so that Medium / SemiBold / Bold requests are
   actually rendered at the correct weight instead of always falling back to
   Regular. Font object cache now keys on `(path, size, weight)`.
+- **librime initialization order**: moved `set_notification_handler` after
+  `setup()` to comply with librime's API contract and avoid potential
+  use-before-initialise issues.
 
 ### Changed
 
 - **Default popup font weight**: changed from `Medium` (500) to `SemiBold` (600).
+- **flux build integration**: replaced FetchContent with ExternalProject + Meson
+  build to support local source overrides and debug/release build-type matching.
 
 ## [3.2.1] - 2026-05-15
 

@@ -14,20 +14,28 @@
 #include <string.h>
 #include <strings.h>
 
+typedef struct {
+    uint32_t glyph_id;   /* FreeType face glyph index */
+    float    x;          /* pen x at layout creation */
+    float    y_offset;   /* y offset from HarfBuzz positioning */
+} GlyphEntry;
+
 struct TypioTextLayout {
-    flux_glyph_run *run;
-    flux_paint     *paint;
-    float           width;
-    float           height;
-    float           baseline;
+    GlyphEntry *glyphs;
+    size_t      count;
+    FT_Face     face;     /* borrowed; valid while font cache holds it */
+    TypioColor  color;
+    float       width;
+    float       height;
+    float       baseline;
 };
 
 typedef struct {
-    flux_context *ctx;
+    flux_device *device;
 } FluxTextEnginePriv;
 
-static flux_context *global_ctx;
-static FT_Library    ft_library;
+static flux_device *global_device;
+static FT_Library   ft_library;
 
 /* ── Font file cache ────────────────────────────────────────────────── */
 #define FONT_FILE_CACHE_CAP 8
@@ -188,10 +196,8 @@ done:
     return ok;
 }
 
-static FontObjEntry *get_or_create_font(flux_context *ctx, const char *path,
-                                        float size, int32_t weight)
+static FontObjEntry *get_or_create_font(const char *path, float size, int32_t weight)
 {
-    (void)ctx;
     FontObjEntry *entry = font_obj_cache_lookup(path, size, weight);
     if (entry) return entry;
 
@@ -214,45 +220,6 @@ static FontObjEntry *get_or_create_font(flux_context *ctx, const char *path,
     uint32_t font_id = next_font_id++;
     font_obj_cache_insert(path, size, weight, face, hb_font, font_id);
     return font_obj_cache_lookup(path, size, weight);
-}
-
-/* ── Glyph upload helper ────────────────────────────────────────────── */
-
-static bool upload_glyph(flux_context *ctx, FT_Face face,
-                         uint32_t glyph_id, uint32_t global_glyph_id)
-{
-    if (FT_Load_Glyph(face, glyph_id,
-                      FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0)
-        return false;
-
-    FT_Bitmap *bm = &face->glyph->bitmap;
-    if (bm->width == 0 || bm->rows == 0)
-        return true;
-
-    uint8_t stack_buf[32 * 32];
-    uint8_t *buf = stack_buf;
-    bool dynamic = false;
-    size_t needed = (size_t)bm->width * bm->rows;
-    if (needed > sizeof(stack_buf)) {
-        buf = (uint8_t *)malloc(needed);
-        if (!buf) return false;
-        dynamic = true;
-    }
-
-    for (int row = 0; row < (int)bm->rows; ++row) {
-        memcpy(buf + (size_t)row * bm->width,
-               bm->buffer + (size_t)row * (size_t)bm->pitch,
-               bm->width);
-    }
-
-    flux_result r = flux_glyph_upload(ctx, global_glyph_id, buf,
-                                      (int)bm->width, (int)bm->rows,
-                                      face->glyph->bitmap_left,
-                                      face->glyph->bitmap_top,
-                                      (int)(face->glyph->advance.x >> 6));
-
-    if (dynamic) free(buf);
-    return r == FLUX_OK;
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -278,39 +245,37 @@ static void flux_log_cb(flux_log_level level,
     (void)level; (void)file; (void)line; (void)fmt; (void)msg; (void)user;
 }
 
-flux_context *typio_flux_context_get(void)
+flux_device *typio_flux_device_get(void)
 {
-    if (global_ctx) return global_ctx;
+    if (global_device) return global_device;
 
     if (FT_Init_FreeType(&ft_library) != 0)
         return NULL;
 
-    flux_context_desc desc = {
-        .size = sizeof(desc),
-    };
-    desc.log = flux_log_cb;
-    desc.min_log_level = FLUX_LOG_WARN;
+    flux_device_desc desc = FLUX_DEVICE_DESC_INIT;
+    desc.log      = flux_log_cb;
+    desc.headless = true;
 
-    flux_result r = flux_context_create(&desc, &global_ctx);
+    flux_result r = flux_device_create(&desc, &global_device);
     if (r != FLUX_OK) {
         FT_Done_FreeType(ft_library);
         ft_library = NULL;
         return NULL;
     }
-    return global_ctx;
+    return global_device;
 }
 
 static int32_t parse_weight_keyword(const char *s, size_t len)
 {
-    if (len == 6 && strncasecmp(s, "Medium", 6) == 0)  return 500;
-    if (len == 4 && strncasecmp(s, "Bold", 4) == 0)    return 700;
-    if (len == 6 && strncasecmp(s, "Normal", 6) == 0)  return 400;
-    if (len == 7 && strncasecmp(s, "Regular", 7) == 0) return 400;
-    if (len == 5 && strncasecmp(s, "Light", 5) == 0)   return 300;
-    if (len == 4 && strncasecmp(s, "Thin", 4) == 0)    return 100;
-    if (len == 9 && strncasecmp(s, "ExtraBold", 9) == 0) return 800;
-    if (len == 5 && strncasecmp(s, "Black", 5) == 0)   return 900;
-    if (len == 8 && strncasecmp(s, "SemiBold", 8) == 0) return 600;
+    if (len == 6 && strncasecmp(s, "Medium", 6) == 0)      return 500;
+    if (len == 4 && strncasecmp(s, "Bold", 4) == 0)        return 700;
+    if (len == 6 && strncasecmp(s, "Normal", 6) == 0)      return 400;
+    if (len == 7 && strncasecmp(s, "Regular", 7) == 0)     return 400;
+    if (len == 5 && strncasecmp(s, "Light", 5) == 0)       return 300;
+    if (len == 4 && strncasecmp(s, "Thin", 4) == 0)        return 100;
+    if (len == 9 && strncasecmp(s, "ExtraBold", 9) == 0)   return 800;
+    if (len == 5 && strncasecmp(s, "Black", 5) == 0)       return 900;
+    if (len == 8 && strncasecmp(s, "SemiBold", 8) == 0)    return 600;
     if (len == 10 && strncasecmp(s, "ExtraLight", 10) == 0) return 200;
     {
         int v = atoi(s);
@@ -432,7 +397,6 @@ static char *find_fallback_font(const char *text, int32_t weight)
     FcPattern *pat = FcPatternCreate();
     if (!pat) return NULL;
 
-    /* Build charset from text */
     FcCharSet *cs = FcCharSetCreate();
     const char *p = text;
     while (*p) {
@@ -497,15 +461,10 @@ static char *find_fallback_font(const char *text, int32_t weight)
 
 static bool layout_has_missing_glyphs(const TypioTextLayout *layout)
 {
-    if (!layout || !layout->run) return false;
-    size_t count = flux_glyph_run_count(layout->run);
-    const flux_glyph *glyphs = flux_glyph_run_data(layout->run);
-    for (size_t i = 0; i < count; ++i) {
-        /* glyph_id stored in the run is actually the global_id
-         * (font_id << 16) | glyph_id).  The original HarfBuzz
-         * glyph id lives in the low 16 bits.  A value of 0 there
-         * means .notdef — i.e. the font is missing this glyph. */
-        if ((glyphs[i].glyph_id & 0xFFFFu) == 0) return true;
+    if (!layout || !layout->glyphs) return false;
+    for (size_t i = 0; i < layout->count; ++i) {
+        /* HarfBuzz glyph ID 0 is .notdef — missing glyph */
+        if (layout->glyphs[i].glyph_id == 0) return true;
     }
     return false;
 }
@@ -513,32 +472,22 @@ static bool layout_has_missing_glyphs(const TypioTextLayout *layout)
 static void flux_free_layout_internal(TypioTextLayout *layout)
 {
     if (!layout) return;
-    if (layout->run)
-        flux_glyph_run_release(layout->run);
-    if (layout->paint)
-        flux_paint_release(layout->paint);
+    free(layout->glyphs);
     free(layout);
 }
 
-static TypioTextLayout *flux_shape_text(flux_context *ctx,
+static TypioTextLayout *flux_shape_text(FontObjEntry *font,
                                         const char *text,
-                                        FontObjEntry *font,
                                         TypioColor color)
 {
     TypioTextLayout *layout = (TypioTextLayout *)calloc(1, sizeof(*layout));
     if (!layout) return NULL;
 
-    flux_result r = flux_glyph_run_create(ctx,
-                                          text ? strlen(text) : 0,
-                                          &layout->run);
-    if (r != FLUX_OK || !layout->run) goto fail;
-
-    r = flux_paint_create(ctx, &layout->paint);
-    if (r != FLUX_OK || !layout->paint) goto fail;
-    flux_paint_set_color(layout->paint, typio_flux_color(color));
+    layout->color = color;
+    layout->face  = font->face;
 
     {
-        float ascender  = (float)font->face->size->metrics.ascender / 64.0f;
+        float ascender  = (float)font->face->size->metrics.ascender  / 64.0f;
         float descender = (float)font->face->size->metrics.descender / 64.0f;
         layout->baseline = ascender;
         layout->height   = ascender - descender;
@@ -550,28 +499,21 @@ static TypioTextLayout *flux_shape_text(flux_context *ctx,
     hb_buffer_guess_segment_properties(hb);
     hb_shape(font->hb_font, hb, NULL, 0);
 
-    hb_glyph_info_t     *infos;
-    hb_glyph_position_t *positions;
     unsigned int count = 0;
-    infos = hb_buffer_get_glyph_infos(hb, &count);
-    positions = hb_buffer_get_glyph_positions(hb, &count);
+    hb_glyph_info_t     *infos     = hb_buffer_get_glyph_infos(hb, &count);
+    hb_glyph_position_t *positions = hb_buffer_get_glyph_positions(hb, &count);
+
+    if (count > 0) {
+        layout->glyphs = (GlyphEntry *)calloc(count, sizeof(GlyphEntry));
+        if (!layout->glyphs) { hb_buffer_destroy(hb); goto fail; }
+    }
+    layout->count = count;
 
     float pen_x = 0.0f;
     for (unsigned int i = 0; i < count; ++i) {
-        uint32_t glyph_id = infos[i].codepoint;
-        uint32_t global_id = (font->font_id << 16) | glyph_id;
-        float x_offset = (float)positions[i].x_offset / 64.0f;
-        float y_offset = -(float)positions[i].y_offset / 64.0f;
-
-        if (!upload_glyph(ctx, font->face, glyph_id, global_id)) {
-            hb_buffer_destroy(hb);
-            goto fail;
-        }
-        if (flux_glyph_run_append(layout->run, global_id,
-                                  pen_x + x_offset, y_offset) != FLUX_OK) {
-            hb_buffer_destroy(hb);
-            goto fail;
-        }
+        layout->glyphs[i].glyph_id = infos[i].codepoint;
+        layout->glyphs[i].x        = pen_x + (float)positions[i].x_offset / 64.0f;
+        layout->glyphs[i].y_offset = -(float)positions[i].y_offset / 64.0f;
         pen_x += (float)positions[i].x_advance / 64.0f;
     }
     layout->width = pen_x;
@@ -591,34 +533,34 @@ static TypioTextLayout *flux_create_layout(void *engine,
     FluxTextEnginePriv *priv = (FluxTextEnginePriv *)((TypioTextEngine *)engine)->priv;
     char family[128];
     char *font_file = NULL;
-    char *fb_file = NULL;
+    char *fb_file   = NULL;
     float size_px;
     FontObjEntry *font = NULL;
-    TypioTextLayout *layout = NULL;
+    TypioTextLayout *layout    = NULL;
     TypioTextLayout *fb_layout = NULL;
     int32_t weight = 400;
 
-    if (!priv || !priv->ctx) return NULL;
+    if (!priv) return NULL;
     if (!parse_font_desc(font_desc, family, sizeof(family), &size_px, &weight)) return NULL;
 
     font_file = match_font_file(family, weight);
     if (!font_file) return NULL;
 
-    font = get_or_create_font(priv->ctx, font_file, size_px, weight);
+    font = get_or_create_font(font_file, size_px, weight);
     if (!font) goto fail;
 
-    layout = flux_shape_text(priv->ctx, text, font, color);
+    layout = flux_shape_text(font, text, color);
     if (!layout) goto fail;
 
     if (layout_has_missing_glyphs(layout)) {
         fb_file = find_fallback_font(text, weight);
         if (fb_file && strcmp(fb_file, font_file) != 0) {
-            FontObjEntry *fb_font = get_or_create_font(priv->ctx, fb_file, size_px, weight);
+            FontObjEntry *fb_font = get_or_create_font(fb_file, size_px, weight);
             if (fb_font) {
-                fb_layout = flux_shape_text(priv->ctx, text, fb_font, color);
+                fb_layout = flux_shape_text(fb_font, text, color);
                 if (fb_layout && !layout_has_missing_glyphs(fb_layout)) {
                     flux_free_layout_internal(layout);
-                    layout = fb_layout;
+                    layout    = fb_layout;
                     fb_layout = NULL;
                 } else {
                     flux_free_layout_internal(fb_layout);
@@ -641,8 +583,8 @@ fail:
 
 static void flux_get_metrics(TypioTextLayout *layout, float *out_w, float *out_h)
 {
-    if (out_w) *out_w = layout ? layout->width : 0.0f;
-    if (out_h) *out_h = layout ? layout->height : 0.0f;
+    if (out_w) *out_w = layout ? layout->width    : 0.0f;
+    if (out_h) *out_h = layout ? layout->height   : 0.0f;
 }
 
 static float flux_get_baseline(TypioTextLayout *layout)
@@ -652,53 +594,81 @@ static float flux_get_baseline(TypioTextLayout *layout)
 
 void typio_flux_layout_free(TypioTextLayout *layout)
 {
-    if (!layout) return;
-    if (layout->run)
-        flux_glyph_run_release(layout->run);
-    if (layout->paint)
-        flux_paint_release(layout->paint);
-    free(layout);
+    flux_free_layout_internal(layout);
 }
 
-bool typio_flux_draw_layout(flux_canvas *canvas,
+bool typio_flux_draw_layout(void *pixel_buf, int stride, int buf_h,
                             TypioTextLayout *layout,
-                            float x,
-                            float y)
+                            float x, float y)
 {
-    if (!canvas || !layout || !layout->run || !layout->paint) return false;
-    return flux_canvas_draw_glyph_run(canvas, layout->run,
-                                      x, y + layout->baseline,
-                                      layout->paint) == FLUX_OK;
+    if (!pixel_buf || !layout || !layout->face || !layout->glyphs) return false;
+
+    uint32_t cr = to_u8(layout->color.r);
+    uint32_t cg = to_u8(layout->color.g);
+    uint32_t cb = to_u8(layout->color.b);
+
+    for (size_t i = 0; i < layout->count; ++i) {
+        if (FT_Load_Glyph(layout->face, layout->glyphs[i].glyph_id,
+                          FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0)
+            continue;
+
+        FT_GlyphSlot slot = layout->face->glyph;
+        FT_Bitmap   *bm   = &slot->bitmap;
+        if (bm->width == 0 || bm->rows == 0) continue;
+
+        int gx = (int)(x + layout->glyphs[i].x) + slot->bitmap_left;
+        int gy = (int)(y + layout->baseline + layout->glyphs[i].y_offset)
+                 - slot->bitmap_top;
+
+        for (int row = 0; row < (int)bm->rows; ++row) {
+            int py = gy + row;
+            if (py < 0 || py >= buf_h) continue;
+            for (int col = 0; col < (int)bm->width; ++col) {
+                int px = gx + col;
+                if (px < 0 || px * 4 + 3 >= stride) continue;
+                uint32_t alpha = bm->buffer[(size_t)row * (size_t)bm->pitch + (size_t)col];
+                if (alpha == 0) continue;
+                uint32_t *pixel = (uint32_t *)((uint8_t *)pixel_buf
+                                               + (size_t)py * (size_t)stride
+                                               + (size_t)px * 4);
+                uint32_t bg  = *pixel;
+                uint32_t inv = 255u - alpha;
+                uint32_t out_r = (cr * alpha + ((bg >> 16) & 0xffu) * inv) / 255u;
+                uint32_t out_g = (cg * alpha + ((bg >>  8) & 0xffu) * inv) / 255u;
+                uint32_t out_b = (cb * alpha + ( bg        & 0xffu) * inv) / 255u;
+                *pixel = (0xffu << 24) | (out_r << 16) | (out_g << 8) | out_b;
+            }
+        }
+    }
+    return true;
 }
 
 static TypioTextEngineVTable flux_engine_vtable = {
     .create_layout = flux_create_layout,
-    .get_metrics = flux_get_metrics,
-    .get_baseline = flux_get_baseline,
-    .free_layout = typio_flux_layout_free,
+    .get_metrics   = flux_get_metrics,
+    .get_baseline  = flux_get_baseline,
+    .free_layout   = typio_flux_layout_free,
 };
 
 TypioTextEngine *typio_flux_engine_create(void)
 {
-    TypioTextEngine *engine;
-    FluxTextEnginePriv *priv;
-
-    engine = (TypioTextEngine *)calloc(1, sizeof(*engine));
-    priv = (FluxTextEnginePriv *)calloc(1, sizeof(*priv));
+    TypioTextEngine    *engine = (TypioTextEngine *)calloc(1, sizeof(*engine));
+    FluxTextEnginePriv *priv   = (FluxTextEnginePriv *)calloc(1, sizeof(*priv));
     if (!engine || !priv) {
         free(engine);
         free(priv);
         return NULL;
     }
 
-    priv->ctx = typio_flux_context_get();
-    if (!priv->ctx) {
+    /* Device init also initialises ft_library as a side-effect. */
+    priv->device = typio_flux_device_get();
+    if (!priv->device) {
         free(priv);
         free(engine);
         return NULL;
     }
 
-    engine->priv = priv;
+    engine->priv   = priv;
     engine->vtable = &flux_engine_vtable;
     return engine;
 }
