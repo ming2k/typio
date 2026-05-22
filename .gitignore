@@ -4,8 +4,15 @@ build-headless/
 out/
 cmake-build-*/
 
-# Claude Code
+# AI assistant tooling (local, not project artifacts)
 .claude/
+.codex
+.codex/
+.kimi/
+.opencode/
+.cursor/
+.gemini/
+.aider*
 
 # IDE specific files
 .idea/

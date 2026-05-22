@@ -1,13 +1,23 @@
 /**
  * @file candidate_popup.cc
  * @brief Wayland input-popup coordinator.
+ *
+ * The popup presents a flux (Vulkan) swapchain directly onto its
+ * zwp_input_popup_surface_v2 wl_surface. Each candidate update records the
+ * popup into a flux canvas and presents one frame; the swapchain owns frame
+ * pacing and buffering, so there is no SHM buffer pool or manual frame
+ * throttling.
  */
+
+#define VK_USE_PLATFORM_WAYLAND_KHR
+#include <flux/flux.h>
+#include <flux/vulkan.h>
 
 #include "wl_frontend_internal.h"
 #include "candidate_popup_layout.h"
 #include "candidate_popup_paint.h"
-#include "candidate_popup_buffer.h"
 #include "candidate_popup_theme.h"
+#include "flux_renderer.h"
 #include "monotonic_time.h"
 #include "preedit_format.h"
 #include "typio/engine_label.h"
@@ -40,9 +50,13 @@ struct TypioWlCandidatePopup {
     struct wl_surface                  *surface;
     struct zwp_input_popup_surface_v2  *popup_surface;
 
-    /* SHM triple-buffer pool */
-    TypioCandidatePopupBuffer  buffers[TYPIO_CANDIDATE_POPUP_BUFFER_COUNT];
-    TypioCandidatePopupBuffer *last_committed;
+    /* flux GPU present pipeline (Vulkan swapchain on the popup wl_surface) */
+    VkSurfaceKHR  vk_surface;
+    flux_surface *fx_surface;
+    flux_canvas  *fx_canvas;
+    flux_arena    fx_arena;
+    bool          fx_ready;
+    int           surf_w, surf_h;   /* current swapchain extent, physical px */
 
     /* Per-popup text engine context + LRU layout cache */
     PopupRenderCtx render;
@@ -88,6 +102,7 @@ static PopupDelta classify_delta(const PopupGeometry *geom,
                                   uint64_t palette_sig,
                                   int scale,
                                   int new_selected) {
+    (void)new_selected;
     if (!geom) return POPUP_DELTA_CONTENT;
 
     if (geom->scale != scale ||
@@ -201,17 +216,155 @@ static void render_geometry_free(PopupRenderCtx *pc, PopupGeometry *g) {
     popup_geometry_free(g);
 }
 
+/* ── flux swapchain lifecycle ───────────────────────────────────────── */
+
+static inline uint8_t popup_u8(double v) {
+    if (v <= 0.0) return 0;
+    if (v >= 1.0) return 255;
+    return (uint8_t)(v * 255.0 + 0.5);
+}
+
+static flux_color popup_bg_color(const TypioCandidatePopupPalette *p) {
+    return flux_color_rgba_premul(popup_u8(p->bg_r), popup_u8(p->bg_g),
+                                  popup_u8(p->bg_b), popup_u8(p->bg_a));
+}
+
+static void fx_teardown(TypioWlCandidatePopup *popup) {
+    if (!popup) return;
+
+    flux_device *dev = (popup->fx_surface || popup->vk_surface) ? typio_flux_device_get() : nullptr;
+    if (dev && popup->fx_ready) flux_device_wait_idle(dev);
+
+    if (popup->fx_canvas) {
+        flux_canvas_destroy(popup->fx_canvas);
+        popup->fx_canvas = nullptr;
+    }
+    if (popup->fx_ready) {
+        flux_arena_destroy(&popup->fx_arena);
+    }
+    if (popup->fx_surface) {
+        flux_surface_release(popup->fx_surface);
+        popup->fx_surface = nullptr;
+    }
+    if (popup->vk_surface != VK_NULL_HANDLE && dev) {
+        vkDestroySurfaceKHR(flux_device_vk_instance(dev), popup->vk_surface, nullptr);
+    }
+    popup->vk_surface = VK_NULL_HANDLE;
+    popup->fx_ready   = false;
+    popup->surf_w = popup->surf_h = 0;
+}
+
+/* Create / resize the swapchain to (w, h) physical pixels. */
+static bool ensure_fx_surface(TypioWlCandidatePopup *popup, int w, int h) {
+    if (!popup || !popup->frontend || !popup->surface || w <= 0 || h <= 0) return false;
+
+    flux_device *dev = typio_flux_device_get();
+    if (!dev) return false;
+
+    if (popup->vk_surface == VK_NULL_HANDLE) {
+        VkWaylandSurfaceCreateInfoKHR ci = {
+            .sType   = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
+            .pNext   = nullptr,
+            .flags   = 0,
+            .display = popup->frontend->display,
+            .surface = popup->surface,
+        };
+        if (vkCreateWaylandSurfaceKHR(flux_device_vk_instance(dev), &ci, nullptr,
+                                      &popup->vk_surface) != VK_SUCCESS) {
+            popup->vk_surface = VK_NULL_HANDLE;
+            return false;
+        }
+    }
+
+    if (!popup->fx_surface) {
+        flux_surface_desc sd = {};
+        sd.type           = FLUX_TYPE_SURFACE_DESC;
+        sd.vk_surface_khr = popup->vk_surface;
+        sd.width          = (uint32_t)w;
+        sd.height         = (uint32_t)h;
+        sd.vsync          = true;
+        if (flux_surface_create(dev, &sd, &popup->fx_surface) != FLUX_OK) {
+            popup->fx_surface = nullptr;
+            return false;
+        }
+
+        flux_canvas_desc cd = {};
+        cd.type    = FLUX_TYPE_CANVAS_DESC;
+        cd.surface = popup->fx_surface;
+        if (flux_canvas_create(&cd, &popup->fx_canvas) != FLUX_OK) {
+            popup->fx_canvas = nullptr;
+            flux_surface_release(popup->fx_surface);
+            popup->fx_surface = nullptr;
+            return false;
+        }
+
+        if (flux_arena_init(&popup->fx_arena, 256 * 1024, nullptr) != FLUX_OK) {
+            flux_canvas_destroy(popup->fx_canvas);
+            popup->fx_canvas = nullptr;
+            flux_surface_release(popup->fx_surface);
+            popup->fx_surface = nullptr;
+            return false;
+        }
+
+        popup->surf_w   = w;
+        popup->surf_h   = h;
+        popup->fx_ready = true;
+    } else if (popup->surf_w != w || popup->surf_h != h) {
+        if (flux_surface_resize(popup->fx_surface, (uint32_t)w, (uint32_t)h) == FLUX_OK) {
+            popup->surf_w = w;
+            popup->surf_h = h;
+        }
+    }
+
+    return popup->fx_ready;
+}
+
+/* Record + present one frame of the popup. */
+static bool popup_present(TypioWlCandidatePopup *popup,
+                          const PopupGeometry *geom, int selected) {
+    if (!popup->fx_ready || !geom || !geom->palette) return false;
+
+    flux_frame *frame = nullptr;
+    flux_result r = flux_surface_begin_frame(popup->fx_surface, nullptr, &frame);
+    if (r == FLUX_ERROR_SURFACE_LOST) {
+        (void)flux_surface_resize(popup->fx_surface,
+                                  (uint32_t)popup->surf_w, (uint32_t)popup->surf_h);
+        r = flux_surface_begin_frame(popup->fx_surface, nullptr, &frame);
+    }
+    if (r != FLUX_OK) return false;
+
+    flux_color clear = popup_bg_color(geom->palette);
+    if (flux_canvas_begin(popup->fx_canvas, frame, &clear) != FLUX_OK) return false;
+
+    PopupPaintTarget target = { popup->fx_canvas, &popup->fx_arena };
+    popup_record(&target, geom, selected);
+
+    flux_arena_reset(&popup->fx_arena);
+    flux_canvas_end(popup->fx_canvas);
+
+    if (flux_frame_submit(frame) != FLUX_OK) return false;
+
+    r = flux_frame_present(frame);
+    if (r == FLUX_ERROR_SURFACE_LOST) {
+        (void)flux_surface_resize(popup->fx_surface,
+                                  (uint32_t)popup->surf_w, (uint32_t)popup->surf_h);
+        return true;  /* next update repaints at the new extent */
+    }
+    return r == FLUX_OK;
+}
+
 /* ── Surface hide ───────────────────────────────────────────────────── */
 
 static void hide_surface(TypioWlCandidatePopup *popup) {
     if (!popup || !popup->surface || !popup->visible) return;
 
+    /* Unmap by committing a null buffer. The flux swapchain stays alive so a
+     * later show only needs a present, not a swapchain rebuild. */
     wl_surface_attach(popup->surface, nullptr, 0, 0);
     wl_surface_commit(popup->surface);
 
-    popup->visible       = false;
-    popup->last_committed = nullptr;
-    popup->selected      = -1;
+    popup->visible  = false;
+    popup->selected = -1;
 
     render_geometry_free(&popup->render, popup->geom);
     popup->geom = nullptr;
@@ -223,16 +376,14 @@ static bool popup_render(TypioWlCandidatePopup *popup,
                           const TypioCandidateList *cands,
                           const char *preedit_text,
                           const char *mode_label) {
-    const PopupConfig              *cfg;
-    TypioCandidatePopupPalette       palette;
-    uint64_t                         pal_sig;
-    PopupPaintTarget                 target;
-    int                              scale;
-    int                              new_selected;
-    PopupDelta                       delta;
-    uint64_t                         t0, t1;
-    const char                      *delta_name = "unknown";
-    bool                             ok          = false;
+    const PopupConfig          *cfg;
+    TypioCandidatePopupPalette   palette;
+    uint64_t                     pal_sig;
+    int                          scale;
+    int                          new_selected;
+    PopupDelta                   delta;
+    uint64_t                     t0, t1;
+    const char                  *delta_name = "unknown";
 
     if (!popup || !popup->surface || !cands) return false;
 
@@ -244,21 +395,26 @@ static bool popup_render(TypioWlCandidatePopup *popup,
     scale        = render_scale(popup);
     new_selected = cands->selected;
 
-    target = (PopupPaintTarget){
-        .surface      = popup->surface,
-        .shm          = popup->frontend ? popup->frontend->shm : nullptr,
-        .buffers      = popup->buffers,
-        .buffer_count = TYPIO_CANDIDATE_POPUP_BUFFER_COUNT,
-    };
-
     delta = classify_delta(popup->geom, cands, preedit_text, mode_label,
                             cfg, pal_sig, scale, new_selected);
 
-    if (delta == POPUP_DELTA_SELECTION && new_selected == popup->selected) {
-        delta = POPUP_DELTA_NONE;
+    if (delta == POPUP_DELTA_SELECTION && new_selected == popup->selected &&
+        popup->visible) {
+        return true;
     }
 
-    bool force_full_render = false;
+    /* Geometry recomputation may evict LRU layout entries and free the old
+     * geometry — both release flux_image GPU resources. flux frees images
+     * immediately and draw_image does not retain them, so any frame still in
+     * flight that references those images would read freed GPU memory. Sync
+     * the device before freeing. The selection-only hot path frees nothing and
+     * deliberately skips this. */
+    if (popup->fx_ready &&
+        (delta == POPUP_DELTA_AUX || delta == POPUP_DELTA_CONTENT ||
+         delta == POPUP_DELTA_STYLE)) {
+        flux_device *dev = typio_flux_device_get();
+        if (dev) flux_device_wait_idle(dev);
+    }
 
     switch (delta) {
     case POPUP_DELTA_NONE:
@@ -266,18 +422,7 @@ static bool popup_render(TypioWlCandidatePopup *popup,
 
     case POPUP_DELTA_SELECTION:
         delta_name = "selection";
-        if (popup->last_committed) {
-            TypioCandidatePopupBuffer *used = nullptr;
-            ok = popup_paint_selection(&popup->render, &target, popup->geom,
-                                        popup->selected, new_selected,
-                                        popup->last_committed, &used);
-            if (ok) {
-                popup->selected       = new_selected;
-                popup->last_committed = used;
-            }
-        }
-        if (!ok) force_full_render = true;
-        break;
+        break;  /* geometry unchanged; re-present with new selection */
 
     case POPUP_DELTA_AUX: {
         delta_name = "aux";
@@ -285,37 +430,26 @@ static bool popup_render(TypioWlCandidatePopup *popup,
                                                              popup->geom,
                                                              preedit_text,
                                                              mode_label);
-        if (new_geom && popup->last_committed) {
-            TypioCandidatePopupBuffer *used = nullptr;
-            ok = popup_paint_aux(&popup->render, &target, popup->geom, new_geom,
-                                  popup->selected, popup->last_committed, &used);
-            if (ok) {
-                render_geometry_free(&popup->render, popup->geom);
-                popup->geom           = new_geom;
-                popup->last_committed = used;
-                popup->visible        = true;
-            } else {
-                render_geometry_free(&popup->render, new_geom);
-            }
+        if (new_geom) {
+            render_geometry_free(&popup->render, popup->geom);
+            popup->geom = new_geom;
         } else {
-            render_geometry_free(&popup->render, new_geom);
+            delta = POPUP_DELTA_CONTENT;  /* aux size changed; fall through */
         }
-        if (!ok) force_full_render = true;
         break;
     }
 
     case POPUP_DELTA_STYLE:
         delta_name = "style";
         popup_render_ctx_invalidate(&popup->render);
-        force_full_render = true;
         break;
+
     case POPUP_DELTA_CONTENT:
         delta_name = "content";
-        force_full_render = true;
         break;
     }
 
-    if (force_full_render) {
+    if (delta == POPUP_DELTA_CONTENT || delta == POPUP_DELTA_STYLE) {
         PopupGeometry *new_geom = popup_geometry_compute(&popup->render,
                                                           cands,
                                                           preedit_text,
@@ -325,19 +459,31 @@ static bool popup_render(TypioWlCandidatePopup *popup,
             typio_log(TYPIO_LOG_WARNING, "Popup: geometry computation failed");
             return false;
         }
+        render_geometry_free(&popup->render, popup->geom);
+        popup->geom = new_geom;
+    }
 
-        TypioCandidatePopupBuffer *used = nullptr;
-        ok = popup_paint_full(&popup->render, &target, new_geom, new_selected, &used);
-        if (ok) {
-            render_geometry_free(&popup->render, popup->geom);
-            popup->geom           = new_geom;
-            popup->selected       = new_selected;
-            popup->last_committed = used;
-            popup->visible        = true;
-        } else {
-            render_geometry_free(&popup->render, new_geom);
-            typio_log(TYPIO_LOG_WARNING, "Popup: paint_full failed");
-        }
+    if (!popup->geom) return false;
+
+    int pw = popup->geom->popup_w * popup->geom->scale;
+    int ph = popup->geom->popup_h * popup->geom->scale;
+    if (!ensure_fx_surface(popup, pw, ph)) {
+        typio_log(TYPIO_LOG_WARNING, "Popup: flux surface unavailable");
+        return false;
+    }
+
+    /* The swapchain buffer is in physical pixels (logical × scale); tell the
+     * compositor its scale so a HiDPI popup is shown at the correct logical
+     * size and stays crisp. Pending state is applied by the WSI's commit at
+     * present time. */
+    wl_surface_set_buffer_scale(popup->surface, popup->geom->scale);
+
+    bool ok = popup_present(popup, popup->geom, new_selected);
+    if (ok) {
+        popup->selected = new_selected;
+        popup->visible  = true;
+    } else {
+        typio_log(TYPIO_LOG_WARNING, "Popup: present failed");
     }
 
     t1 = typio_wl_monotonic_ms();
@@ -433,7 +579,7 @@ static bool ensure_created(TypioWlFrontend *frontend) {
     if (!frontend || !frontend->text_ui_backend) return false;
     TypioWlTextUiBackend *backend = frontend->text_ui_backend;
     if (backend->candidate_popup) return backend->candidate_popup->surface && backend->candidate_popup->popup_surface;
-    if (!frontend->compositor || !frontend->shm || !frontend->input_method) return false;
+    if (!frontend->compositor || !frontend->input_method) return false;
     backend->candidate_popup = typio_wl_candidate_popup_create(frontend);
     return backend->candidate_popup != nullptr;
 }
@@ -441,11 +587,12 @@ static bool ensure_created(TypioWlFrontend *frontend) {
 /* ── Public API ─────────────────────────────────────────────────────── */
 
 extern "C" TypioWlCandidatePopup *typio_wl_candidate_popup_create(TypioWlFrontend *frontend) {
-    if (!frontend || !frontend->compositor || !frontend->shm || !frontend->input_method) return nullptr;
+    if (!frontend || !frontend->compositor || !frontend->input_method) return nullptr;
     TypioWlCandidatePopup *popup = (TypioWlCandidatePopup *)calloc(1, sizeof(*popup));
     if (!popup) return nullptr;
     popup->frontend = frontend;
     popup->selected = -1;
+    popup->vk_surface = VK_NULL_HANDLE;
     popup->surface = wl_compositor_create_surface(frontend->compositor);
     if (!popup->surface) { free(popup); return nullptr; }
     wl_surface_add_listener(popup->surface, &wl_surface_listener, popup);
@@ -459,9 +606,9 @@ extern "C" TypioWlCandidatePopup *typio_wl_candidate_popup_create(TypioWlFronten
 extern "C" void typio_wl_candidate_popup_destroy(TypioWlCandidatePopup *popup) {
     if (!popup) return;
     hide_surface(popup);
+    fx_teardown(popup);
     render_geometry_free(&popup->render, popup->geom);
     popup_render_ctx_free(&popup->render);
-    for (size_t i = 0; i < TYPIO_CANDIDATE_POPUP_BUFFER_COUNT; ++i) typio_candidate_popup_buffer_reset(&popup->buffers[i]);
     clear_outputs(popup);
     if (popup->popup_surface) zwp_input_popup_surface_v2_destroy(popup->popup_surface);
     if (popup->surface) wl_surface_destroy(popup->surface);
@@ -493,10 +640,15 @@ extern "C" void typio_wl_candidate_popup_invalidate_config(TypioWlTextUiBackend 
     TypioWlCandidatePopup *popup = backend->candidate_popup;
     popup->config_valid = false;
     memset(&popup->theme_cache, 0, sizeof(popup->theme_cache));
+    /* Frees all cached glyph images; sync first so an in-flight frame cannot
+     * reference freed GPU resources (see popup_render). */
+    if (popup->fx_ready) {
+        flux_device *dev = typio_flux_device_get();
+        if (dev) flux_device_wait_idle(dev);
+    }
     popup_render_ctx_invalidate(&popup->render);
     render_geometry_free(&popup->render, popup->geom);
     popup->geom = nullptr;
-    popup->last_committed = nullptr;
 }
 
 extern "C" void typio_wl_candidate_popup_handle_output_change(TypioWlTextUiBackend *backend, struct wl_output *output) {

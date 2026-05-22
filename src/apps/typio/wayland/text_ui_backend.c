@@ -17,7 +17,7 @@ TypioWlTextUiBackend *typio_wl_text_ui_backend_create(TypioWlFrontend *frontend)
     }
 
     backend->frontend = frontend;
-    if (frontend->compositor && frontend->shm && frontend->input_method) {
+    if (frontend->compositor && frontend->input_method) {
         backend->candidate_popup = typio_wl_candidate_popup_create(frontend);
     }
 

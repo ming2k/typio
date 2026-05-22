@@ -50,7 +50,6 @@ if(HAVE_WAYLAND)
         wayland/aux_handler.c
         wayland/aux_adapters.c
         wayland/candidate_popup.cc
-        wayland/candidate_popup_buffer.c
         wayland/candidate_popup_layout.cc
         wayland/candidate_popup_paint.cc
         wayland/flux_renderer.c

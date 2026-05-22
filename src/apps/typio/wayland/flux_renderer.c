@@ -9,6 +9,10 @@
 #include FT_FREETYPE_H
 #include FT_MULTIPLE_MASTERS_H
 
+#include <flux/canvas.h>
+
+#include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,14 +32,27 @@ struct TypioTextLayout {
     float       width;
     float       height;
     float       baseline;
-};
 
-typedef struct {
-    flux_device *device;
-} FluxTextEnginePriv;
+    /* Cached premultiplied-RGBA glyph image, built lazily on first draw and
+     * reused for the layout's lifetime (the layout itself is LRU-cached). */
+    flux_image *image;
+    int         img_w, img_h;
+    float       img_dx, img_dy;  /* image top-left offset from layout origin */
+    bool        image_attempted;
+};
 
 static flux_device *global_device;
 static FT_Library   ft_library;
+
+static bool ensure_ft_library(void)
+{
+    if (ft_library) return true;
+    if (FT_Init_FreeType(&ft_library) != 0) {
+        ft_library = NULL;
+        return false;
+    }
+    return true;
+}
 
 /* ── Font file cache ────────────────────────────────────────────────── */
 #define FONT_FILE_CACHE_CAP 8
@@ -249,17 +266,30 @@ flux_device *typio_flux_device_get(void)
 {
     if (global_device) return global_device;
 
-    if (FT_Init_FreeType(&ft_library) != 0)
-        return NULL;
+    /* Wayland WSI: the candidate popup presents a swapchain directly onto
+     * its zwp_input_popup_surface_v2 wl_surface, so the device needs the
+     * surface + wayland-surface instance extensions and the swapchain
+     * device extension. The graphics queue is assumed present-capable
+     * (true on Mesa/Wayland). */
+    static const char *const instance_exts[] = {
+        "VK_KHR_surface",
+        "VK_KHR_wayland_surface",
+    };
+    static const char *const device_exts[] = {
+        "VK_KHR_swapchain",
+    };
 
     flux_device_desc desc = FLUX_DEVICE_DESC_INIT;
-    desc.log      = flux_log_cb;
-    desc.headless = true;
+    desc.log                               = flux_log_cb;
+    desc.headless                          = false;
+    desc.required_instance_extensions      = instance_exts;
+    desc.required_instance_extension_count = 2;
+    desc.required_device_extensions        = device_exts;
+    desc.required_device_extension_count   = 1;
+    desc.frames_in_flight                  = 2;
 
-    flux_result r = flux_device_create(&desc, &global_device);
-    if (r != FLUX_OK) {
-        FT_Done_FreeType(ft_library);
-        ft_library = NULL;
+    if (flux_device_create(&desc, &global_device) != FLUX_OK) {
+        global_device = NULL;
         return NULL;
     }
     return global_device;
@@ -472,6 +502,7 @@ static bool layout_has_missing_glyphs(const TypioTextLayout *layout)
 static void flux_free_layout_internal(TypioTextLayout *layout)
 {
     if (!layout) return;
+    if (layout->image) flux_image_release(layout->image);
     free(layout->glyphs);
     free(layout);
 }
@@ -530,7 +561,6 @@ static TypioTextLayout *flux_create_layout(void *engine,
                                            const char *font_desc,
                                            TypioColor color)
 {
-    FluxTextEnginePriv *priv = (FluxTextEnginePriv *)((TypioTextEngine *)engine)->priv;
     char family[128];
     char *font_file = NULL;
     char *fb_file   = NULL;
@@ -540,7 +570,7 @@ static TypioTextLayout *flux_create_layout(void *engine,
     TypioTextLayout *fb_layout = NULL;
     int32_t weight = 400;
 
-    if (!priv) return NULL;
+    (void)engine;
     if (!parse_font_desc(font_desc, family, sizeof(family), &size_px, &weight)) return NULL;
 
     font_file = match_font_file(family, weight);
@@ -597,49 +627,130 @@ void typio_flux_layout_free(TypioTextLayout *layout)
     flux_free_layout_internal(layout);
 }
 
-bool typio_flux_draw_layout(void *pixel_buf, int stride, int buf_h,
-                            TypioTextLayout *layout,
-                            float x, float y)
+/* ── Glyph rasterisation → cached flux_image ────────────────────────── */
+
+/* Rasterise every glyph in the layout into one premultiplied-RGBA image and
+ * cache it on the layout. FreeType produces 8-bit coverage bitmaps; we tint
+ * by the layout colour and premultiply so flux's default SRC_OVER composites
+ * correctly. Built once per layout (layouts are LRU-cached). */
+static bool build_layout_image(TypioTextLayout *layout)
 {
-    if (!pixel_buf || !layout || !layout->face || !layout->glyphs) return false;
+    layout->image_attempted = true;
 
-    uint32_t cr = to_u8(layout->color.r);
-    uint32_t cg = to_u8(layout->color.g);
-    uint32_t cb = to_u8(layout->color.b);
+    if (!layout->face || !layout->glyphs || layout->count == 0) return false;
 
+    flux_device *dev = typio_flux_device_get();
+    if (!dev) return false;
+
+    FT_Face face = layout->face;
+    int minx = INT_MAX, miny = INT_MAX, maxx = INT_MIN, maxy = INT_MIN;
+
+    /* Pass 1: ink bounding box (in layout space, origin at top, baseline below). */
     for (size_t i = 0; i < layout->count; ++i) {
-        if (FT_Load_Glyph(layout->face, layout->glyphs[i].glyph_id,
+        if (FT_Load_Glyph(face, layout->glyphs[i].glyph_id,
                           FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0)
             continue;
+        FT_GlyphSlot s = face->glyph;
+        FT_Bitmap   *b = &s->bitmap;
+        if (b->width == 0 || b->rows == 0) continue;
 
-        FT_GlyphSlot slot = layout->face->glyph;
-        FT_Bitmap   *bm   = &slot->bitmap;
-        if (bm->width == 0 || bm->rows == 0) continue;
+        int gx = (int)floorf(layout->glyphs[i].x) + s->bitmap_left;
+        int gy = (int)floorf(layout->baseline + layout->glyphs[i].y_offset) - s->bitmap_top;
+        if (gx < minx) minx = gx;
+        if (gy < miny) miny = gy;
+        if (gx + (int)b->width > maxx) maxx = gx + (int)b->width;
+        if (gy + (int)b->rows  > maxy) maxy = gy + (int)b->rows;
+    }
 
-        int gx = (int)(x + layout->glyphs[i].x) + slot->bitmap_left;
-        int gy = (int)(y + layout->baseline + layout->glyphs[i].y_offset)
-                 - slot->bitmap_top;
+    if (maxx <= minx || maxy <= miny) return false;  /* all whitespace */
 
-        for (int row = 0; row < (int)bm->rows; ++row) {
+    int W = maxx - minx;
+    int H = maxy - miny;
+    uint32_t *buf = (uint32_t *)calloc((size_t)W * (size_t)H, sizeof(uint32_t));
+    if (!buf) return false;
+
+    uint8_t cr = to_u8(layout->color.r);
+    uint8_t cg = to_u8(layout->color.g);
+    uint8_t cb = to_u8(layout->color.b);
+
+    /* Pass 2: composite each glyph (premultiplied SRC_OVER). */
+    for (size_t i = 0; i < layout->count; ++i) {
+        if (FT_Load_Glyph(face, layout->glyphs[i].glyph_id,
+                          FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0)
+            continue;
+        FT_GlyphSlot s = face->glyph;
+        FT_Bitmap   *b = &s->bitmap;
+        if (b->width == 0 || b->rows == 0) continue;
+
+        int gx = (int)floorf(layout->glyphs[i].x) + s->bitmap_left - minx;
+        int gy = (int)floorf(layout->baseline + layout->glyphs[i].y_offset) - s->bitmap_top - miny;
+
+        for (int row = 0; row < (int)b->rows; ++row) {
             int py = gy + row;
-            if (py < 0 || py >= buf_h) continue;
-            for (int col = 0; col < (int)bm->width; ++col) {
+            if (py < 0 || py >= H) continue;
+            for (int col = 0; col < (int)b->width; ++col) {
                 int px = gx + col;
-                if (px < 0 || px * 4 + 3 >= stride) continue;
-                uint32_t alpha = bm->buffer[(size_t)row * (size_t)bm->pitch + (size_t)col];
-                if (alpha == 0) continue;
-                uint32_t *pixel = (uint32_t *)((uint8_t *)pixel_buf
-                                               + (size_t)py * (size_t)stride
-                                               + (size_t)px * 4);
-                uint32_t bg  = *pixel;
-                uint32_t inv = 255u - alpha;
-                uint32_t out_r = (cr * alpha + ((bg >> 16) & 0xffu) * inv) / 255u;
-                uint32_t out_g = (cg * alpha + ((bg >>  8) & 0xffu) * inv) / 255u;
-                uint32_t out_b = (cb * alpha + ( bg        & 0xffu) * inv) / 255u;
-                *pixel = (0xffu << 24) | (out_r << 16) | (out_g << 8) | out_b;
+                if (px < 0 || px >= W) continue;
+                uint8_t cov = b->buffer[(size_t)row * (size_t)b->pitch + (size_t)col];
+                if (!cov) continue;
+
+                uint8_t sa = cov;
+                uint8_t sr = (uint8_t)((cr * cov) / 255);
+                uint8_t sg = (uint8_t)((cg * cov) / 255);
+                uint8_t sb = (uint8_t)((cb * cov) / 255);
+
+                uint32_t *dp = &buf[(size_t)py * (size_t)W + (size_t)px];
+                uint32_t d = *dp;
+                uint8_t dr = (uint8_t)(d & 0xff);
+                uint8_t dg = (uint8_t)((d >> 8) & 0xff);
+                uint8_t db = (uint8_t)((d >> 16) & 0xff);
+                uint8_t da = (uint8_t)((d >> 24) & 0xff);
+                uint8_t inv = (uint8_t)(255 - sa);
+
+                uint8_t orr = (uint8_t)(sr + dr * inv / 255);
+                uint8_t org = (uint8_t)(sg + dg * inv / 255);
+                uint8_t orb = (uint8_t)(sb + db * inv / 255);
+                uint8_t ora = (uint8_t)(sa + da * inv / 255);
+                *dp = (uint32_t)orr | ((uint32_t)org << 8) |
+                      ((uint32_t)orb << 16) | ((uint32_t)ora << 24);
             }
         }
     }
+
+    flux_image_desc id = {};
+    id.type         = FLUX_TYPE_IMAGE_DESC;
+    id.width        = (uint32_t)W;
+    id.height       = (uint32_t)H;
+    id.format       = FLUX_FORMAT_RGBA8_UNORM;
+    id.initial_data = buf;
+
+    flux_image *img = NULL;
+    flux_result r = flux_image_create(dev, &id, &img);
+    free(buf);
+    if (r != FLUX_OK || !img) return false;
+
+    layout->image  = img;
+    layout->img_w  = W;
+    layout->img_h  = H;
+    layout->img_dx = (float)minx;
+    layout->img_dy = (float)miny;
+    return true;
+}
+
+bool typio_flux_fill_layout(flux_canvas *canvas, flux_arena *arena,
+                            TypioTextLayout *layout, float x, float y)
+{
+    (void)arena;
+    if (!canvas || !layout) return false;
+
+    if (!layout->image_attempted) build_layout_image(layout);
+    if (!layout->image) return true;  /* whitespace-only or no device */
+
+    flux_rect dst = {
+        x + layout->img_dx, y + layout->img_dy,
+        (float)layout->img_w, (float)layout->img_h,
+    };
+    flux_canvas_draw_image(canvas, layout->image, dst, NULL);
     return true;
 }
 
@@ -652,23 +763,17 @@ static TypioTextEngineVTable flux_engine_vtable = {
 
 TypioTextEngine *typio_flux_engine_create(void)
 {
-    TypioTextEngine    *engine = (TypioTextEngine *)calloc(1, sizeof(*engine));
-    FluxTextEnginePriv *priv   = (FluxTextEnginePriv *)calloc(1, sizeof(*priv));
-    if (!engine || !priv) {
-        free(engine);
-        free(priv);
-        return NULL;
-    }
+    TypioTextEngine *engine = (TypioTextEngine *)calloc(1, sizeof(*engine));
+    if (!engine) return NULL;
 
-    /* Device init also initialises ft_library as a side-effect. */
-    priv->device = typio_flux_device_get();
-    if (!priv->device) {
-        free(priv);
+    /* The text engine only needs FreeType (shaping + outlines). The Vulkan
+     * device is created lazily by the popup when it first presents. */
+    if (!ensure_ft_library()) {
         free(engine);
         return NULL;
     }
 
-    engine->priv   = priv;
+    engine->priv   = NULL;
     engine->vtable = &flux_engine_vtable;
     return engine;
 }
@@ -678,6 +783,5 @@ void typio_flux_engine_destroy(TypioTextEngine *engine)
     if (!engine) return;
     font_obj_cache_clear();
     font_file_cache_clear();
-    free(engine->priv);
     free(engine);
 }

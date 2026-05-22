@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.5] - 2026-05-22
+
+### Changed
+
+- **Candidate popup now renders through flux (GPU)**: the popup presents a flux
+  Vulkan swapchain directly onto its `zwp_input_popup_surface_v2` wl_surface
+  (`vkCreateWaylandSurfaceKHR` → `flux_surface_create` → `flux_canvas_create`),
+  replacing the CPU SHM blit. Per update it records the popup into a flux canvas
+  (`flux_canvas_fill_rect` for chrome, glyph images for text) and presents one
+  frame; the swapchain owns frame pacing and buffering. Text keeps the
+  HarfBuzz + FreeType stack: glyphs are rasterised by FreeType, tinted and
+  premultiplied into a `flux_image` cached per text layout, and drawn with
+  `flux_canvas_draw_image`.
+
+### Fixed
+
+- **Laggy / stale candidate box during fast navigation**: the previous SHM
+  triple-buffer path could exhaust its pool and silently drop popup updates
+  (clearing the pending flag even when the repaint failed), so the visible
+  candidates trailed the engine while key handling stayed responsive. The flux
+  swapchain path removes the pool entirely and always presents the latest state.
+- **Garbled glyph rendering** in the GPU path: switched from filling glyph
+  outlines as canvas paths (flux's tessellator only handles single-contour
+  fills) to compositing FreeType coverage bitmaps into a premultiplied image.
+- **Oversized popup on HiDPI (2× scale)**: the swapchain renders at physical
+  pixels; the popup now sets `wl_surface_set_buffer_scale` so the compositor
+  shows it at the correct logical size and keeps it crisp.
+- **GPU use-after-free on layout-cache eviction**: `flux_image_release` frees the
+  image immediately and `draw_image` does not retain it, so the device is now
+  synced before freeing glyph images on the geometry-recompute and config-reload
+  paths (the selection-only hot path frees nothing and stays sync-free).
+
+### Removed
+
+- SHM candidate-popup buffer pool (`candidate_popup_buffer.{c,h}`), the dead
+  `src/render/render_api.h` facade, and the vestigial headless flux device.
+
+### Documentation
+
+- Reconciled the architecture overview's candidate-popup pipeline with the flux
+  GPU path, and added ADR-0002 (plugin engine ABI), ADR-0003 (keyboard grab
+  lifecycle), and ADR-0004 (event-loop scheduling and watchdog) — previously
+  referenced from code but unwritten.
+
 ## [3.2.4] - 2026-05-22
 
 ### Changed

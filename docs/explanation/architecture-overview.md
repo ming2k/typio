@@ -32,8 +32,8 @@ Typio runs on the following protocol layers:
   This gives Typio the keyboard stream it needs for composition, candidate navigation, and command handling.
 - `zwp_input_popup_surface_v2`
   This is the native Wayland candidate popup path used for input method UI placement near the active text cursor.
-- `wl_compositor`, `wl_surface`, `wl_shm`
-  These core Wayland interfaces back the popup window and its pixel buffers. Popup scaling follows `wl_surface.enter/leave` plus per-output `wl_output.scale` so the shm buffer matches integer HiDPI outputs.
+- `wl_compositor`, `wl_surface`
+  These core Wayland interfaces back the popup window. Its pixels come from a flux (Vulkan) swapchain created on the popup `wl_surface` via `vkCreateWaylandSurfaceKHR` — there is no `wl_shm` buffer. Popup scaling follows `wl_surface.enter/leave` plus per-output `wl_output.scale`.
 
 ## Source Tree
 
@@ -264,11 +264,13 @@ Classification is a pure comparison of the incoming state against the cached `Po
 
 `PopupGeometry` is an immutable snapshot of all computed candidate positions and auxiliary text positions for one page. The selected index is **not** part of the geometry; changing the selection never requires re-measuring text or recomputing positions.
 
-Text measurement and `TypioTextLayout` objects are owned by `PopupRenderCtx`, a persistent per-popup structure holding a 128-entry LRU cache. Cache entries are keyed by `FNV-1a(formatted_text + font_desc + color)`. Layouts are shaped through HarfBuzz and rendered by Flux into the Wayland shm buffer.
+Text measurement and `TypioTextLayout` objects are owned by `PopupRenderCtx`, a persistent per-popup structure holding a 128-entry LRU cache. Cache entries are keyed by `FNV-1a(formatted_text + font_desc + color)`. Layouts are shaped through HarfBuzz; at paint time each shaped glyph's FreeType outline is decomposed into a `flux_path` and filled on the GPU canvas (no glyph bitmaps, resolution-independent).
 
 ### Paint paths
 
-`candidate_popup_paint.c` implements three paint functions, each accepting a `PopupGeometry*`. All three paths currently perform a **full redraw** on a persistent Vulkan offscreen surface stored in `PopupRenderCtx`. The surface is only recreated when the buffer size changes (e.g. output scale change or content resize). This eliminates per-frame pipeline reconstruction and the associated `vkDeviceWaitIdle` / `vkQueueWaitIdle` synchronisation that previously caused GPU stalls and watchdog kills.
+`candidate_popup_paint.c` records the popup into a flux canvas: the background is the canvas clear colour, the border / selection highlight / mode divider are solid `flux_canvas_fill_rect` calls, and text is filled glyph outlines (`typio_flux_fill_layout`).
+
+The popup coordinator (`candidate_popup.c`) owns the GPU frame lifecycle. It creates a flux (Vulkan) **swapchain** directly on the input-popup `wl_surface` (`vkCreateWaylandSurfaceKHR` → `flux_surface_create` → `flux_canvas_create`), and per update runs `flux_surface_begin_frame` → `flux_canvas_begin(clear)` → record → `flux_canvas_end` → `flux_frame_submit` → `flux_frame_present`. The swapchain is resized with `flux_surface_resize` when the popup size changes. Because the swapchain owns frame pacing and buffering, there is no SHM buffer pool and no manual frame-callback throttle — flux presents the latest candidate state each frame and never stalls the event loop.
 
 ## Keyboard Safety Model
 
