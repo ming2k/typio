@@ -74,6 +74,7 @@ Prefer small state-policy tests for Wayland behavior. Do not rely only on manual
 ## Style
 
 - Use C11 for C code and C++17 where C++ is already required.
+- Use Rust 2021 edition for `src/core-rs/`.
 - Keep public API names in the `typio_*` / `Typio*` style already used by the repo.
 - Prefer local helpers and direct data flow over broad abstractions.
 - Document non-obvious behavior in headers or near complex state transitions.

@@ -1,6 +1,6 @@
 # Typio
 
-Typio is a native Wayland input method daemon written in C. It runs on the Wayland text-input/input-method protocol stack and provides a daemon frontend, a shared core library, a plugin engine ABI, and a GTK4 control panel.
+Typio is a native Wayland input method daemon. The low-level Wayland frontend and engine plugins remain in C; business logic (config, input context, engine orchestration) is migrating to Rust for memory safety and maintainability. It runs on the Wayland text-input/input-method protocol stack and provides a daemon frontend, a shared core library, a plugin engine ABI, and a GTK4 control panel.
 
 ## Quick Start
 

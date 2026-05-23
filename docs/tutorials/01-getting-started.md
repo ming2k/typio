@@ -14,6 +14,7 @@ By the end of this tutorial you will have:
 
 - CMake 3.20+
 - C11 and C++17 compiler
+- Rust toolchain (latest stable `rustc` + `cargo`)
 - `pkg-config`
 - A running Wayland session
 
@@ -23,6 +24,7 @@ These are required for the default build (all builtin options left at their defa
 
 | Component | Debian/Ubuntu | Arch Linux | Fedora |
 |---|---|---|---|
+| Rust toolchain | `rustup` (see [rustup.rs](https://rustup.rs)) | `rust` | `rust` |
 | Wayland client | `libwayland-dev` | `wayland` | `wayland-devel` |
 | xkbcommon | `libxkbcommon-dev` | `libxkbcommon` | `libxkbcommon-devel` |
 | wayland-protocols | `wayland-protocols` | `wayland-protocols` | `wayland-protocols-devel` |
@@ -54,6 +56,7 @@ Voice backends require **PipeWire**: `libpipewire-0.3-dev` (Debian), `pipewire` 
 Debian/Ubuntu (default build only):
 
 ```bash
+# Install Rust first: https://rustup.rs
 sudo apt install build-essential cmake pkg-config \
     libwayland-dev libxkbcommon-dev wayland-protocols \
     libvulkan-dev libfreetype6-dev libharfbuzz-dev libfontconfig-dev \
@@ -63,6 +66,7 @@ sudo apt install build-essential cmake pkg-config \
 Arch Linux (default build only):
 
 ```bash
+# Install Rust first: https://rustup.rs
 sudo pacman -S base-devel cmake pkgconf \
     wayland libxkbcommon wayland-protocols \
     vulkan-headers freetype2 harfbuzz fontconfig \
@@ -72,6 +76,7 @@ sudo pacman -S base-devel cmake pkgconf \
 Fedora (default build only):
 
 ```bash
+# Install Rust first: https://rustup.rs
 sudo dnf install gcc cmake pkgconf-pkg-config \
     wayland-devel libxkbcommon-devel wayland-protocols-devel \
     vulkan-loader-devel freetype-devel harfbuzz-devel fontconfig-devel \

@@ -6,6 +6,7 @@ This document is for contributors who will modify Typio source code. **If you on
 
 - CMake 3.20+
 - C11 and C++17 compiler
+- Rust toolchain (latest stable `rustc` + `cargo`)
 - `pkg-config`
 - Wayland client development files
 - `xkbcommon` development files
@@ -23,6 +24,7 @@ Optional:
 
 | Dependency | Source | Resolved version | You need to install it? |
 |---|---|---|---|
+| **Rust core** (`src/core-rs/`) | Cargo (CMake custom command) | latest stable | **Yes** — install `rustc` + `cargo` |
 | **flux** (rendering framework) | ExternalProject (Meson) | `44de7ec` (v0.0.1) | **No** — built automatically |
 
 flux is built automatically during the CMake build step via Meson + Ninja.
@@ -34,6 +36,11 @@ or pass `-DFLUX_SOURCE_DIR=/path/to/flux` to CMake.
 System libraries are discovered via `pkg-config`.  CMake does not enforce
 upper-bound versions, but the project is regularly tested against the
 packages shipped in the latest Arch Linux and Fedora releases.
+
+The Rust crate in `src/core-rs/` is compiled automatically by CMake via
+`cargo build --release`. The resulting static library is linked into
+`libtypio-core`. No manual Cargo invocation is required during normal
+development.
 
 For the concrete distro package names required for a default build, see
 [Getting Started: Prerequisites](../tutorials/01-getting-started.md).
