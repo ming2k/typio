@@ -248,12 +248,6 @@ static unsigned char to_u8(float v)
     return (unsigned char)(v * 255.0f + 0.5f);
 }
 
-flux_color typio_flux_color(TypioColor color)
-{
-    return flux_color_rgba(to_u8(color.r), to_u8(color.g),
-                           to_u8(color.b), to_u8(color.a));
-}
-
 static void flux_log_cb(flux_log_level level,
                         const char *file, int line,
                         const char *fmt, const char *msg,

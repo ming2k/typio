@@ -21,8 +21,6 @@ void typio_flux_engine_destroy(TypioTextEngine *engine);
  * Returns NULL if no Vulkan device is available. */
 flux_device *typio_flux_device_get(void);
 
-flux_color typio_flux_color(TypioColor color);
-
 /*
  * Record a shaped text layout into a flux canvas as filled glyph paths.
  *

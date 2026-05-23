@@ -27,6 +27,8 @@
 
 #include "input-method-unstable-v2-client-protocol.h"
 #include "virtual-keyboard-unstable-v1-client-protocol.h"
+#include "fractional-scale-v1-client-protocol.h"
+#include "viewporter-client-protocol.h"
 
 #include "aux_handler.h"
 
@@ -200,6 +202,13 @@ struct TypioWlFrontend {
     /* Input method protocol objects */
     struct zwp_input_method_manager_v2 *im_manager;
     struct zwp_input_method_v2 *input_method;
+
+    /* Optional HiDPI helpers. Both may be nullptr on compositors that
+     * predate the staging fractional-scale protocol or viewporter; the
+     * popup falls back to integer wl_surface buffer_scale + wl_output
+     * scale tracking when either is missing. */
+    struct wp_fractional_scale_manager_v1 *fractional_scale_manager;
+    struct wp_viewporter *viewporter;
 
     /* Virtual keyboard for forwarding unhandled keys */
     struct zwp_virtual_keyboard_manager_v1 *vk_manager;

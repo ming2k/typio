@@ -92,14 +92,11 @@ void popup_record(const PopupPaintTarget *target,
 
     flux_canvas *cv = target->canvas;
     flux_arena  *ar = target->arena;
-    float        s  = (float)(geom->scale < 1 ? 1 : geom->scale);
+    float        s  = geom->scale > 0.0f ? geom->scale : 1.0f;
 
     record_border(cv, geom, s);
 
-    if (geom->status_layout) {
-        typio_flux_fill_layout(cv, ar, geom->status_layout,
-                               geom->pre_x * s, geom->pre_y * s);
-    } else if (geom->preedit_layout) {
+    if (geom->preedit_layout) {
         typio_flux_fill_layout(cv, ar, geom->preedit_layout,
                                geom->pre_x * s, geom->pre_y * s);
     }

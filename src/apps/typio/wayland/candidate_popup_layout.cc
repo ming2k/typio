@@ -89,6 +89,17 @@ void popup_render_ctx_init(PopupRenderCtx *pc) {
     pc->engine = typio_flux_engine_create();
 }
 
+void popup_render_ctx_set_evict(PopupRenderCtx *pc,
+                                PopupLayoutEvictFn cb, void *user) {
+    if (!pc) return;
+    pc->evict_cb   = cb;
+    pc->evict_user = user;
+}
+
+/* The cleanup paths (free, invalidate) are only called when the caller has
+ * already drained in-flight GPU work (popup_destroy via fx_teardown,
+ * invalidate_config via flux_device_wait_idle), so eager free is safe and
+ * the evict callback is intentionally bypassed. */
 void popup_render_ctx_free(PopupRenderCtx *pc) {
     if (!pc) return;
     for (size_t i = 0; i < POPUP_LAYOUT_CACHE_CAP; ++i) {
@@ -155,8 +166,19 @@ static PopupLayoutEntry *lru_get_or_create(PopupRenderCtx *pc,
     }
 
     PopupLayoutEntry *victim = &pc->entries[lru_idx];
-    if (victim->layout)       pc->engine->vtable->free_layout(victim->layout);
-    if (victim->label_layout) pc->engine->vtable->free_layout(victim->label_layout);
+    /* An eviction here happens on the per-keystroke hot path: the victim's
+     * layouts may still be referenced by an in-flight GPU frame, so the
+     * popup owner defers their release via evict_cb (frame-retire ring).
+     * When no callback is wired (tests / standalone) we fall back to eager
+     * free — only safe when the caller has fenced separately. */
+    if (victim->layout) {
+        if (pc->evict_cb) pc->evict_cb(pc->evict_user, victim->layout);
+        else              pc->engine->vtable->free_layout(victim->layout);
+    }
+    if (victim->label_layout) {
+        if (pc->evict_cb) pc->evict_cb(pc->evict_user, victim->label_layout);
+        else              pc->engine->vtable->free_layout(victim->label_layout);
+    }
 
     victim->key               = key;
     victim->label_color_packed = lcp;
@@ -178,13 +200,13 @@ static PopupLayoutEntry *lru_get_or_create(PopupRenderCtx *pc,
     return victim;
 }
 
-static void scaled_font_desc(char *out, size_t out_size, const char *font_desc, int scale) {
+static void scaled_font_desc(char *out, size_t out_size, const char *font_desc, float scale) {
     char family[128] = "Sans";
     int size = POPUP_DEFAULT_FONT_SIZE;
     const char *last_space;
 
     if (!out || out_size == 0) return;
-    if (scale < 1) scale = 1;
+    if (!(scale > 0.0f)) scale = 1.0f;
 
     if (font_desc && font_desc[0]) {
         last_space = strrchr(font_desc, ' ');
@@ -200,17 +222,19 @@ static void scaled_font_desc(char *out, size_t out_size, const char *font_desc, 
         }
     }
 
-    snprintf(out, out_size, "%s %d", family, size * scale);
+    int px = (int)lroundf((float)size * scale);
+    if (px < 1) px = 1;
+    snprintf(out, out_size, "%s %d", family, px);
 }
 
-static int logical_px(float physical_px, int scale) {
-    if (scale < 1) scale = 1;
-    return (int)ceilf(physical_px / (float)scale);
+static int logical_px(float physical_px, float scale) {
+    if (!(scale > 0.0f)) scale = 1.0f;
+    return (int)ceilf(physical_px / scale);
 }
 
-static float logical_float(float physical_px, int scale) {
-    if (scale < 1) scale = 1;
-    return physical_px / (float)scale;
+static float logical_float(float physical_px, float scale) {
+    if (!(scale > 0.0f)) scale = 1.0f;
+    return physical_px / scale;
 }
 
 /* ── Geometry helpers ───────────────────────────────────────────────── */
@@ -348,13 +372,13 @@ static void compute_positions(PopupGeometry *g, const PopupConfig *cfg, int pre_
 PopupGeometry *popup_geometry_compute(PopupRenderCtx *pc,
                                       const TypioCandidateList *candidates,
                                       const char *preedit_text,
-                                      const char *status_text,
                                       const char *mode_label,
                                       const PopupConfig *cfg,
                                       const TypioCandidatePopupPalette *palette,
-                                      int scale) {
+                                      float scale) {
     if (!pc || !candidates || !cfg || !palette) return nullptr;
     if (candidates->count > POPUP_MAX_ROWS) return nullptr;
+    if (!(scale > 0.0f)) scale = 1.0f;
 
     PopupGeometry *g = (PopupGeometry *)calloc(1, sizeof(*g));
     if (!g) return nullptr;
@@ -367,15 +391,15 @@ PopupGeometry *popup_geometry_compute(PopupRenderCtx *pc,
     g->palette = &g->resolved_palette;
     g->palette_sig = typio_candidate_popup_palette_hash(palette);
     snprintf(g->preedit_text, sizeof(g->preedit_text), "%s", preedit_text ? preedit_text : "");
-    snprintf(g->status_text, sizeof(g->status_text), "%s", status_text ? status_text : "");
     snprintf(g->mode_label, sizeof(g->mode_label), "%s", mode_label ? mode_label : "");
 
-    /* Derive text colours from the palette. */
+    /* Derive text colours from the palette. The preedit zone is the same
+     * code path whether the source is an IME preedit string or a transient
+     * status indicator — both render in preedit_color. */
     TypioColor label_color   = {(float)palette->muted_r,          (float)palette->muted_g,          (float)palette->muted_b,          1.0f};
     TypioColor text_color    = {(float)palette->text_r,           (float)palette->text_g,           (float)palette->text_b,           1.0f};
     TypioColor sel_color     = {(float)palette->selection_text_r, (float)palette->selection_text_g, (float)palette->selection_text_b, 1.0f};
     TypioColor preedit_color = {(float)palette->preedit_r,        (float)palette->preedit_g,        (float)palette->preedit_b,        1.0f};
-    TypioColor status_color  = {(float)palette->status_r,         (float)palette->status_g,         (float)palette->status_b,         1.0f};
     TypioColor muted_color   = label_color;
     char scaled_font[96];
     char scaled_label_font[96];
@@ -422,18 +446,6 @@ PopupGeometry *popup_geometry_compute(PopupRenderCtx *pc,
         g->pre_w = logical_px(fw, scale); g->pre_h = logical_px(fh, scale);
     }
 
-    if (status_text && status_text[0]) {
-        g->status_layout = pc->engine->vtable->create_layout(pc->engine, status_text, scaled_aux_font, status_color);
-        float fw, fh;
-        pc->engine->vtable->get_metrics(g->status_layout, &fw, &fh);
-        g->status_w = logical_px(fw, scale);
-        g->status_h = logical_px(fh, scale);
-        /* Status occupies the same logical slot as preedit when no candidates
-         * are present, so reuse preedit metrics for layout positioning. */
-        g->pre_w = g->status_w;
-        g->pre_h = g->status_h;
-    }
-
     if (cfg->mode_indicator && mode_label && mode_label[0]) {
         g->mode_layout = pc->engine->vtable->create_layout(pc->engine, mode_label, scaled_aux_font, muted_color);
         float fw, fh;
@@ -441,9 +453,7 @@ PopupGeometry *popup_geometry_compute(PopupRenderCtx *pc,
         g->mode_w = logical_px(fw, scale); g->mode_h = logical_px(fh, scale);
     }
 
-    compute_positions(g, cfg,
-                      ((preedit_text && preedit_text[0]) ||
-                       (status_text && status_text[0])) ? 1 : 0);
+    compute_positions(g, cfg, (preedit_text && preedit_text[0]) ? 1 : 0);
     return g;
 }
 
@@ -501,7 +511,6 @@ PopupGeometry *popup_geometry_update_aux(PopupRenderCtx *pc,
 void popup_geometry_free(PopupGeometry *g) {
     if (!g) return;
     typio_flux_layout_free(g->preedit_layout);
-    typio_flux_layout_free(g->status_layout);
     typio_flux_layout_free(g->mode_layout);
     free(g);
 }
@@ -566,9 +575,7 @@ void popup_config_load(PopupConfig *cfg, TypioInstance *instance) {
     hex = typio_config_get_string(global_cfg, section ".selection", nullptr); \
     if (hex) { (ov)->has_selection = typio_parse_hex_color(hex, &(ov)->selection_r, &(ov)->selection_g, &(ov)->selection_b, &(ov)->selection_a); } \
     hex = typio_config_get_string(global_cfg, section ".selection_text", nullptr); \
-    if (hex) { double _a = 1.0; (ov)->has_sel_text = typio_parse_hex_color(hex, &(ov)->sel_text_r, &(ov)->sel_text_g, &(ov)->sel_text_b, &_a); } \
-    hex = typio_config_get_string(global_cfg, section ".status", nullptr); \
-    if (hex) { double _a = 1.0; (ov)->has_status = typio_parse_hex_color(hex, &(ov)->status_r, &(ov)->status_g, &(ov)->status_b, &_a); }
+    if (hex) { double _a = 1.0; (ov)->has_sel_text = typio_parse_hex_color(hex, &(ov)->sel_text_r, &(ov)->sel_text_g, &(ov)->sel_text_b, &_a); }
 
     LOAD_VARIANT("display.colors.light", &cfg->light_custom)
     LOAD_VARIANT("display.colors.dark", &cfg->dark_custom)
@@ -591,5 +598,4 @@ void popup_config_build_palette(const PopupConfig *cfg, TypioCandidatePopupTheme
     if (custom->has_preedit) { out->preedit_r = custom->preedit_r; out->preedit_g = custom->preedit_g; out->preedit_b = custom->preedit_b; }
     if (custom->has_selection) { out->selection_r = custom->selection_r; out->selection_g = custom->selection_g; out->selection_b = custom->selection_b; out->selection_a = custom->selection_a; }
     if (custom->has_sel_text) { out->selection_text_r = custom->sel_text_r; out->selection_text_g = custom->sel_text_g; out->selection_text_b = custom->sel_text_b; }
-    if (custom->has_status) { out->status_r = custom->status_r; out->status_g = custom->status_g; out->status_b = custom->status_b; }
 }

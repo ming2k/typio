@@ -27,7 +27,8 @@ typedef struct TypioCandidatePopupPalette {
     double preedit_r, preedit_g, preedit_b;
     double selection_r, selection_g, selection_b, selection_a;
     double selection_text_r, selection_text_g, selection_text_b;
-    double status_r, status_g, status_b;      /**< Phase 3: status indicator colour */
+    /* Voice / IME status indicators share the preedit colour and the
+     * preedit layout slot — there is no separate "status" treatment. */
 } TypioCandidatePopupPalette;
 
 typedef struct TypioCandidatePopupThemeCache {

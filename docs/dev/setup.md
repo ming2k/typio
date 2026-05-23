@@ -47,6 +47,21 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 cmake --build build
 ```
 
+For a full debug build with every optional feature turned on — useful before pushing changes that may touch the engine, voice, or control-panel paths:
+
+```bash
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+  -DBUILD_RIME_ENGINE=ON \
+  -DBUILD_MOZC_ENGINE=ON \
+  -DBUILD_WHISPER=ON \
+  -DBUILD_SHERPA_ONNX=ON \
+  -DBUILD_CONTROL_PANEL=ON \
+  -DENABLE_SYSTRAY=ON
+cmake --build build
+```
+
 ## Run tests
 
 ```bash
@@ -91,10 +106,6 @@ For plugin engine work, point the daemon at the build-tree engine directory:
 
 See [project-layout.md](project-layout.md) for a tour of the source tree.
 
-## Before submitting a PR
+## Submitting changes
 
-- [ ] All tests pass
-- [ ] Build succeeds from a clean tree
-- [ ] Sanitizer builds pass if the change touches memory or lifetime boundaries
-- [ ] `CHANGELOG.md` updated
-- [ ] If architectural change: ADR added
+See the [Pull Request Checklist](../../CONTRIBUTING.md#pull-request-checklist) in `CONTRIBUTING.md`.

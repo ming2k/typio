@@ -11,37 +11,26 @@ Typio's voice input is a secondary pipeline that runs alongside the active keybo
 
 ## Component Layers
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  typio daemon (main thread, Wayland event loop)             │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────┐  │
-│  │ key_route   │    │ engine_mgr  │    │ voice_service   │  │
-│  │             │───→│             │───→│ (state machine) │  │
-│  └─────────────┘    └─────────────┘    └─────────────────┘  │
-│                                               │             │
-│                    eventfd notification ←─────┘             │
-│                    (inference thread completion)            │
-└─────────────────────────────────────────────────────────────┘
-         │                              │
-         ▼                              ▼
-┌─────────────────┐            ┌─────────────────┐
-│ PipeWire capture│            │ voice_engine_*  │
-│ (audio callback)│            │ (engine adapter)│
-│                 │            │ TypioVoiceEngine│
-│                 │            │ Ops.process_audio│
-└─────────────────┘            └─────────────────┘
-                                        │
-                                        ▼
-                              ┌─────────────────┐
-                              │  Backend proxy  │
-                              │ (refcount swap) │
-                              └─────────────────┘
-                                        │
-                    ┌───────────────────┼───────────────────┐
-                    ▼                   ▼                   ▼
-           ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-           │ whisper.cpp │    │ sherpa-onnx │    │   (future)  │
-           └─────────────┘    └─────────────┘    └─────────────┘
+```mermaid
+flowchart TD
+    subgraph Daemon["typio daemon (main thread, Wayland event loop)"]
+        direction LR
+        KR[key_route] --> EM[engine_mgr] --> VS[voice_service<br/>state machine]
+        VS -. eventfd notification<br/>inference thread completion .-> VS
+    end
+    PW[PipeWire capture<br/>audio callback]
+    VE[voice_engine_*<br/>engine adapter<br/>TypioVoiceEngineOps.process_audio]
+    BP[Backend proxy<br/>refcount swap]
+    Whisper[whisper.cpp]
+    Sherpa[sherpa-onnx]
+    Future[future]
+
+    Daemon --> PW
+    Daemon --> VE
+    VE --> BP
+    BP --> Whisper
+    BP --> Sherpa
+    BP --> Future
 ```
 
 ## State Machine
@@ -60,20 +49,15 @@ The main thread never blocks on inference. When `eventfd` becomes readable, `voi
 
 Both Whisper and Sherpa-ONNX adapters use the same proxy design. The proxy is internal to the engine; the voice service sees only the `TypioVoiceEngineOps.process_audio` callback.
 
-```
-Voice service (inference thread)
-    │
-    ▼
-┌─────────────────┐
-│  engine->voice  │
-│  process_audio()│
-└─────────────────┘
-    │
-    ▼
-┌─────────────┐    refcount    ┌─────────────┐
-│   Proxy     │◄───────────────│   Impl      │
-│ (mutex)     │                │ (backend)   │
-└─────────────┘                └─────────────┘
+```mermaid
+flowchart TD
+    VS[Voice service<br/>inference thread]
+    EV["engine->voice<br/>process_audio()"]
+    P[Proxy<br/>mutex]
+    I[Impl<br/>backend]
+
+    VS --> EV --> P
+    P <-->|refcount| I
 ```
 
 - The **proxy** lives inside the engine's `user_data` and reference-counts the real backend.

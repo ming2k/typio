@@ -4,36 +4,32 @@
 
 Typio integrates librime via a **plugin engine**. The Rime engine lives in `src/engines/rime/`, compiles to a shared library `engines/rime.so`, and is loaded at runtime by Typio's engine manager.
 
-```
-┌─────────────────────────────────────┐
-│  Typio Daemon (Wayland IME)         │
-│  ├─ typio-core (engine manager)     │
-│  │   └─ loads engines/rime.so       │
-│  └─ Wayland protocol frontend       │
-└──────────────┬──────────────────────┘
-               │ TypioEngineBaseOps + TypioKeyboardEngineOps API
-               ▼
-┌─────────────────────────────────────┐
-│  Rime Engine Plugin                 │
-│  ├─ rime_engine.c   (entry point)   │
-│  ├─ rime_session.c  (session mgmt)  │
-│  ├─ rime_sync.c     (context sync)  │
-│  ├─ rime_deploy.c   (deployment)    │
-│  ├─ rime_mode.c     (mode switching)│
-│  ├─ rime_key.c      (key handling)  │
-│  ├─ rime_config.c   (configuration) │
-│  ├─ path_expand.c   (path helpers)  │
-│  └─ linked against librime.so       │
-└──────────────┬──────────────────────┘
-               │ Rime C API (rime_api.h)
-               ▼
-┌─────────────────────────────────────┐
-│  librime                            │
-│  ├─ schema management               │
-│  ├─ session management              │
-│  ├─ key processing (process_key)    │
-│  └─ candidate / commit handling     │
-└─────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Daemon["Typio Daemon (Wayland IME)"]
+        Core["typio-core (engine manager)<br/>loads engines/rime.so"]
+        Front[Wayland protocol frontend]
+    end
+    subgraph Plugin["Rime Engine Plugin"]
+        Entry["rime_engine.c (entry point)"]
+        Session["rime_session.c (session mgmt)"]
+        Sync["rime_sync.c (context sync)"]
+        Deploy["rime_deploy.c (deployment)"]
+        Mode["rime_mode.c (mode switching)"]
+        Key["rime_key.c (key handling)"]
+        Config["rime_config.c (configuration)"]
+        Path["path_expand.c (path helpers)"]
+        Lib["linked against librime.so"]
+    end
+    subgraph Librime["librime"]
+        Schema[schema management]
+        SMgr[session management]
+        PK["key processing (process_key)"]
+        Cand[candidate / commit handling]
+    end
+
+    Daemon -->|"TypioEngineBaseOps +<br/>TypioKeyboardEngineOps API"| Plugin
+    Plugin -->|"Rime C API (rime_api.h)"| Librime
 ```
 
 ## 2. Core Data Structures

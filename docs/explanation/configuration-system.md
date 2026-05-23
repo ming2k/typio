@@ -6,14 +6,11 @@ All configuration fields, their types, defaults, and UI metadata are defined onc
 
 ## Single Source Of Truth
 
-```text
-                          config_schema.c
-                        (static field table)
-                               |
-            +------------------+------------------+
-            |                  |                  |
-     apply_defaults          UI metadata
-     (daemon init)         (typio-control)
+```mermaid
+flowchart TD
+    Schema[config_schema.c<br/>static field table]
+    Schema --> Defaults[apply_defaults<br/>daemon init]
+    Schema --> UI[UI metadata<br/>typio-control]
 ```
 
 The schema table is the only place where a new configuration field needs to be declared. Adding a field means adding one `TypioConfigField` entry; no other source file needs a parallel definition.

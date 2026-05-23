@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.7] - 2026-05-24
+
+### Changed
+
+- **Candidate popup HiDPI: fractional-scale + viewporter on the present
+  path.** The popup now binds `wp_fractional_scale_v1` and `wp_viewporter`
+  globals (vendored into `protocols/`); `wl_compositor` upgraded from v4 to
+  v6 to unlock `wl_surface.preferred_buffer_scale`. The scale signal is
+  resolved in priority order: fractional `preferred_scale` (24.8 fixed) →
+  v6 `preferred_buffer_scale` (integer) → `wl_output.enter` (legacy) →
+  `max(frontend->outputs[].scale)` initial guess → 1.0. Eliminates the
+  "first frame at 1× then re-render at 2×" round-trip that produced the
+  visible blur on popup show. `PopupGeometry::scale` is now `float`
+  throughout the layout / paint / classify_delta paths.
+- **Frame-retire ring replaces `vkDeviceWaitIdle` on the per-keystroke
+  path.** A 3-slot ring (covers `frames_in_flight=2` + the in-flight
+  frame) parks `PopupGeometry` and LRU-evicted `TypioTextLayout`
+  resources; a slot is drained on the third subsequent successful
+  `flux_frame_present`. Removes the device-wide fence the IME event loop
+  previously hit on every AUX / CONTENT / STYLE delta.
+- **`PopupRenderCtx` gains an eviction callback** (`evict_cb` /
+  `evict_user`) so LRU eviction of a layout whose `flux_image` is still
+  GPU-referenced is routed through the retire ring instead of an eager
+  `free_layout` (latent use-after-free unmasked by removing the
+  pre-existing `wait_idle`).
+- **Voice "[Recording...]" indicator unified into the preedit code
+  path.** The separate `status_r/g/b` palette field, `g->status_layout`
+  slot, `status_text` parameters in `popup_geometry_compute` /
+  `popup_render` / `classify_delta`, and `display.colors.{dark,light}.status`
+  config override are all removed. The persistent `popup->status_text`
+  field is now surfaced through `preedit_text` in `popup_update_content`,
+  so voice and IME preedit share palette colour, layout slot, delta
+  classification, and paint path. Voice status transitions now classify
+  as `DELTA_AUX` (lighter rebuild) instead of `DELTA_CONTENT`.
+
+### Removed
+
+- Dead helper `typio_flux_color()` (`flux_renderer.{c,h}`) — unused, and
+  the implementation called the non-premultiplied `flux_color_rgba` which
+  would have been incorrect against flux's premultiplied canvas.
+
+### Fixed
+
+- Popup blurry on first show under HiDPI / fractional-scale compositors.
+- Per-keystroke input latency caused by device-wide GPU fences on every
+  candidate / aux / style delta.
+- Voice "[Recording...]" indicator rendered in a non-themed orange-red
+  that did not match the popup's palette.
+
 ## [3.2.6] - 2026-05-23
 
 ### Changed

@@ -3,6 +3,7 @@
 Understanding-oriented documents that explain *why* Typio works the way it does. These are discursive and may include opinions and trade-offs.
 
 - [Architecture Overview](architecture-overview.md) — High-level structure, components, data flow, and design rules
+- [Composition Lifecycle](composition-lifecycle.md) — Abstract key-to-commit pipeline: preedit, candidates, the four `process_key` outcomes, and focus/reset semantics
 - [State Management](state-management.md) — Ownership model for persisted config, runtime state, staged edits, and view state
 - [Timing Model](timing-model.md) — Event ordering, lifecycle phases, keyboard safety, and virtual-keyboard state machine
 - [Control Surfaces](control-surfaces.md) — Design rules for `typio-control`, tray menu, and future UI integrations

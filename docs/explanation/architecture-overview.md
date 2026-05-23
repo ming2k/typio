@@ -4,20 +4,26 @@
 
 Typio is split into a small core library and a Wayland-facing daemon. The daemon directly implements the input-method side of the Wayland text input stack and relies on the compositor/application `text-input-v3` path for end-to-end text entry.
 
-```text
-Wayland compositor
-        |
-        v
-   typio (daemon) ---- D-Bus (org.typio.InputMethod1)
-        |                       |
-        v                  +----+----+
-   typio-core              |         |
-        |            typio (client) typio-control
-   +----+------------------------------------------+
-   |                                               |
-built-in basic engine                 external plugin engines
-                                          |
-                                       rime plugin
+```mermaid
+flowchart TD
+    WC[Wayland compositor]
+    Daemon[typio daemon]
+    DBus[("D-Bus<br/>org.typio.InputMethod1")]
+    Client[typio client]
+    Control[typio-control]
+    Core[typio-core]
+    Basic[built-in basic engine]
+    Plugins[external plugin engines]
+    Rime[rime plugin]
+
+    WC --> Daemon
+    Daemon <--> DBus
+    DBus --- Client
+    DBus --- Control
+    Daemon --> Core
+    Core --> Basic
+    Core --> Plugins
+    Plugins --> Rime
 ```
 
 ## Protocol Stack

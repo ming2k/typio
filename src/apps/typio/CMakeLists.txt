@@ -30,6 +30,16 @@ if(HAVE_WAYLAND)
         GENERATED_SOURCES VIRTUAL_KEYBOARD_PROTOCOL_SOURCES
     )
 
+    wayland_generate_protocol(
+        PROTOCOL_XML ${CMAKE_SOURCE_DIR}/protocols/fractional-scale-v1.xml
+        GENERATED_SOURCES FRACTIONAL_SCALE_PROTOCOL_SOURCES
+    )
+
+    wayland_generate_protocol(
+        PROTOCOL_XML ${CMAKE_SOURCE_DIR}/protocols/viewporter.xml
+        GENERATED_SOURCES VIEWPORTER_PROTOCOL_SOURCES
+    )
+
     list(APPEND TYPIO_DAEMON_SOURCES
         wayland/boundary_bridge.c
         wayland/candidate_guard.c
@@ -68,12 +78,16 @@ if(HAVE_WAYLAND)
         wayland/wl_trace.c
         ${INPUT_METHOD_PROTOCOL_SOURCES}
         ${VIRTUAL_KEYBOARD_PROTOCOL_SOURCES}
+        ${FRACTIONAL_SCALE_PROTOCOL_SOURCES}
+        ${VIEWPORTER_PROTOCOL_SOURCES}
     )
 
     add_custom_target(typio-protocols
         DEPENDS
             ${INPUT_METHOD_PROTOCOL_SOURCES}
             ${VIRTUAL_KEYBOARD_PROTOCOL_SOURCES}
+            ${FRACTIONAL_SCALE_PROTOCOL_SOURCES}
+            ${VIEWPORTER_PROTOCOL_SOURCES}
     )
 
     list(APPEND TYPIO_DAEMON_INCLUDE_DIRS

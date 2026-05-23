@@ -437,6 +437,12 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
     if (frontend->shm) {
         wl_shm_destroy(frontend->shm);
     }
+    if (frontend->viewporter) {
+        wp_viewporter_destroy(frontend->viewporter);
+    }
+    if (frontend->fractional_scale_manager) {
+        wp_fractional_scale_manager_v1_destroy(frontend->fractional_scale_manager);
+    }
     if (frontend->compositor) {
         wl_compositor_destroy(frontend->compositor);
     }
@@ -477,12 +483,23 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
                                                 &zwp_input_method_manager_v2_interface, 1);
         typio_log(TYPIO_LOG_INFO, "Bound zwp_input_method_manager_v2");
     } else if (strcmp(interface, wl_compositor_interface.name) == 0) {
+        /* v6 enables wl_surface.preferred_buffer_scale (used as an
+         * integer fallback when wp_fractional_scale_v1 is absent). */
+        uint32_t want = version >= 6 ? 6u : version;
         frontend->compositor = wl_registry_bind(registry, name,
-                                                &wl_compositor_interface, 4);
-        typio_log(TYPIO_LOG_INFO, "Bound wl_compositor");
+                                                &wl_compositor_interface, want);
+        typio_log(TYPIO_LOG_INFO, "Bound wl_compositor v%u", want);
     } else if (strcmp(interface, wl_shm_interface.name) == 0) {
         frontend->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
         typio_log(TYPIO_LOG_INFO, "Bound wl_shm");
+    } else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0) {
+        frontend->fractional_scale_manager = wl_registry_bind(
+            registry, name, &wp_fractional_scale_manager_v1_interface, 1);
+        typio_log(TYPIO_LOG_INFO, "Bound wp_fractional_scale_manager_v1");
+    } else if (strcmp(interface, wp_viewporter_interface.name) == 0) {
+        frontend->viewporter = wl_registry_bind(
+            registry, name, &wp_viewporter_interface, 1);
+        typio_log(TYPIO_LOG_INFO, "Bound wp_viewporter");
     } else if (strcmp(interface, zwp_virtual_keyboard_manager_v1_interface.name) == 0) {
         frontend->vk_manager = wl_registry_bind(registry, name,
                                                 &zwp_virtual_keyboard_manager_v1_interface, 1);

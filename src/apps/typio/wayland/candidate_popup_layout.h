@@ -45,7 +45,6 @@ typedef struct {
     bool   has_preedit;    double preedit_r, preedit_g, preedit_b;
     bool   has_selection;  double selection_r, selection_g, selection_b, selection_a;
     bool   has_sel_text;   double sel_text_r, sel_text_g, sel_text_b;
-    bool   has_status;     double status_r, status_g, status_b;
 } PopupThemeVariant;
 
 typedef struct {
@@ -91,15 +90,12 @@ typedef struct {
     PopupRow rows[POPUP_MAX_ROWS];
     size_t   row_count;
 
-    /* Preedit — owned by this geometry (may be NULL) */
+    /* Preedit zone — shows either an IME preedit string or a transient
+     * status message (e.g. "[Recording...]"); both use the same palette
+     * colour and the same layout slot. May be NULL. */
     TypioTextLayout *preedit_layout;
     float        pre_x, pre_y;   /* subpixel-accurate */
     int          pre_w, pre_h;
-
-    /* Status indicator — owned by this geometry (may be NULL, Phase 3) */
-    TypioTextLayout *status_layout;
-    float        status_x, status_y; /* subpixel-accurate */
-    int          status_w, status_h;
 
     /* Mode label — owned by this geometry (may be NULL) */
     TypioTextLayout *mode_layout;
@@ -107,13 +103,16 @@ typedef struct {
     int          mode_w, mode_h;
     int          mode_divider_y; /* -1 if no divider */
 
-    int popup_w, popup_h;
-    int scale;
+    int popup_w, popup_h;   /* logical-pixel dimensions */
+    /* Logical-to-physical pixel ratio. 1.0f on unscaled, integer for
+     * legacy integer scale (e.g. 2.0f), arbitrary for fractional scale
+     * (e.g. 1.25f). Drives font scaling, ink metrics, and the swapchain
+     * physical extent. */
+    float scale;
 
     uint64_t    content_sig;
     uint64_t    palette_sig;
     char        preedit_text[256];
-    char        status_text[256];    /* Phase 3 */
     char        mode_label[128];
     PopupConfig config;
 
@@ -144,26 +143,37 @@ typedef struct {
 
 /* ── Persistent text engine + LRU cache ───────────────────────────── */
 
-typedef struct {
+/* When the LRU evicts an entry whose layout/label_layout may still be
+ * referenced by a geometry parked in the popup's retire ring (or by an
+ * in-flight GPU frame), the popup MUST take ownership of the freeing —
+ * an immediate free here is a use-after-free. PopupRenderCtx defers to
+ * this callback when set; if it is NULL the layout is freed eagerly. */
+typedef struct PopupRenderCtx PopupRenderCtx;
+typedef void (*PopupLayoutEvictFn)(void *user, TypioTextLayout *layout);
+
+struct PopupRenderCtx {
     TypioTextEngine  *engine;
     PopupLayoutEntry  entries[POPUP_LAYOUT_CACHE_CAP];
     uint32_t          tick;
-} PopupRenderCtx;
+    PopupLayoutEvictFn evict_cb;   /* NULL ⇒ free eagerly */
+    void              *evict_user;
+};
 
 /* ── Functions ──────────────────────────────────────────────────────── */
 
 void popup_render_ctx_init(PopupRenderCtx *pc);
+void popup_render_ctx_set_evict(PopupRenderCtx *pc,
+                                PopupLayoutEvictFn cb, void *user);
 void popup_render_ctx_free(PopupRenderCtx *pc);
 void popup_render_ctx_invalidate(PopupRenderCtx *pc);
 
 PopupGeometry *popup_geometry_compute(PopupRenderCtx *pc,
                                       const TypioCandidateList *candidates,
                                       const char *preedit_text,
-                                      const char *status_text,
                                       const char *mode_label,
                                       const PopupConfig *config,
                                       const TypioCandidatePopupPalette *palette,
-                                      int scale);
+                                      float scale);
 
 PopupGeometry *popup_geometry_update_aux(PopupRenderCtx *pc,
                                          const PopupGeometry *base,

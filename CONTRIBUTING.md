@@ -30,6 +30,7 @@ ctest --test-dir build --output-on-failure
 
 - [ ] Build succeeds from a clean tree
 - [ ] `ctest --test-dir build --output-on-failure` passes
+- [ ] Sanitizer builds pass if the change touches memory or lifetime boundaries
 - [ ] User-facing behavior is documented
 - [ ] Any new engine or runtime assumptions are written down
 - [ ] `CHANGELOG.md` is updated
