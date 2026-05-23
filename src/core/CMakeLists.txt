@@ -35,9 +35,9 @@ add_library(typio-core
     runtime/build_info.c
     runtime/instance.c
     runtime/engine.c
+    runtime/engine_helpers.c
     runtime/engine_label.c
     runtime/engine_manager.c
-    runtime/input_context.c
     runtime/event.c
     utils/arena.c
     utils/list.c
