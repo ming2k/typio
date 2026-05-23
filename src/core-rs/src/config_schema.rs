@@ -52,6 +52,7 @@ enum SchemaDefault {
     String(&'static str),
     Int(c_int),
     Bool(bool),
+    #[allow(dead_code)]
     Float(c_double),
 }
 

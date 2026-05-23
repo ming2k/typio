@@ -39,7 +39,6 @@ add_library(typio-core
     runtime/engine_manager.c
     runtime/input_context.c
     runtime/event.c
-    runtime/rime_schema_list.c
     utils/arena.c
     utils/list.c
     utils/string.c
@@ -57,7 +56,7 @@ target_include_directories(typio-core PUBLIC
 
 target_link_libraries(typio-core PRIVATE
     ${CMAKE_DL_LIBS}
-    typio_core_rs
+    -Wl,--whole-archive typio_core_rs -Wl,--no-whole-archive
     pthread
     dl
 )
