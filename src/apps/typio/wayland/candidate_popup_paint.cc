@@ -96,7 +96,10 @@ void popup_record(const PopupPaintTarget *target,
 
     record_border(cv, geom, s);
 
-    if (geom->preedit_layout) {
+    if (geom->status_layout) {
+        typio_flux_fill_layout(cv, ar, geom->status_layout,
+                               geom->pre_x * s, geom->pre_y * s);
+    } else if (geom->preedit_layout) {
         typio_flux_fill_layout(cv, ar, geom->preedit_layout,
                                geom->pre_x * s, geom->pre_y * s);
     }

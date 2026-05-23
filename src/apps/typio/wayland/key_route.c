@@ -13,6 +13,7 @@
 #include "shortcut_config.h"
 #include "shortcut_chord.h"
 #include "startup_guard.h"
+#include "text_ui_backend.h"
 #include "vk_bridge.h"
 #include "wl_trace.h"
 #include "xkb_modifiers.h"
@@ -423,8 +424,8 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
         if (typio_voice_service_is_available(frontend->voice)) {
             typio_voice_service_start(frontend->voice);
             key_set_state(frontend, key, TYPIO_KEY_TRACK_VOICE_PTT);
-            typio_wl_set_preedit(frontend, "[Recording...]", 0, 0);
-            typio_wl_commit(frontend);
+            typio_wl_text_ui_backend_show_status(frontend->text_ui_backend,
+                                                  "[Recording...]");
             decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
                                           TYPIO_WL_KEY_REASON_VOICE_PTT);
             key_route_trace_decision(keyboard, "press-ptt", key, keysym,
@@ -438,8 +439,7 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
             snprintf(hint, sizeof(hint), "[Voice unavailable: %s]",
                      reason ? reason : "unknown");
             key_set_state(frontend, key, TYPIO_KEY_TRACK_VOICE_PTT_UNAVAIL);
-            typio_wl_set_preedit(frontend, hint, 0, 0);
-            typio_wl_commit(frontend);
+            typio_wl_text_ui_backend_show_status(frontend->text_ui_backend, hint);
             decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
                                           TYPIO_WL_KEY_REASON_VOICE_PTT_UNAVAILABLE);
             key_route_trace_decision(keyboard, "press-ptt-unavail", key, keysym,
@@ -603,8 +603,8 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
         key_route_trace_decision(keyboard, "release-ptt", key, keysym,
                                  modifiers, unicode, kstate, decision, "stop");
         typio_voice_service_stop(frontend->voice);
-        typio_wl_set_preedit(frontend, "[Processing...]", 0, 0);
-        typio_wl_commit(frontend);
+        typio_wl_text_ui_backend_show_status(frontend->text_ui_backend,
+                                              "[Processing...]");
         key_clear_tracking(frontend, key);
         typio_log(TYPIO_LOG_DEBUG, "Voice PTT released: keycode=%u", key);
         return;
@@ -625,8 +625,7 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
         key_route_trace_decision(keyboard, "release-ptt-unavail", key, keysym,
                                  modifiers, unicode, kstate, decision,
                                  "release");
-        typio_wl_set_preedit(frontend, "", 0, 0);
-        typio_wl_commit(frontend);
+        typio_wl_text_ui_backend_hide_status(frontend->text_ui_backend);
         key_clear_tracking(frontend, key);
         typio_log(TYPIO_LOG_DEBUG,
                   "Voice PTT unavail released: keycode=%u", key);

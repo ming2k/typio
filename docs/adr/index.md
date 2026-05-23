@@ -8,6 +8,8 @@ ADRs are append-only records of significant design decisions. Once accepted, the
 | [ADR-0002](0002-plugin-engine-abi-dual-category.md) | Plugin engine ABI with dual-category (keyboard/voice) slots | Accepted |
 | [ADR-0003](0003-keyboard-grab-lifecycle.md) | Keyboard grab lifecycle | Accepted |
 | [ADR-0004](0004-event-loop-scheduling-and-watchdog.md) | Event-loop scheduling and watchdog design | Accepted |
+| [ADR-0005](0005-unified-panel-backend.md) | Unified panel backend for candidate and status UI | Accepted |
+| [ADR-0006](0006-resilient-candidate-popup-present.md) | Resilient candidate-popup GPU present | Accepted |
 
 ## Looking for something else?
 

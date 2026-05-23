@@ -409,6 +409,20 @@ TEST(basic_engine_compose_mode_keeps_engine_in_path) {
     ASSERT(g_frontend.key_states[30] == TYPIO_KEY_TRACK_IDLE);
 }
 
+/* Stubs for unified panel backend (ADR-0005) — these are not exercised by
+ * key-route unit tests but must be present for linkage because key_route.c
+ * now calls them instead of injecting status into preedit strings. */
+bool typio_wl_text_ui_backend_show_status(TypioWlTextUiBackend *backend,
+                                          const char *text) {
+    (void)backend;
+    (void)text;
+    return true;
+}
+
+void typio_wl_text_ui_backend_hide_status(TypioWlTextUiBackend *backend) {
+    (void)backend;
+}
+
 int main(void) {
     printf("Running key route tests:\n");
     run_test_basic_engine_bypasses_for_printable_text();

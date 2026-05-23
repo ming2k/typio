@@ -4,24 +4,101 @@ This document covers the rendering pipeline for the candidate popup (preedit + c
 
 ---
 
-## Pixel format: CPU buffer and WL_SHM_FORMAT_ARGB8888
+## GPU present pipeline
 
-The popup is painted directly into a CPU-mapped Wayland SHM buffer; there is no GPU offscreen surface or pixel readback step.
+The popup presents a flux (Vulkan) swapchain **directly** onto its
+`zwp_input_popup_surface_v2` `wl_surface`. There is no SHM buffer pool, no CPU
+pixel buffer, and no pixel readback — the swapchain owns frame pacing and
+buffering.
 
-`candidate_popup_paint.cc` fills pixels as `uint32_t` values written as `0xAARRGGBB`. On a little-endian machine this lays out in memory as `B G R A` per pixel, which is exactly what `WL_SHM_FORMAT_ARGB8888` expects.
+`candidate_popup.cc` drives the pipeline:
 
-```c
-// candidate_popup_paint.cc — pack_argb helper
-return (0xffu << 24) | (u8(r) << 16) | (u8(g) << 8) | u8(b);
+- `ensure_fx_surface()` creates the `VkSurfaceKHR` (`vkCreateWaylandSurfaceKHR`),
+  the `flux_surface` (vsync/FIFO), a `flux_canvas`, and a small arena; it resizes
+  the swapchain when the popup's physical extent (logical × scale) changes.
+- `popup_present()` records one frame: `flux_surface_begin_frame` →
+  `flux_canvas_begin` (clear to the premultiplied background colour) →
+  `popup_record` (paint) → `flux_canvas_end` → `flux_frame_submit` →
+  `flux_frame_present`.
+- `wl_surface_set_buffer_scale` is set from `geom->scale` so a HiDPI popup shows
+  at the correct logical size and stays crisp.
+
+```mermaid
+flowchart LR
+    A[candidate update] --> B["ensure_fx_surface<br/>create / resize swapchain"]
+    B --> C[flux_surface_begin_frame]
+    C --> D["flux_canvas_begin<br/>clear = bg colour"]
+    D --> E["popup_record<br/>rects + glyph images"]
+    E --> F[flux_canvas_end]
+    F --> G[flux_frame_submit]
+    G --> H[flux_frame_present]
 ```
 
-```c
-// candidate_popup_buffer.c
-buffer->buffer = wl_shm_pool_create_buffer(pool, 0, width, height, stride,
-                                           WL_SHM_FORMAT_ARGB8888);
+Colours are **premultiplied RGBA**. `popup_bg_color` uses
+`flux_color_rgba_premul`, and each text layout is rasterised once into a
+premultiplied-RGBA `flux_image` (`FLUX_FORMAT_RGBA8_UNORM`) by
+`build_layout_image` in `flux_renderer.c`, then composited with flux's default
+SRC_OVER. There is no `0xAARRGGBB`/`ARGB8888` byte-order concern on this path —
+flux and the WSI handle the swapchain format.
+
+**Historical note:** earlier revisions painted into a CPU-mapped SHM buffer
+(`WL_SHM_FORMAT_ARGB8888`), and before that flux rendered to a GPU offscreen
+surface and read pixels back via `flux_surface_read_pixels` (which forced an
+`ABGR8888` workaround). Both readback/SHM paths are gone; the popup now presents
+its swapchain image directly.
+
+---
+
+## Present pacing and stall recovery (lock / suspend)
+
+`popup_present` runs synchronously on the single-threaded event loop (the
+`POPUP_UPDATE` stage). To keep that loop responsive when a compositor stops
+releasing swapchain images — e.g. while the display is asleep or the surface is
+occluded behind a lock screen — the acquire/present is **bounded and
+self-recovering**. See [ADR-0006](../adr/0006-resilient-candidate-popup-present.md)
+for the rationale; the mechanics:
+
+- `flux_surface_begin_frame` is called with `POPUP_PRESENT_TIMEOUT_NS` (~32 ms)
+  instead of an infinite wait. The healthy on-demand path acquires instantly, so
+  this budget is only consumed during a real stall.
+- On `FLUX_ERROR_TIMEOUT`, `popup_present` returns `POPUP_PRESENT_RETRY`:
+  `selected`/`visible` are **not** updated and `present_retry` is set, which
+  re-arms `popup_update_pending` (via
+  `typio_wl_candidate_popup_present_retry_pending`) so the loop re-presents the
+  same state until the compositor resumes and the visible highlight catches up.
+- After `POPUP_PRESENT_RECOVER_STREAK` consecutive timeouts the swapchain is
+  rebuilt with `flux_surface_resize` (to its current extent), discarding the
+  per-frame semaphores left dangling by the stalled acquires.
+- The same `flux_surface_resize` recovery is used for `FLUX_ERROR_SURFACE_LOST`
+  (driver-reported `OUT_OF_DATE`/`SUBOPTIMAL`).
+
+This is why a stalled present never freezes key handling: input events queue on
+the Wayland fd while a frame is skipped/retried, so navigation stays correct even
+while the on-screen highlight is briefly behind.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User keys
+    participant Q as Wayland fd queue
+    participant L as IME event loop
+    participant P as flux present
+    Note over P: compositor not releasing images<br/>(display asleep / occluded after lock or suspend)
+    U->>Q: Down, Down, Down
+    L->>P: popup_present → begin_frame (≤ ~32 ms)
+    P-->>L: FLUX_ERROR_TIMEOUT
+    Note over L: skip frame, re-arm popup_update_pending<br/>(loop is NOT blocked)
+    Q->>L: deliver queued key events
+    L->>L: engine advances selected correctly
+    Note over L,P: on-screen highlight lags,<br/>committed word is correct
+    Note over P: compositor resumes releasing images
+    L->>P: popup_present (retry)
+    P-->>L: FLUX_OK — highlight catches up
 ```
 
-**Historical note:** flux v0.2.3 rendered into a GPU offscreen surface and read back via `flux_surface_read_pixels`, which always returned RGBA8 bytes — swapping R and B relative to what `WL_SHM_FORMAT_ARGB8888` expects. The workaround was `WL_SHM_FORMAT_ABGR8888`. The current CPU path writes the correct byte order directly, so `ARGB8888` is used without any swap.
+> Requires the matching flux change that maps an acquire `VK_TIMEOUT` to
+> `FLUX_ERROR_TIMEOUT`. flux is built from a local sibling checkout; rebuild it
+> (`ninja -C build/_flux_build install`) before rebuilding typio.
 
 ---
 
@@ -102,7 +179,7 @@ Call this **before** `FT_Set_Pixel_Sizes`.
 
 If you omit weight from the cache key, Medium (500) and SemiBold (600) would share the same `FT_Face` even after the variable-font fix above, because the face object itself is mutated by `FT_Set_Var_Design_Coordinates`.
 
-The cached `FT_Face` is borrowed by `TypioTextLayout` and used at draw time: `typio_flux_draw_layout` calls `FT_Load_Glyph` per glyph on each render call. Layouts must not outlive their owning font cache entry; `popup_render_ctx_invalidate` frees all layouts before the cache can be evicted.
+The cached `FT_Face` is borrowed by `TypioTextLayout`. On a layout's **first** draw, `build_layout_image` calls `FT_Load_Glyph` per glyph once to rasterise the whole layout into a premultiplied-RGBA `flux_image`, which is then cached on the layout and reused for its lifetime (`typio_flux_fill_layout` just draws the cached image on subsequent calls). So the borrowed `FT_Face` is only touched during that one-time rasterisation, not on every render. Layouts must still not outlive their owning font cache entry; `popup_render_ctx_invalidate` frees all layouts before the cache can be evicted.
 
 ---
 

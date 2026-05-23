@@ -337,9 +337,14 @@ void typio_wl_candidate_popup_destroy(TypioWlCandidatePopup *candidate_popup);
 bool typio_wl_candidate_popup_update(TypioWlTextUiBackend *backend, TypioInputContext *ctx);
 void typio_wl_candidate_popup_hide(TypioWlTextUiBackend *backend);
 bool typio_wl_candidate_popup_is_available(TypioWlTextUiBackend *backend);
+bool typio_wl_candidate_popup_present_retry_pending(TypioWlTextUiBackend *backend);
 void typio_wl_candidate_popup_invalidate_config(TypioWlTextUiBackend *backend);
 void typio_wl_candidate_popup_handle_output_change(TypioWlTextUiBackend *backend,
                                                    struct wl_output *output);
+bool typio_wl_candidate_popup_show_status(TypioWlTextUiBackend *backend,
+                                          const char *text);
+bool typio_wl_candidate_popup_update_content(TypioWlTextUiBackend *backend,
+                                             const TypioPanelContent *content);
 
 /* Commit helpers */
 void typio_wl_commit_string(TypioWlFrontend *frontend, const char *text);

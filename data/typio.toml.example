@@ -38,6 +38,7 @@ font_size = 11
 # preedit        = "#495057"
 # selection      = "#339af0f5"
 # selection_text = "#ffffff"
+# status         = "#ef4444"   # voice recording / processing indicator
 
 # [display.colors.dark]
 # background     = "#141414"
@@ -47,6 +48,7 @@ font_size = 11
 # preedit        = "#aaaaaa"
 # selection      = "#1971c2f5"
 # selection_text = "#ffffff"
+# status         = "#ef4444"   # voice recording / processing indicator
 
 [engines.basic]
 # "forward" sends printable keys through virtual keyboard forwarding.

@@ -161,6 +161,8 @@ The Wayland frontend uses one poll loop for Wayland and auxiliary runtime source
 
 Rules:
 
+- the candidate popup is rendered once per loop iteration from a coalesced `popup_update_pending` flag, never inline in the input callback
+- the popup's GPU present runs on the loop thread and must stay bounded: `flux_surface_begin_frame` uses a finite timeout so a compositor that stops releasing swapchain images (display asleep / surface occluded after a lock or suspend) cannot block the loop. A timed-out present skips the frame and re-arms `popup_update_pending` instead of waiting; repeated stalls recreate the swapchain. See [ADR-0006](../adr/0006-resilient-candidate-popup-present.md)
 - while the virtual keyboard is in `needs_keymap`, the poll timeout must not sleep past the current keymap deadline
 - status and tray D-Bus dispatch must be bounded per tick so a busy bus cannot starve Wayland dispatch, voice completion, repeat, or config reload
 - config watch events schedule a debounced reload instead of reloading immediately for each inotify event

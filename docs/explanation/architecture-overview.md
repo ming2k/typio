@@ -270,7 +270,9 @@ Text measurement and `TypioTextLayout` objects are owned by `PopupRenderCtx`, a 
 
 `candidate_popup_paint.c` records the popup into a flux canvas: the background is the canvas clear colour, the border / selection highlight / mode divider are solid `flux_canvas_fill_rect` calls, and text is filled glyph outlines (`typio_flux_fill_layout`).
 
-The popup coordinator (`candidate_popup.c`) owns the GPU frame lifecycle. It creates a flux (Vulkan) **swapchain** directly on the input-popup `wl_surface` (`vkCreateWaylandSurfaceKHR` → `flux_surface_create` → `flux_canvas_create`), and per update runs `flux_surface_begin_frame` → `flux_canvas_begin(clear)` → record → `flux_canvas_end` → `flux_frame_submit` → `flux_frame_present`. The swapchain is resized with `flux_surface_resize` when the popup size changes. Because the swapchain owns frame pacing and buffering, there is no SHM buffer pool and no manual frame-callback throttle — flux presents the latest candidate state each frame and never stalls the event loop.
+The popup coordinator (`candidate_popup.cc`) owns the GPU frame lifecycle. It creates a flux (Vulkan) **swapchain** directly on the input-popup `wl_surface` (`vkCreateWaylandSurfaceKHR` → `flux_surface_create` → `flux_canvas_create`), and per update runs `flux_surface_begin_frame` → `flux_canvas_begin(clear)` → record → `flux_canvas_end` → `flux_frame_submit` → `flux_frame_present`. The swapchain is resized with `flux_surface_resize` when the popup size changes. Because the swapchain owns frame pacing and buffering, there is no SHM buffer pool and no manual frame-callback throttle.
+
+The present runs synchronously on the event-loop thread, so `flux_surface_begin_frame` uses a **bounded timeout**: a compositor that stops releasing swapchain images (display asleep / surface occluded after a lock or suspend) makes the present time out and skip rather than block the loop, and repeated stalls recreate the swapchain to recover after resume. This is what keeps the present from stalling the event loop — see [ADR-0006](../adr/0006-resilient-candidate-popup-present.md).
 
 ## Keyboard Safety Model
 

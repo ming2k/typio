@@ -87,8 +87,8 @@ static void voice_aux_ready(void *userdata) {
 
     char *text = typio_voice_service_collect(d->voice);
 
-    /* Always clear [Processing...] preedit regardless of transcription outcome */
-    typio_wl_set_preedit(d->frontend, "", 0, 0);
+    /* Hide the voice status indicator (replaces preedit-string hack). */
+    typio_wl_text_ui_backend_hide_status(d->frontend->text_ui_backend);
 
     if (text && ctx) {
         const char *p = text;

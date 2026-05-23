@@ -5,7 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.2.6] - 2026-05-23
+
+### Changed
+
+- **Voice recording / processing indicators moved from preedit to popup** (ADR-0005):
+  The `[Recording...]`, `[Processing...]`, and voice-unavailability messages are
+  now rendered in the candidate popup surface instead of being injected into the
+  preedit string. This removes visual inconsistency across client applications,
+  frees the preedit channel for real text, and lays the groundwork for a unified
+  panel backend that can aggregate content from multiple subsystems.
+
+### Added
+
+- `TypioPanelContent` content model (`src/apps/typio/wayland/panel_content.h`)
+  as the first building block of the Typio Panel System.
+- `typio_wl_text_ui_backend_show_status()` / `hide_status()` APIs for displaying
+  transient status banners in the popup surface.
+- `typio_wl_text_ui_backend_update_content()` API: the panel backend now accepts
+  a `TypioPanelContent` descriptor that aggregates data from multiple subsystems
+  (InputContext, VoiceService, etc.).  `update()` and `show_status()` are
+  convenience wrappers that build `TypioPanelContent` internally.
+- `TypioPanelContent` expanded with an `input` zone (`candidates`, `preedit`,
+  `mode_label`) so the frontend can push a unified content snapshot to the
+  composer rather than pulling directly from InputContext inside the popup.
+- **Independent status colour in popup palette** (Phase 3): the voice
+  recording/processing indicator now renders with its own `status_r/g/b` colour
+  slot instead of reusing the preedit colour. Built-in palettes use a vivid
+  orange-red; custom themes can override it via `display.colors.light.status`
+  and `display.colors.dark.status`.
+- `PopupGeometry` gained a dedicated `status_layout` field; `popup_record`
+  draws the status zone independently from preedit, laying the groundwork for
+  future multi-zone compositing.
+
+### Fixed
+
+- **Frozen / laggy candidate popup after a screen lock or suspend** (ADR-0006):
+  the popup presents its flux swapchain synchronously on the single-threaded
+  event loop, and `flux_surface_begin_frame` waited with an unbounded timeout.
+  When a compositor stopped releasing swapchain images (display asleep or surface
+  occluded after a lock / suspend / hibernate), the next acquire blocked the
+  whole loop and the candidate highlight froze. Key events queued on the Wayland
+  fd were still processed in order once the loop unblocked, so navigation kept
+  committing the correct word while the on-screen highlight lagged. The present
+  is now bounded: a timed-out frame is skipped and the update re-armed instead of
+  blocking the loop, and repeated stalls recreate the swapchain so it recovers
+  cleanly after resume. Requires the matching flux change mapping an acquire
+  `VK_TIMEOUT` to `FLUX_ERROR_TIMEOUT`.
+
+### Documentation
+
+- Added ADR-0006 (resilient candidate-popup present) and listed the previously
+  unindexed ADR-0005 in the ADR index.
+- Refreshed the candidate-popup rendering notes to the current flux/Vulkan
+  swapchain pipeline (replacing the stale CPU-SHM description) and documented the
+  bounded-present / stall-recovery design, with mermaid diagrams for the present
+  pipeline, the lock/suspend stall sequence, and the present decision flow.
 
 ## [3.2.5] - 2026-05-22
 

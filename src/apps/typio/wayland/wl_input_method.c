@@ -630,6 +630,13 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
     popup_done_ms = typio_wl_monotonic_ms();
 
     session->frontend->popup_update_pending = false;
+    /* If the popup could not present because the compositor is not yet
+     * releasing swapchain buffers (display asleep / occluded after a
+     * lock or suspend), re-arm the flush so the event loop keeps retrying
+     * until the visible highlight catches up with the committed selection. */
+    if (typio_wl_candidate_popup_present_retry_pending(session->frontend->text_ui_backend)) {
+        session->frontend->popup_update_pending = true;
+    }
     if (update_plan == TYPIO_WL_TEXT_UI_SYNC_PREEDIT_AND_POPUP) {
         if (!plain_text) {
             typio_wl_set_preedit(session->frontend, "", -1, -1);

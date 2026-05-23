@@ -45,6 +45,7 @@ typedef struct {
     bool   has_preedit;    double preedit_r, preedit_g, preedit_b;
     bool   has_selection;  double selection_r, selection_g, selection_b, selection_a;
     bool   has_sel_text;   double sel_text_r, sel_text_g, sel_text_b;
+    bool   has_status;     double status_r, status_g, status_b;
 } PopupThemeVariant;
 
 typedef struct {
@@ -95,6 +96,11 @@ typedef struct {
     float        pre_x, pre_y;   /* subpixel-accurate */
     int          pre_w, pre_h;
 
+    /* Status indicator — owned by this geometry (may be NULL, Phase 3) */
+    TypioTextLayout *status_layout;
+    float        status_x, status_y; /* subpixel-accurate */
+    int          status_w, status_h;
+
     /* Mode label — owned by this geometry (may be NULL) */
     TypioTextLayout *mode_layout;
     float        mode_x, mode_y; /* subpixel-accurate */
@@ -107,6 +113,7 @@ typedef struct {
     uint64_t    content_sig;
     uint64_t    palette_sig;
     char        preedit_text[256];
+    char        status_text[256];    /* Phase 3 */
     char        mode_label[128];
     PopupConfig config;
 
@@ -152,6 +159,7 @@ void popup_render_ctx_invalidate(PopupRenderCtx *pc);
 PopupGeometry *popup_geometry_compute(PopupRenderCtx *pc,
                                       const TypioCandidateList *candidates,
                                       const char *preedit_text,
+                                      const char *status_text,
                                       const char *mode_label,
                                       const PopupConfig *config,
                                       const TypioCandidatePopupPalette *palette,

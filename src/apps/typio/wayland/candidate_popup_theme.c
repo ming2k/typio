@@ -32,6 +32,7 @@ static const TypioCandidatePopupPalette palette_light = {
     .preedit_r = 0.216, .preedit_g = 0.255, .preedit_b = 0.318,
     .selection_r = 0.145, .selection_g = 0.388, .selection_b = 0.922, .selection_a = 1.0,
     .selection_text_r = 1.0, .selection_text_g = 1.0, .selection_text_b = 1.0,
+    .status_r = 0.937, .status_g = 0.318, .status_b = 0.188,
 };
 
 /* Dark: deep-gray surface, blue-500 accent */
@@ -43,6 +44,7 @@ static const TypioCandidatePopupPalette palette_dark = {
     .preedit_r = 0.741, .preedit_g = 0.757, .preedit_b = 0.792,
     .selection_r = 0.231, .selection_g = 0.510, .selection_b = 0.965, .selection_a = 1.0,
     .selection_text_r = 1.0, .selection_text_g = 1.0, .selection_text_b = 1.0,
+    .status_r = 0.937, .status_g = 0.318, .status_b = 0.188,
 };
 
 

@@ -34,6 +34,17 @@
 /* Render latency threshold for slow-render debug logging */
 #define POPUP_SLOW_RENDER_MS 8
 
+/* Bounded acquire/present timeout. The popup presents synchronously on the
+ * single-threaded IME event loop, so a compositor that has stopped releasing
+ * swapchain images (display asleep or surface occluded after a lock/suspend)
+ * must never block the loop in vkAcquireNextImageKHR. ~2 vblanks @60Hz; the
+ * healthy on-demand path acquires instantly and never approaches this. */
+#define POPUP_PRESENT_TIMEOUT_NS     (32ull * 1000ull * 1000ull)
+/* Recreate the swapchain after this many consecutive stalls. flux_surface_resize
+ * rebuilds the chain and discards the per-frame semaphores left dangling by the
+ * stalled acquires, so presentation resumes cleanly once the session is back. */
+#define POPUP_PRESENT_RECOVER_STREAK 2
+
 /* ── Output tracking ────────────────────────────────────────────────── */
 
 typedef struct PopupOutputRef {
@@ -58,6 +69,13 @@ struct TypioWlCandidatePopup {
     bool          fx_ready;
     int           surf_w, surf_h;   /* current swapchain extent, physical px */
 
+    /* Present stall recovery (lock/suspend). When the compositor stops
+     * releasing swapchain images, the bounded acquire times out: count the
+     * consecutive stalls to drive swapchain recreation, and flag a retry so
+     * the event loop re-presents once presentation resumes. */
+    int  present_timeout_streak;
+    bool present_retry;
+
     /* Per-popup text engine context + LRU layout cache */
     PopupRenderCtx render;
 
@@ -76,6 +94,10 @@ struct TypioWlCandidatePopup {
 
     /* Whether the popup surface is currently visible */
     bool visible;
+
+    /* Transient status text (e.g. "[Recording...]"). Owned; freed on destroy
+     * or when status is cleared.  Phase 1 of unified panel backend. */
+    char *status_text;
 
     /* Output tracking (for scale resolution) */
     PopupOutputRef *entered_outputs;
@@ -97,6 +119,7 @@ typedef enum {
 static PopupDelta classify_delta(const PopupGeometry *geom,
                                   const TypioCandidateList *cands,
                                   const char *preedit,
+                                  const char *status,
                                   const char *mode_label,
                                   const PopupConfig *cfg,
                                   uint64_t palette_sig,
@@ -124,6 +147,13 @@ static PopupDelta classify_delta(const PopupGeometry *geom,
 
         /* Without per-row signatures in the core API, we cannot prove that only
          * one row changed. Keep the conservative full-content path. */
+        return POPUP_DELTA_CONTENT;
+    }
+
+    const char *cur_status = status ? status : "";
+    if (strcmp(geom->status_text, cur_status) != 0) {
+        /* Status changes may alter the preedit-zone size and colour,
+         * so treat them as full-content rather than aux-only. */
         return POPUP_DELTA_CONTENT;
     }
 
@@ -319,22 +349,55 @@ static bool ensure_fx_surface(TypioWlCandidatePopup *popup, int w, int h) {
     return popup->fx_ready;
 }
 
-/* Record + present one frame of the popup. */
-static bool popup_present(TypioWlCandidatePopup *popup,
-                          const PopupGeometry *geom, int selected) {
-    if (!popup->fx_ready || !geom || !geom->palette) return false;
+typedef enum {
+    POPUP_PRESENT_OK,     /* frame presented */
+    POPUP_PRESENT_RETRY,  /* transient stall; skip this frame, re-present later */
+    POPUP_PRESENT_FAIL,   /* hard failure */
+} PopupPresentResult;
+
+/* Record + present one frame of the popup.
+ *
+ * The acquire/fence wait is bounded (POPUP_PRESENT_TIMEOUT_NS) so a compositor
+ * that has stopped releasing swapchain images — e.g. while the display is
+ * asleep or the surface is occluded behind a lock screen — cannot block the
+ * single-threaded IME event loop. On a stall we return POPUP_PRESENT_RETRY and,
+ * after a few consecutive stalls, recreate the swapchain (which also clears the
+ * per-frame semaphores left dangling by the stalled acquires) so presentation
+ * resumes cleanly once the session is back. */
+static PopupPresentResult popup_present(TypioWlCandidatePopup *popup,
+                                        const PopupGeometry *geom, int selected) {
+    if (!popup->fx_ready || !geom || !geom->palette) return POPUP_PRESENT_FAIL;
+
+    flux_frame_begin_desc bd = {};
+    bd.type       = FLUX_TYPE_FRAME_BEGIN_DESC;
+    bd.timeout_ns = POPUP_PRESENT_TIMEOUT_NS;
 
     flux_frame *frame = nullptr;
-    flux_result r = flux_surface_begin_frame(popup->fx_surface, nullptr, &frame);
+    flux_result r = flux_surface_begin_frame(popup->fx_surface, &bd, &frame);
     if (r == FLUX_ERROR_SURFACE_LOST) {
         (void)flux_surface_resize(popup->fx_surface,
                                   (uint32_t)popup->surf_w, (uint32_t)popup->surf_h);
-        r = flux_surface_begin_frame(popup->fx_surface, nullptr, &frame);
+        popup->present_timeout_streak = 0;
+        r = flux_surface_begin_frame(popup->fx_surface, &bd, &frame);
     }
-    if (r != FLUX_OK) return false;
+    if (r == FLUX_ERROR_TIMEOUT) {
+        if (++popup->present_timeout_streak >= POPUP_PRESENT_RECOVER_STREAK) {
+            /* Stalled acquires leave stale per-frame semaphores; resizing the
+             * surface to its current extent rebuilds the swapchain and resets
+             * them. vkDeviceWaitIdle inside resize waits on GPU work (which
+             * completes regardless of presentation), so it does not block. */
+            (void)flux_surface_resize(popup->fx_surface,
+                                      (uint32_t)popup->surf_w, (uint32_t)popup->surf_h);
+            popup->present_timeout_streak = 0;
+        }
+        return POPUP_PRESENT_RETRY;
+    }
+    if (r != FLUX_OK) return POPUP_PRESENT_FAIL;
+
+    popup->present_timeout_streak = 0;
 
     flux_color clear = popup_bg_color(geom->palette);
-    if (flux_canvas_begin(popup->fx_canvas, frame, &clear) != FLUX_OK) return false;
+    if (flux_canvas_begin(popup->fx_canvas, frame, &clear) != FLUX_OK) return POPUP_PRESENT_FAIL;
 
     PopupPaintTarget target = { popup->fx_canvas, &popup->fx_arena };
     popup_record(&target, geom, selected);
@@ -342,15 +405,15 @@ static bool popup_present(TypioWlCandidatePopup *popup,
     flux_arena_reset(&popup->fx_arena);
     flux_canvas_end(popup->fx_canvas);
 
-    if (flux_frame_submit(frame) != FLUX_OK) return false;
+    if (flux_frame_submit(frame) != FLUX_OK) return POPUP_PRESENT_FAIL;
 
     r = flux_frame_present(frame);
     if (r == FLUX_ERROR_SURFACE_LOST) {
         (void)flux_surface_resize(popup->fx_surface,
                                   (uint32_t)popup->surf_w, (uint32_t)popup->surf_h);
-        return true;  /* next update repaints at the new extent */
+        return POPUP_PRESENT_RETRY;  /* next update repaints at the new extent */
     }
-    return r == FLUX_OK;
+    return r == FLUX_OK ? POPUP_PRESENT_OK : POPUP_PRESENT_FAIL;
 }
 
 /* ── Surface hide ───────────────────────────────────────────────────── */
@@ -363,8 +426,9 @@ static void hide_surface(TypioWlCandidatePopup *popup) {
     wl_surface_attach(popup->surface, nullptr, 0, 0);
     wl_surface_commit(popup->surface);
 
-    popup->visible  = false;
-    popup->selected = -1;
+    popup->visible       = false;
+    popup->selected      = -1;
+    popup->present_retry = false;
 
     render_geometry_free(&popup->render, popup->geom);
     popup->geom = nullptr;
@@ -375,6 +439,7 @@ static void hide_surface(TypioWlCandidatePopup *popup) {
 static bool popup_render(TypioWlCandidatePopup *popup,
                           const TypioCandidateList *cands,
                           const char *preedit_text,
+                          const char *status_text,
                           const char *mode_label) {
     const PopupConfig          *cfg;
     TypioCandidatePopupPalette   palette;
@@ -384,8 +449,14 @@ static bool popup_render(TypioWlCandidatePopup *popup,
     PopupDelta                   delta;
     uint64_t                     t0, t1;
     const char                  *delta_name = "unknown";
+    static const TypioCandidateList empty_cands = {};
 
-    if (!popup || !popup->surface || !cands) return false;
+    if (!popup || !popup->surface) return false;
+    if (!cands) {
+        cands = &empty_cands;
+    }
+
+    popup->present_retry = false;
 
     t0  = typio_wl_monotonic_ms();
     cfg = get_config(popup);
@@ -393,9 +464,9 @@ static bool popup_render(TypioWlCandidatePopup *popup,
     popup_config_build_palette(cfg, &popup->theme_cache, &palette);
     pal_sig      = typio_candidate_popup_palette_hash(&palette);
     scale        = render_scale(popup);
-    new_selected = cands->selected;
+    new_selected = cands->count > 0 ? cands->selected : -1;
 
-    delta = classify_delta(popup->geom, cands, preedit_text, mode_label,
+    delta = classify_delta(popup->geom, cands, preedit_text, status_text, mode_label,
                             cfg, pal_sig, scale, new_selected);
 
     if (delta == POPUP_DELTA_SELECTION && new_selected == popup->selected &&
@@ -453,6 +524,7 @@ static bool popup_render(TypioWlCandidatePopup *popup,
         PopupGeometry *new_geom = popup_geometry_compute(&popup->render,
                                                           cands,
                                                           preedit_text,
+                                                          status_text,
                                                           mode_label,
                                                           cfg, &palette, scale);
         if (!new_geom) {
@@ -478,10 +550,18 @@ static bool popup_render(TypioWlCandidatePopup *popup,
      * present time. */
     wl_surface_set_buffer_scale(popup->surface, popup->geom->scale);
 
-    bool ok = popup_present(popup, popup->geom, new_selected);
-    if (ok) {
+    PopupPresentResult pres = popup_present(popup, popup->geom, new_selected);
+    bool ok = (pres == POPUP_PRESENT_OK);
+    if (pres == POPUP_PRESENT_OK) {
         popup->selected = new_selected;
         popup->visible  = true;
+    } else if (pres == POPUP_PRESENT_RETRY) {
+        /* Compositor isn't releasing swapchain images yet (display asleep or
+         * surface occluded after a lock/suspend). Skip this frame so the IME
+         * event loop stays responsive, and ask it to re-present so the visible
+         * highlight catches up once presentation resumes. selected/visible are
+         * left unchanged so the retry re-renders this exact state. */
+        popup->present_retry = true;
     } else {
         typio_log(TYPIO_LOG_WARNING, "Popup: present failed");
     }
@@ -610,21 +690,62 @@ extern "C" void typio_wl_candidate_popup_destroy(TypioWlCandidatePopup *popup) {
     render_geometry_free(&popup->render, popup->geom);
     popup_render_ctx_free(&popup->render);
     clear_outputs(popup);
+    free(popup->status_text);
     if (popup->popup_surface) zwp_input_popup_surface_v2_destroy(popup->popup_surface);
     if (popup->surface) wl_surface_destroy(popup->surface);
     free(popup);
 }
 
-extern "C" bool typio_wl_candidate_popup_update(TypioWlTextUiBackend *backend, TypioInputContext *ctx) {
-    if (!backend || !backend->frontend || !ctx) return false;
+extern "C" bool typio_wl_candidate_popup_update_content(TypioWlTextUiBackend *backend,
+                                                             const TypioPanelContent *content) {
+    if (!backend || !backend->frontend || !content) return false;
     if (!ensure_created(backend->frontend)) return false;
     TypioWlCandidatePopup *popup = backend->candidate_popup;
-    const TypioCandidateList *cands = typio_input_context_get_candidates(ctx);
-    if (!cands || cands->count == 0) { hide_surface(popup); return true; }
+    if (!popup) return false;
+
+    /* Update persistent status only when the caller explicitly sets it.
+     * InputContext-driven updates leave status.message == nullptr so they
+     * do not clobber a voice indicator that may still be visible. */
+    if (content->status.active) {
+        free(popup->status_text);
+        popup->status_text = content->status.message ? strdup(content->status.message) : nullptr;
+    } else if (content->status.message != nullptr) {
+        /* Explicit clear request: hide_status passes active=false with an
+         * empty-string message to distinguish "clear" from "don't care". */
+        free(popup->status_text);
+        popup->status_text = nullptr;
+    }
+
+    const TypioCandidateList *cands = content->input.candidates;
+    const char *status = nullptr;
+
+    /* No candidates and no persistent status → hide. */
+    if ((!cands || cands->count == 0) && (!popup->status_text || !popup->status_text[0])) {
+        hide_surface(popup);
+        return true;
+    }
+
+    /* When there are no candidates, render the persistent status text
+     * in its own zone with the status palette colour (Phase 3). */
+    if (!cands || cands->count == 0) {
+        status = popup->status_text;
+    }
+
     char *mode_label = build_mode_label(popup);
-    bool ok = popup_render(popup, cands, nullptr, mode_label);
+    bool ok = popup_render(popup, cands, nullptr, status, mode_label);
     free(mode_label);
     return ok;
+}
+
+extern "C" bool typio_wl_candidate_popup_update(TypioWlTextUiBackend *backend, TypioInputContext *ctx) {
+    if (!backend || !backend->frontend) return false;
+
+    TypioPanelContent content;
+    typio_panel_content_init(&content);
+    if (ctx) {
+        content.input.candidates = typio_input_context_get_candidates(ctx);
+    }
+    return typio_wl_candidate_popup_update_content(backend, &content);
 }
 
 extern "C" void typio_wl_candidate_popup_hide(TypioWlTextUiBackend *backend) {
@@ -633,6 +754,10 @@ extern "C" void typio_wl_candidate_popup_hide(TypioWlTextUiBackend *backend) {
 
 extern "C" bool typio_wl_candidate_popup_is_available(TypioWlTextUiBackend *backend) {
     return backend && backend->candidate_popup && backend->candidate_popup->surface && backend->candidate_popup->popup_surface;
+}
+
+extern "C" bool typio_wl_candidate_popup_present_retry_pending(TypioWlTextUiBackend *backend) {
+    return backend && backend->candidate_popup && backend->candidate_popup->present_retry;
 }
 
 extern "C" void typio_wl_candidate_popup_invalidate_config(TypioWlTextUiBackend *backend) {
@@ -657,4 +782,19 @@ extern "C" void typio_wl_candidate_popup_handle_output_change(TypioWlTextUiBacke
     if (!tracks_output(popup, output)) return;
     if (!find_frontend_output(popup, output)) untrack_output(popup, output);
     else refresh_visible(popup);
+}
+
+/* ── Status indicator (unified panel backend) ───────────────────────── */
+
+extern "C" bool typio_wl_candidate_popup_show_status(TypioWlTextUiBackend *backend,
+                                                      const char *text) {
+    if (!backend || !backend->frontend) return false;
+
+    TypioPanelContent content;
+    typio_panel_content_init(&content);
+    if (text && text[0]) {
+        content.status.active  = true;
+        content.status.message = text;
+    }
+    return typio_wl_candidate_popup_update_content(backend, &content);
 }
