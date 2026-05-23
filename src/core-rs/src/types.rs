@@ -10,15 +10,15 @@ use std::os::raw::{c_double, c_int};
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TypioResult {
-    Ok = 0,
-    Error = -1,
-    InvalidArgument = -2,
-    OutOfMemory = -3,
-    NotFound = -4,
-    AlreadyExists = -5,
-    NotInitialized = -6,
-    EngineLoadFailed = -7,
-    EngineNotAvailable = -8,
+    TypioOk = 0,
+    TypioError = -1,
+    TypioErrorInvalidArgument = -2,
+    TypioErrorOutOfMemory = -3,
+    TypioErrorNotFound = -4,
+    TypioErrorAlreadyExists = -5,
+    TypioErrorNotInitialized = -6,
+    TypioErrorEngineLoadFailed = -7,
+    TypioErrorEngineNotAvailable = -8,
 }
 
 /* -------------------------------------------------------------------------- */
@@ -28,12 +28,12 @@ pub enum TypioResult {
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TypioConfigType {
-    String = 0,
-    Int = 1,
-    Bool = 2,
-    Float = 3,
-    Array = 4,
-    Object = 5,
+    TypioConfigString = 0,
+    TypioConfigInt = 1,
+    TypioConfigBool = 2,
+    TypioConfigFloat = 3,
+    TypioConfigArray = 4,
+    TypioConfigObject = 5,
 }
 
 #[repr(C)]
@@ -77,10 +77,10 @@ pub struct TypioConfigValue {
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TypioFieldType {
-    String = 0,
-    Int = 1,
-    Bool = 2,
-    Float = 3,
+    TypioFieldString = 0,
+    TypioFieldInt = 1,
+    TypioFieldBool = 2,
+    TypioFieldFloat = 3,
 }
 
 #[repr(C)]

@@ -12,6 +12,7 @@ cmake-build-*/
 .opencode/
 .cursor/
 .gemini/
+.antigravitycli/
 .aider*
 
 # IDE specific files

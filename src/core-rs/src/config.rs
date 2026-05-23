@@ -100,21 +100,21 @@ impl Config {
         let mut cache = self.c_cache.borrow_mut();
         let c_val = match val {
             ConfigValue::String(s) => TypioConfigValue {
-                type_: TypioConfigType::String,
+                type_: TypioConfigType::TypioConfigString,
                 data: TypioConfigValueData {
                     string_val: s.as_ptr() as *mut c_char,
                 },
             },
             ConfigValue::Int(i) => TypioConfigValue {
-                type_: TypioConfigType::Int,
+                type_: TypioConfigType::TypioConfigInt,
                 data: TypioConfigValueData { int_val: *i },
             },
             ConfigValue::Bool(b) => TypioConfigValue {
-                type_: TypioConfigType::Bool,
+                type_: TypioConfigType::TypioConfigBool,
                 data: TypioConfigValueData { bool_val: *b },
             },
             ConfigValue::Float(v) => TypioConfigValue {
-                type_: TypioConfigType::Float,
+                type_: TypioConfigType::TypioConfigFloat,
                 data: TypioConfigValueData { float_val: *v },
             },
             ConfigValue::Array(arr) => {
@@ -122,25 +122,25 @@ impl Config {
                     .iter()
                     .map(|item| match item {
                         ConfigValue::String(s) => TypioConfigValue {
-                            type_: TypioConfigType::String,
+                            type_: TypioConfigType::TypioConfigString,
                             data: TypioConfigValueData {
                                 string_val: s.as_ptr() as *mut c_char,
                             },
                         },
                         ConfigValue::Int(i) => TypioConfigValue {
-                            type_: TypioConfigType::Int,
+                            type_: TypioConfigType::TypioConfigInt,
                             data: TypioConfigValueData { int_val: *i },
                         },
                         ConfigValue::Bool(b) => TypioConfigValue {
-                            type_: TypioConfigType::Bool,
+                            type_: TypioConfigType::TypioConfigBool,
                             data: TypioConfigValueData { bool_val: *b },
                         },
                         ConfigValue::Float(v) => TypioConfigValue {
-                            type_: TypioConfigType::Float,
+                            type_: TypioConfigType::TypioConfigFloat,
                             data: TypioConfigValueData { float_val: *v },
                         },
                         _ => TypioConfigValue {
-                            type_: TypioConfigType::String,
+                            type_: TypioConfigType::TypioConfigString,
                             data: TypioConfigValueData { string_val: ptr::null_mut() },
                         },
                     })
@@ -149,7 +149,7 @@ impl Config {
                 let count = items.len();
                 cache.arrays.insert(key.to_string(), items);
                 TypioConfigValue {
-                    type_: TypioConfigType::Array,
+                    type_: TypioConfigType::TypioConfigArray,
                     data: TypioConfigValueData {
                         array_val: TypioArray { items: ptr, count },
                     },
@@ -160,7 +160,7 @@ impl Config {
                 let ptr = boxed.as_mut() as *mut Config;
                 cache.objects.insert(key.to_string(), boxed);
                 TypioConfigValue {
-                    type_: TypioConfigType::Object,
+                    type_: TypioConfigType::TypioConfigObject,
                     data: TypioConfigValueData { object_val: ptr },
                 }
             }
@@ -448,7 +448,7 @@ pub extern "C" fn typio_config_free(config: *mut Config) {
 #[no_mangle]
 pub extern "C" fn typio_config_save_file(config: *const Config, path: *const c_char) -> TypioResult {
     if config.is_null() || path.is_null() {
-        return TypioResult::InvalidArgument;
+        return TypioResult::TypioErrorInvalidArgument;
     }
     let cfg = unsafe { &*config };
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy() };
@@ -461,20 +461,20 @@ pub extern "C" fn typio_config_save_file(config: *const Config, path: *const c_c
         Ok(mut file) => {
             if file.write_all(content.as_bytes()).is_err() {
                 let _ = fs::remove_file(&tmp_path);
-                return TypioResult::Error;
+                return TypioResult::TypioError;
             }
             if file.sync_all().is_err() {
                 let _ = fs::remove_file(&tmp_path);
-                return TypioResult::Error;
+                return TypioResult::TypioError;
             }
             drop(file);
             if fs::rename(&tmp_path, path_obj).is_err() {
                 let _ = fs::remove_file(&tmp_path);
-                return TypioResult::Error;
+                return TypioResult::TypioError;
             }
-            TypioResult::Ok
+            TypioResult::TypioOk
         }
-        Err(_) => TypioResult::Error,
+        Err(_) => TypioResult::TypioError,
     }
 }
 
@@ -593,7 +593,7 @@ pub extern "C" fn typio_config_set_string(
     value: *const c_char,
 ) -> TypioResult {
     if config.is_null() || key.is_null() {
-        return TypioResult::InvalidArgument;
+        return TypioResult::TypioErrorInvalidArgument;
     }
     let cfg = unsafe { &mut *config };
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
@@ -603,7 +603,7 @@ pub extern "C" fn typio_config_set_string(
         unsafe { CStr::from_ptr(value).to_owned() }
     };
     cfg.set_value(key_str, ConfigValue::String(val_str));
-    TypioResult::Ok
+    TypioResult::TypioOk
 }
 
 #[no_mangle]
@@ -613,12 +613,12 @@ pub extern "C" fn typio_config_set_int(
     value: c_int,
 ) -> TypioResult {
     if config.is_null() || key.is_null() {
-        return TypioResult::InvalidArgument;
+        return TypioResult::TypioErrorInvalidArgument;
     }
     let cfg = unsafe { &mut *config };
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
     cfg.set_value(key_str, ConfigValue::Int(value));
-    TypioResult::Ok
+    TypioResult::TypioOk
 }
 
 #[no_mangle]
@@ -628,12 +628,12 @@ pub extern "C" fn typio_config_set_bool(
     value: bool,
 ) -> TypioResult {
     if config.is_null() || key.is_null() {
-        return TypioResult::InvalidArgument;
+        return TypioResult::TypioErrorInvalidArgument;
     }
     let cfg = unsafe { &mut *config };
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
     cfg.set_value(key_str, ConfigValue::Bool(value));
-    TypioResult::Ok
+    TypioResult::TypioOk
 }
 
 #[no_mangle]
@@ -643,12 +643,12 @@ pub extern "C" fn typio_config_set_float(
     value: c_double,
 ) -> TypioResult {
     if config.is_null() || key.is_null() {
-        return TypioResult::InvalidArgument;
+        return TypioResult::TypioErrorInvalidArgument;
     }
     let cfg = unsafe { &mut *config };
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
     cfg.set_value(key_str, ConfigValue::Float(value));
-    TypioResult::Ok
+    TypioResult::TypioOk
 }
 
 #[no_mangle]
@@ -659,7 +659,7 @@ pub extern "C" fn typio_config_set_string_array(
     count: usize,
 ) -> TypioResult {
     if config.is_null() || key.is_null() || (values.is_null() && count > 0) {
-        return TypioResult::InvalidArgument;
+        return TypioResult::TypioErrorInvalidArgument;
     }
     let cfg = unsafe { &mut *config };
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
@@ -676,7 +676,7 @@ pub extern "C" fn typio_config_set_string_array(
     }
 
     cfg.set_value(key_str, ConfigValue::Array(items));
-    TypioResult::Ok
+    TypioResult::TypioOk
 }
 
 /* -------------------------------------------------------------------------- */
@@ -713,7 +713,7 @@ pub extern "C" fn typio_config_set_section(
     sub_config: *const Config,
 ) -> TypioResult {
     if config.is_null() || section.is_null() || sub_config.is_null() {
-        return TypioResult::InvalidArgument;
+        return TypioResult::TypioErrorInvalidArgument;
     }
     let cfg = unsafe { &mut *config };
     let section_str = unsafe { CStr::from_ptr(section).to_string_lossy() };
@@ -724,7 +724,7 @@ pub extern "C" fn typio_config_set_section(
         cfg.set_value(full_key, value.clone());
     }
 
-    TypioResult::Ok
+    TypioResult::TypioOk
 }
 
 /* -------------------------------------------------------------------------- */
@@ -833,22 +833,22 @@ pub extern "C" fn typio_config_has_key(config: *const Config, key: *const c_char
 #[no_mangle]
 pub extern "C" fn typio_config_remove(config: *mut Config, key: *const c_char) -> TypioResult {
     if config.is_null() || key.is_null() {
-        return TypioResult::InvalidArgument;
+        return TypioResult::TypioErrorInvalidArgument;
     }
     let cfg = unsafe { &mut *config };
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
     if cfg.entries.remove(&key_str).is_some() {
         cfg.clear_cache();
-        TypioResult::Ok
+        TypioResult::TypioOk
     } else {
-        TypioResult::NotFound
+        TypioResult::TypioErrorNotFound
     }
 }
 
 #[no_mangle]
 pub extern "C" fn typio_config_merge(dest: *mut Config, src: *const Config) -> TypioResult {
     if dest.is_null() || src.is_null() {
-        return TypioResult::InvalidArgument;
+        return TypioResult::TypioErrorInvalidArgument;
     }
     let dst = unsafe { &mut *dest };
     let s = unsafe { &*src };
@@ -857,5 +857,5 @@ pub extern "C" fn typio_config_merge(dest: *mut Config, src: *const Config) -> T
         dst.set_value(key.clone(), value.clone());
     }
 
-    TypioResult::Ok
+    TypioResult::TypioOk
 }

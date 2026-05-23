@@ -1,0 +1,16 @@
+language = "C"
+include_guard = "TYPIO_CORE_RS_H"
+
+[export]
+include = ["TypioConfig", "TypioResult", "TypioConfigType", "TypioConfigValueData", "TypioArray", "TypioConfigValue", "TypioFieldType", "TypioFieldDefault", "TypioConfigField", "TypioRimeSchemaInfo", "TypioRimeSchemaList"]
+
+[parse]
+parse_deps = true
+include = ["typio-core"]
+
+[enum]
+prefix_with_name = false
+rename_variants = "ScreamingSnakeCase"
+
+[struct]
+rename_fields = "SnakeCase"
