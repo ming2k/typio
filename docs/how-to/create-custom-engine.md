@@ -11,7 +11,7 @@ Use this when you want to add a new input engine to Typio as a shared-library pl
 ## Prerequisites
 
 - Typio built and installed (or at least `typio-core` headers and pkg-config file available)
-- C compiler and Meson (or CMake as a fallback)
+- C compiler and Meson
 
 ## Required exported symbols
 
@@ -162,22 +162,7 @@ my_engine = shared_module('typio-my-engine', 'my_engine.c',
 )
 ```
 
-### CMake (deprecated)
 
-```cmake
-cmake_minimum_required(VERSION 3.16)
-project(typio-my-engine C)
-
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(TYPIO REQUIRED typio)
-
-add_library(typio-my-engine MODULE my_engine.c)
-target_include_directories(typio-my-engine PRIVATE ${TYPIO_INCLUDE_DIRS})
-target_link_libraries(typio-my-engine PRIVATE typio-core)
-
-install(TARGETS typio-my-engine
-    LIBRARY DESTINATION lib/typio/engines)
-```
 
 If `typio.pc` is in a non-standard prefix, export `PKG_CONFIG_PATH` before configuring.
 

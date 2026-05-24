@@ -1,6 +1,6 @@
 # ADR-0012: Adopt Meson as Primary Build System
 
-- **Status**: Accepted
+- **Status**: Implemented
 - **Date**: 2026-05-25
 - **Deciders**: Project maintainers
 
@@ -24,7 +24,7 @@ Meson offers first-class support for:
 
 ## Decision
 
-Adopt Meson as the **primary** build system. CMake remains present during a transition period but is considered deprecated. New build features are added to Meson only.
+Adopt Meson as the **sole** build system. All CMake files have been removed in v4.1.0.
 
 Key implementation details:
 
@@ -44,6 +44,5 @@ Key implementation details:
 
 - Positive: Cleaner build definition; native subproject support for `flux`; easier for downstream packagers (most distros prefer Meson).
 - Positive: Fixed long-standing bug where CMake-generated `.desktop`/`.service` files had empty daemon paths because `CMAKE_INSTALL_FULL_LIBEXECDIR` was never defined.
-- Trade-off: Contributors must install `meson` and `ninja` (they were already required implicitly for `flux` under CMake).
-- Trade-off: Dual build system maintenance during the transition period.
-- Negative (accepted): CMake-specific IDE integrations and existing CI scripts must be updated.
+- Positive: Removed dual build system maintenance burden.
+- Negative (accepted): Contributors must install `meson` and `ninja` (they were already required implicitly for `flux` under CMake).

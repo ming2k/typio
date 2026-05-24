@@ -18,7 +18,7 @@ add_project_arguments(
     language: ['c', 'cpp'],
 )
 
-# Warnings matching the old CMake setup
+# Warning flags
 warn_flags = [
     '-Wformat=2', '-Wconversion', '-Wsign-conversion',
     '-Wshadow', '-Wundef', '-Wunused', '-Wno-unused-parameter',

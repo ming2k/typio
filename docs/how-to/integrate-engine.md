@@ -100,7 +100,7 @@ TypioEngine *typio_engine_create_myengine(void) {
 
 ### 3. Add build files
 
-**Meson** (`engines/myengine/meson.build`):
+`engines/myengine/meson.build`:
 
 ```meson
 myengine_sources = files('myengine.c')
@@ -110,18 +110,11 @@ myengine_lib = static_library('myengine', myengine_sources,
 )
 ```
 
-**CMake** (`engines/myengine/CMakeLists.txt`, deprecated):
-
-```cmake
-add_library(myengine STATIC myengine.c)
-target_link_libraries(myengine PRIVATE typio-core)
-```
-
-If your engine needs external libraries (e.g. `pkg_check_modules` / `dependency()`), add them here and link against the target.
+If your engine needs external libraries, add them via `dependency()` and link against the target.
 
 ### 4. Wire into the build system
 
-**Meson** (`engines/meson.build`):
+Add to `meson_options.txt` (or `meson.build`):
 
 ```meson
 option('build_myengine', type: 'boolean', value: false,
@@ -136,16 +129,7 @@ if get_option('build_myengine')
 endif()
 ```
 
-**CMake** (`engines/CMakeLists.txt`, deprecated):
-
-```cmake
-option(BUILD_MYENGINE "Build the MyEngine keyboard engine" OFF)
-if(BUILD_MYENGINE)
-    add_subdirectory(myengine)
-endif()
-```
-
-Edit the root build file to add the option and any dependency lookups.
+Add any dependency lookups to the root `meson.build`.
 
 ### 5. Register the engine at startup
 
@@ -246,17 +230,9 @@ Add to `daemon/voice/voice_service.c` or the voice engine compilation unit:
 
 ### 4. Update build files
 
-**Meson:**
-
 - Add `option('build_my_voice', type: 'boolean', value: false)` in `meson_options.txt` (or `meson.build`).
 - If the backend needs PipeWire, guard it with `if build_my_voice or build_whisper`.
 - Set `HAVE_MY_VOICE` in `typio_build_config.h.in` and wire it in `meson.build`.
-
-**CMake** (deprecated):
-
-- Add `option(BUILD_MY_VOICE ...)` in root `CMakeLists.txt`.
-- If the backend needs PipeWire, guard it with `if(BUILD_MY_VOICE OR BUILD_WHISPER OR ...)`.
-- Set `HAVE_MY_VOICE` in `typio_build_config.h.in`.
 
 ---
 
@@ -275,8 +251,6 @@ Use the `TYPIO_ENGINE_DEFINE(info, create)` macro to generate both symbols.
 
 ### Build and install
 
-**Meson** (recommended):
-
 ```meson
 project('typio-my-plugin', 'c',
     meson_version: '>=1.0.0')
@@ -288,23 +262,6 @@ my_plugin = shared_module('typio-my-plugin', 'my_plugin.c',
     install: true,
     install_dir: get_option('libdir') / 'typio' / 'engines',
 )
-```
-
-**CMake** (deprecated):
-
-```cmake
-cmake_minimum_required(VERSION 3.16)
-project(typio-my-plugin C)
-
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(TYPIO REQUIRED typio)
-
-add_library(typio-my-plugin MODULE my_plugin.c)
-target_include_directories(typio-my-plugin PRIVATE ${TYPIO_INCLUDE_DIRS})
-target_link_libraries(typio-my-plugin PRIVATE typio-core)
-
-install(TARGETS typio-my-plugin
-    LIBRARY DESTINATION lib/typio/engines)
 ```
 
 ### Verify
@@ -334,7 +291,7 @@ See [How to Create a Custom Engine](create-custom-engine.md) for a complete mini
 - [ ] For voice: backend conforms to float32 mono 16 kHz contract.
 - [ ] `process_key` never blocks.
 - [ ] Engine state is stored in `user_data`, not globals.
-- [ ] Meson option added and wired into `engines/meson.build` (or CMake equivalent during transition).
+- [ ] Meson option added and wired into `engines/meson.build`.
 - [ ] Engine registered in the daemon startup path (built-in only).
 - [ ] Config schema updated if new keys are introduced.
 - [ ] Documentation updated: `docs/reference/engines.md` and this guide.

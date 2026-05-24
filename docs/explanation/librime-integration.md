@@ -350,20 +350,6 @@ rime_engine = shared_module('typio-engine-rime',
 )
 ```
 
-**CMake** (`engines/rime/CMakeLists.txt`, deprecated):
-
-```cmake
-add_library(typio-engine-rime MODULE
-    path_expand.c
-    rime_engine.c
-)
-
-target_link_libraries(typio-engine-rime PRIVATE
-    typio-core
-    ${RIME_LIBRARIES}
-)
-```
-
 - Compiled as a shared module (plugin `.so`)
 - Installed to the engine directory (default `${prefix}/lib/typio/engines/`)
 - Discovers and links librime via `pkg-config`
@@ -411,7 +397,6 @@ target_link_libraries(typio-engine-rime PRIVATE
 ```
 engines/rime/
 ├── meson.build          # build config (shared module plugin)
-├── CMakeLists.txt       # build config (deprecated)
 ├── rime_internal.h      # shared data structures, constants, and cross-module API
 ├── rime_utils.c         # small utility helpers (monotonic time, directory creation)
 ├── rime_config.c        # configuration loading and cleanup

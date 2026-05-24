@@ -11,7 +11,7 @@
 //                                  honored as a runtime env var)
 //
 // Cargo doesn't automatically rebuild when env vars referenced by macros
-// change. Declare them here so a CMake reconfigure that changes the
+// change. Declare them here so a Meson reconfigure that changes the
 // install prefix triggers a re-link instead of silently baking the old
 // path.
 

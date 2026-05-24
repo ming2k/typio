@@ -12,7 +12,7 @@ By the end of this tutorial you will have:
 
 ## Prerequisites
 
-- Meson 1.0+ (or CMake 3.20+ as a fallback)
+- Meson 1.0+
 - Ninja 1.10+
 - C23 and C++17 compiler
 - Rust toolchain (latest stable `rustc` + `cargo`)

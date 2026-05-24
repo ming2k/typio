@@ -1,6 +1,6 @@
 # Installation Layout Reference
 
-This page describes every file and directory installed by `ninja install` (or `cmake --install`).
+This page describes every file and directory installed by `ninja install`.
 
 Paths are shown relative to the installation prefix (default `/usr/local`). Override with `--prefix` at configure time.
 

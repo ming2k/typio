@@ -13,9 +13,9 @@ If one of those changes and the others do not, the patch is incomplete.
 ## Quick start
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-ctest --test-dir build --output-on-failure
+meson setup build --buildtype=debug
+ninja -C build
+meson test -C build --print-errorlogs
 ```
 
 ## Developer documentation
