@@ -491,6 +491,24 @@ pub extern "C" fn typio_instance_init(instance: *mut TypioInstance) -> TypioResu
     let loaded = engine_manager::typio_engine_manager_load_dir(inst.engine_manager, engine_dir_c.as_ptr());
     log_msg(TypioLogLevel::TypioLogInfo, &format!("Loaded {} engines from {}", loaded, engine_dir));
 
+    // Also scan the system-wide install directory baked in at compile time.
+    // Without this, a daemon launched from the .desktop file (which inherits
+    // no TYPIO_ENGINE_DIR) only sees the per-user XDG dir — typically empty
+    // on a fresh install — and silently runs with no rime/mozc/etc. The
+    // user dir is loaded first so user-installed engines shadow the system
+    // ones; load_dir refuses duplicates and just logs.
+    let system_engine_dir: Option<&str> = option_env!("TYPIO_DEFAULT_ENGINE_DIR")
+        .filter(|s| !s.is_empty());
+    if let Some(system_dir) = system_engine_dir {
+        if system_dir != engine_dir {
+            let system_dir_c = CString::new(system_dir).unwrap();
+            let extra = engine_manager::typio_engine_manager_load_dir(
+                inst.engine_manager, system_dir_c.as_ptr());
+            log_msg(TypioLogLevel::TypioLogInfo, &format!(
+                "Loaded {} engines from system dir {}", extra, system_dir));
+        }
+    }
+
     let default_engine = inst.default_engine.as_ref()
         .and_then(|s| s.to_str().ok())
         .map(|s| s.to_string())

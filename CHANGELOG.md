@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.2] - 2026-05-24
+
+### Fixed
+
+- **Engines (rime, mozc, …) invisible when launched from the .desktop
+  file.** The daemon only scanned `$XDG_DATA_HOME/typio/engines` for
+  plugins, but `make install` puts engines under
+  `${CMAKE_INSTALL_LIBDIR}/typio/engines` (typically
+  `/usr/lib/typio/engines`). A fresh install left the per-user data
+  dir empty, so `typio daemon` launched from `typio.desktop` started
+  with zero plugin engines — rime and mozc silently unavailable.
+  Workaround was to set `TYPIO_ENGINE_DIR` in the user's environment.
+  The daemon now also scans the absolute install-time engine dir,
+  baked into `libtypio-core` at compile time via
+  `TYPIO_DEFAULT_ENGINE_DIR=${CMAKE_INSTALL_FULL_LIBDIR}/typio/engines`.
+  The per-user dir is still scanned first so locally built engines
+  shadow system ones; `typio_engine_manager_load_dir` deduplicates by
+  name.
+
+### Changed
+
+- **`src/core/build.rs` added** to declare cargo `rerun-if-env-changed`
+  for the four CMake-driven compile-time env vars (`TYPIO_VERSION`,
+  `TYPIO_BUILD_SOURCE_LABEL`, `TYPIO_DEFAULT_ENGINE_DIR`,
+  `TYPIO_ENGINE_DIR`). A CMake reconfigure that changes the install
+  prefix now triggers a re-link instead of silently baking the old
+  path.
+
 ## [3.3.1] - 2026-05-24
 
 ### Fixed

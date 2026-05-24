@@ -57,6 +57,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
             CARGO_TARGET_DIR=${TYPIO_CORE_TARGET_DIR}
             TYPIO_ENGINE_DIR="${TYPIO_ENGINE_DIR}"
+            TYPIO_DEFAULT_ENGINE_DIR="${CMAKE_INSTALL_FULL_LIBDIR}/typio/engines"
             TYPIO_VERSION="${PROJECT_VERSION}"
             TYPIO_BUILD_SOURCE_LABEL="${TYPIO_BUILD_SOURCE_LABEL}"
         cargo build ${_cargo_profile_flag} ${_rust_target_flag} ${_rust_features}
