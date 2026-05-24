@@ -68,13 +68,14 @@ Staging install (disposable, no root):
 
 ```bash
 cmake --install build --prefix /tmp/typio-staging
-/tmp/typio-staging/bin/typio --version
+/tmp/typio-staging/bin/typio version
 rm -rf /tmp/typio-staging
 ```
 
 Installed paths (with `/usr/local` prefix):
 
-- `/usr/local/bin/typio`
+- `/usr/local/bin/typio` — CLI entry point
+- `/usr/local/libexec/typio/typio-daemon` — background daemon
 - `/usr/local/lib/libtypio-core.so`
 - `/usr/local/lib/typio/engines/rime.so` (if built)
 - `/usr/local/include/typio/*.h`
@@ -88,13 +89,13 @@ Override the autostart location with `-DTYPIO_AUTOSTART_DIR=/some/path` if neede
 ## Verification
 
 ```bash
-typio --version
-typio --list
+typio version
+typio-daemon --list
 ```
 
 Expected baseline output includes the built-in `basic` engine even if no external plugins are installed.
 
 ## Common issues
 
-- **`typio --list` shows no external engines**: Check the engine directory (`/usr/local/lib/typio/engines`) and ensure plugins were built and installed.
+- **`typio-daemon --list` shows no external engines**: Check the engine directory (`/usr/local/lib/typio/engines`) and ensure plugins were built and installed.
 - See [Troubleshooting](troubleshooting.md) for runtime problems.

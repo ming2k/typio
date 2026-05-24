@@ -5,6 +5,74 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [4.0.0] - 2026-05-25
+
+### Added
+
+- **Unix Domain Socket (UDS) IPC for control commands.**
+  The daemon now listens on `$XDG_RUNTIME_DIR/typio/daemon.sock`
+  (with `SO_PEERCRED` uid validation) and accepts JSON-RPC requests
+  over `[4-byte BE length][JSON payload]` framing. The `typio` CLI
+  uses UDS as its primary transport, falling back to D-Bus only when
+  the UDS socket is unavailable.
+
+### Changed
+
+- **Split daemon and CLI into separate binaries.**
+  The `typio` executable is now a pure Rust CLI (`cli/`) that controls
+  the daemon over UDS. The daemon is a separate C binary (`daemon/`)
+  built as `daemon`. `typio daemon` forwards to the `daemon` binary;
+  all other `typio <command>` subcommands communicate with the running
+  daemon via JSON-RPC over a Unix Domain Socket.
+  This removes the old dual-mode `typio` C executable that handled both
+  daemon startup and client commands in the same binary.
+
+- **D-Bus status adapter is now a thin transport layer over `TypioStatusService`.**
+  All business logic previously duplicated in `daemon/status/status.c` has
+  been unified into `daemon/ipc/status_service.c`. The D-Bus adapter
+  marshals D-Bus arguments into JSON params, calls
+  `typio_status_service_handle()`, and converts the JSON response back
+  into a D-Bus reply. This ensures UDS and D-Bus transports share a
+  single source of truth for state and control operations.
+
+- **Unified composition API: `TypioComposition` replaces separate preedit + candidate emits (ADR-0011).**
+  Engines now emit the entire in-flight state (preedit segments + candidate
+  list) through a single `typio_input_context_set_composition()` call.
+  The old `typio_input_context_set_preedit()`, `set_candidates()`,
+  `clear_preedit()`, and `clear_candidates()` have been removed, as have
+  the split `preedit_callback` / `candidate_callback` in favour of one
+  `composition_callback`. All built-in engines (`basic`, `rime`, `mozc`)
+  and the test suite have been migrated.
+
+### Removed
+
+- **Deleted the session-checkpoint durability layer.**
+  The engine checkpoint feature (`snapshot_session` / `restore_session`
+  ops, `checkpoint_codec`, `session_checkpoint`, and `rime_checkpoint.c`)
+  has been removed. The feature targeted an extremely rare failure mode
+  (daemon crash + systemd restart while the user had an uncommitted
+  composition) and carried significant maintenance overhead: a custom
+  binary wire format, per-delta tmpfs writes, and cross-layer ABI
+  surface spanning Rust core, C frontend, and every engine. The
+  remaining resume detector and in-process reconnect mechanisms continue
+  to handle the more common suspend/resume and compositor-restart
+  scenarios.
+
+### Fixed
+
+- **UDS frame length encoding was broken for payloads > 255 bytes.**
+  The manual big-endian conversion in `uds_server.c`, `client_main.c`,
+  and `test_uds_ipc.c` produced incorrect length bytes when the JSON
+  payload exceeded one byte, causing the receiver to wait for a
+  non-existent oversized frame. All encoding sites now use `htonl()`.
+
+- **`tip_json_extract_id(NULL, &id)` caused segfault on no-param methods.**
+  Methods such as `ReloadConfig`, `NextEngine`, and `Stop` pass a NULL
+  `params_json`. `tip_json_extract_id()` and `tip_json_extract_params()`
+  now guard against NULL input.
+
 ## [3.3.4] - 2026-05-24
 
 ### Changed
@@ -24,7 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Ninja generator baked quoted path into `TYPIO_DEFAULT_ENGINE_DIR`.**
-  `src/core/CMakeLists.txt` set the compile-time env var as
+  `core-rs/CMakeLists.txt` set the compile-time env var as
   `"${CMAKE_INSTALL_FULL_LIBDIR}/typio/engines"`. Under the Makefile
   generator the shell strips the quotes, but under Ninja (`-G Ninja`)
   the quotes are preserved verbatim. The daemon then tried to open
@@ -55,7 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`src/core/build.rs` added** to declare cargo `rerun-if-env-changed`
+- **`core-rs/build.rs` added** to declare cargo `rerun-if-env-changed`
   for the four CMake-driven compile-time env vars (`TYPIO_VERSION`,
   `TYPIO_BUILD_SOURCE_LABEL`, `TYPIO_DEFAULT_ENGINE_DIR`,
   `TYPIO_ENGINE_DIR`). A CMake reconfigure that changes the install
@@ -260,7 +328,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `TypioPanelContent` content model (`src/apps/typio/wayland/panel_content.h`)
+- `TypioPanelContent` content model (`daemon/wayland/panel_content.h`)
   as the first building block of the Typio Panel System.
 - `typio_wl_text_ui_backend_show_status()` / `hide_status()` APIs for displaying
   transient status banners in the popup surface.
@@ -432,10 +500,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ABI version validation**: Engine plugins now validate both API version range
   (`TYPIO_ABI_MIN_VERSION` / `TYPIO_ABI_MAX_VERSION`) and struct size
   (`TypioEngineInfo.struct_size`) at load time to prevent silent ABI mismatches.
-- **Standardized error handling**: New `src/core/utils/result.h` with
+- **Standardized error handling**: New `core-rs/utils/result.h` with
   `TYPIO_RETURN_IF_ERROR`, `TYPIO_GOTO_IF_ERROR`, and
   `typio_result_to_string()` macros for uniform `TypioResult` propagation.
-- **Ownership-aware memory helpers**: New `src/core/utils/memory.h` with
+- **Ownership-aware memory helpers**: New `core-rs/utils/memory.h` with
   `TypioOwnership` enum and `TYPIO_FREE_IF_OWNED` / `TYPIO_ASSIGN` macros for
   explicit lifetime tracking.
 - **Optional-subsystem strategy pattern**: Replaced `#ifdef`-polluted event-loop
@@ -591,7 +659,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Project structure**: Consolidated app components into `src/apps/typio`.
+- **Project structure**: Consolidated app components into `daemon/`.
 
 ### Fixed
 
@@ -830,20 +898,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Source-tree architecture docs**: documented the new `src/core`,
-  `src/apps`, and `src/engines` layout across the main README and developer
+- **Source-tree architecture docs**: documented the new `core-rs/`,
+  `daemon/`, `control/`, and `engines/` layout across the main README and developer
   documentation so build-tree paths, source ownership, and control-surface
   boundaries are described consistently.
 
 ### Changed
 
 - **Source tree reorganization**: regrouped the codebase around stable product
-  boundaries, moving shared library code to `src/core/`, executable entrypoints
-  to `src/apps/`, and keeping engine implementations under `src/engines/`.
+  boundaries, moving shared library code to `core-rs/`, executable entrypoints
+  to `daemon/` and `control/`, and keeping engine implementations under `engines/`.
 - **Core library split**: clarified the internal `typio-core` boundary by
-  separating installed public headers (`src/core/include/typio/`), runtime
-  implementation (`src/core/runtime/`), and internal support code
-  (`src/core/utils/`).
+  separating installed public headers (`core-rs/include/typio/`), runtime
+  implementation (`core-rs/runtime/`), and internal support code
+  (`core-rs/utils/`).
 - **Daemon naming cleanup**: renamed daemon-local app/CLI units from the old
   `server_*` terminology to `daemon_*` naming so file names, types, functions,
   and build structure use one vocabulary.

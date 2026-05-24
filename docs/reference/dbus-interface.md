@@ -1,6 +1,11 @@
 # D-Bus Interface Reference
 
-Typio exposes a session-bus service for runtime control and introspection. Both the `typio` CLI and `typio-control` are built on this interface.
+Typio exposes a session-bus service for runtime control and introspection.
+
+> **Note:** The `typio` CLI now uses **UDS** as its primary transport.
+> D-Bus remains available for backward compatibility and for
+> `typio-control` (GTK4), but all new client development should target
+> the UDS IPC protocol (see [IPC Protocol Reference](ipc-protocol.md)).
 
 ## Service
 
@@ -11,7 +16,10 @@ Typio exposes a session-bus service for runtime control and introspection. Both 
 | Path      | `/org/typio/InputMethod1`    |
 | Interface | `org.typio.InputMethod1`     |
 
-The service is registered when `typio` starts with `ENABLE_STATUS_BUS=ON` (the default). The constants live in `src/core/include/typio/dbus_protocol.h`.
+The D-Bus service is registered when the daemon is built with
+`ENABLE_STATUS_BUS=ON` (the default). The adapter is a thin layer
+over `TypioStatusService`; all business logic is shared with the UDS
+transport. The constants live in `core/include/typio/dbus_protocol.h`.
 
 ## Properties
 
@@ -64,6 +72,8 @@ All properties are read-only. The daemon emits `org.freedesktop.DBus.Properties.
 | `config.*` | varies | Engine-specific config entries |
 
 ### `RuntimeState` keys
+
+> Under [ADR-0011](../adr/0011-composition-and-lifecycle-rewrite.md) the lifecycle fields are reprojected: `lifecycle_phase` becomes the derived `derived_state` plus `grab_state`, and `active_key_generation` becomes `grab_epoch`. The keys below reflect the current surface until that migration lands.
 
 | Key | Type | Description |
 |-----|------|-------------|
@@ -141,8 +151,13 @@ typio version            # show server version
 
 ## Implementation notes
 
-- The server-side handler lives in `src/apps/typio/status/status.c`.
-- Protocol constants are in `src/core/include/typio/dbus_protocol.h`.
-- `typio` client-mode source lives under `src/apps/typio/` and uses D-Bus without depending on `typio-core`.
-- `typio-control` (GTK4) uses the same D-Bus interface via GDBusProxy.
+- The D-Bus adapter lives in `daemon/status/status.c`. It marshals
+  D-Bus arguments into JSON params, calls
+  `typio_status_service_handle()`, and converts the JSON response back
+  into a D-Bus reply.
+- The shared business logic lives in `daemon/ipc/status_service.c`.
+- Protocol constants are in `core/include/typio/dbus_protocol.h`.
+- `typio` client source lives under `cli/` (Rust) and uses UDS without
+  depending on `typio-core`.
+- `typio-control` (GTK4) still uses this D-Bus interface via GDBusProxy.
 - The status bus integration test is in `tests/test_status_bus.c`.

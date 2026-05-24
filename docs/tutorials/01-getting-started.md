@@ -105,7 +105,8 @@ cmake --build build
 You should see compilation complete and the following binaries appear:
 
 ```text
-build/src/apps/typio/typio
+build/daemon/daemon
+cli/target/release/typio
 ```
 
 ## Step 3: Run the smoke tests
@@ -126,7 +127,7 @@ All tests should pass. This verifies your environment is correctly configured.
 Inside your Wayland session, run Typio directly from the build tree:
 
 ```bash
-./build/src/apps/typio/typio --engine basic --verbose
+./build/daemon/typio-daemon --engine basic --verbose
 ```
 
 You should see startup logs including:
@@ -142,7 +143,7 @@ Press `Ctrl+C` to stop the daemon.
 List available engines:
 
 ```bash
-./build/src/apps/typio/typio --engine-dir ./build/engines --list
+./build/daemon/typio-daemon --engine-dir ./build/engines --list
 ```
 
 Expected output includes at least the built-in `basic` engine.

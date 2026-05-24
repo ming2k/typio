@@ -13,7 +13,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 
 # Run directly from the build tree
-./build/src/apps/typio/typio --engine basic --verbose
+./build/daemon/daemon --engine basic --verbose
 ```
 
 Expected output: startup logs ending with `engine basic activated`.
@@ -31,7 +31,7 @@ Expected output: startup logs ending with `engine basic activated`.
 Typio is a good fit if you need a native Wayland input method with:
 - Pure Wayland protocol integration (no X11)
 - A plugin engine ABI for custom input engines
-- Structured D-Bus runtime control and status
+- UDS-based JSON-RPC control (primary) with optional D-Bus adapter
 - Optional GTK4 control panel
 
 Consider alternatives like Fcitx5 or IBus if you need X11 support or a larger built-in engine ecosystem.

@@ -67,14 +67,14 @@ Add or update tests when changing:
 - voice service state transitions, reload deferral, or completion dispatch
 - status/tray D-Bus dispatch loops
 - candidate popup layout, rendering, or state classification
-- public APIs under `src/core/include/typio`
+- public APIs under `core/include/typio`
 
 Prefer small state-policy tests for Wayland behavior. Do not rely only on manual compositor testing when a bug can be reduced to a helper or state model.
 
 ## Style
 
 - Use C11 for C code and C++17 where C++ is already required.
-- Use Rust 2021 edition for `src/core/` (crate `typio-core`).
+- Use Rust 2021 edition for `core/` (crate `typio-core`).
 - Keep public API names in the `typio_*` / `Typio*` style already used by the repo.
 - Prefer local helpers and direct data flow over broad abstractions.
 - Document non-obvious behavior in headers or near complex state transitions.

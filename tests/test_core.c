@@ -180,19 +180,28 @@ TEST(candidate_content_signature_ignores_selection_only_changes) {
         .selected = 0,
     };
 
-    typio_input_context_set_candidates(ctx, &list_a);
+    TypioComposition comp_a = {
+        .struct_size = sizeof(TypioComposition),
+        .candidates = items_a,
+        .candidate_count = 2,
+        .page = 0,
+        .page_size = 5,
+        .total = 2,
+        .selected = 0,
+    };
+    typio_input_context_set_composition(ctx, &comp_a);
     const TypioCandidateList *stored = typio_input_context_get_candidates(ctx);
     ASSERT_NOT_NULL(stored);
     uint64_t signature_a = stored->content_signature;
     ASSERT_NE(signature_a, 0);
 
-    list_a.selected = 1;
-    typio_input_context_set_candidates(ctx, &list_a);
+    comp_a.selected = 1;
+    typio_input_context_set_composition(ctx, &comp_a);
     stored = typio_input_context_get_candidates(ctx);
     ASSERT_EQ(signature_a, stored->content_signature);
 
     items_a[1].comment = "hello";
-    typio_input_context_set_candidates(ctx, &list_a);
+    typio_input_context_set_composition(ctx, &comp_a);
     stored = typio_input_context_get_candidates(ctx);
     ASSERT_NE(signature_a, stored->content_signature);
 

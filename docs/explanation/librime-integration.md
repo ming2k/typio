@@ -1,8 +1,10 @@
 # Typio librime Integration
 
+> Output-API note: under [ADR-0011](../adr/0011-composition-and-lifecycle-rewrite.md) the engine emits one transactional **composition** (preedit + candidates) via `typio_input_context_set_composition`, plus `typio_input_context_commit` for finalized text. The walkthrough below still names the pre-migration `set_preedit`/`set_candidates` calls in places; the data extracted from librime is identical — only the emit call changes (the two values are filled into one `TypioComposition` instead of two separate calls).
+
 ## 1. Architecture Overview
 
-Typio integrates librime via a **plugin engine**. The Rime engine lives in `src/engines/rime/`, compiles to a shared library `engines/rime.so`, and is loaded at runtime by Typio's engine manager.
+Typio integrates librime via a **plugin engine**. The Rime engine lives in `engines/rime/`, compiles to a shared library `engines/rime.so`, and is loaded at runtime by Typio's engine manager.
 
 ```mermaid
 flowchart TD
@@ -296,11 +298,9 @@ The Rime engine exposes two modes:
 
 The Rime engine, as a plugin, interacts with Typio core via:
 
-**Input / Output**:
-- `typio_input_context_commit(ctx, text)` — commit text
-- `typio_input_context_set_preedit(ctx, preedit)` — set preedit
-- `typio_input_context_set_candidates(ctx, list)` — set candidates
-- `typio_input_context_clear_preedit / clear_candidates` — clear
+**Input / Output** ([ADR-0011](../adr/0011-composition-and-lifecycle-rewrite.md)):
+- `typio_input_context_set_composition(ctx, comp)` — set preedit + candidates atomically (an empty composition clears them)
+- `typio_input_context_commit(ctx, text)` — commit finalized text (separate ordered event)
 
 **Context properties**:
 - `typio_input_context_get_property(ctx, key)` — retrieve session
@@ -339,7 +339,7 @@ This design separates mandatory lifecycle operations from keyboard-specific call
 
 ### 11.3 Build Integration
 
-`src/engines/rime/CMakeLists.txt`:
+`engines/rime/CMakeLists.txt`:
 
 ```cmake
 add_library(typio-engine-rime MODULE
@@ -398,7 +398,7 @@ target_link_libraries(typio-engine-rime PRIVATE
 ## 13. File List
 
 ```
-src/engines/rime/
+engines/rime/
 ├── CMakeLists.txt       # build config (MODULE plugin)
 ├── rime_internal.h      # shared data structures, constants, and cross-module API
 ├── rime_utils.c         # small utility helpers (monotonic time, directory creation)

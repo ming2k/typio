@@ -1,6 +1,6 @@
 set(TYPIO_TEST_CORE_INCLUDE_DIRS
-    ${CMAKE_SOURCE_DIR}/src/core
-    ${CMAKE_SOURCE_DIR}/src/core/include
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/core/include
 )
 
 add_library(test_lazy_engine_plugin MODULE test_lazy_engine_plugin.c)
@@ -19,10 +19,10 @@ target_link_libraries(test_config PRIVATE typio-core)
 add_test(NAME test_config COMMAND test_config)
 
 add_executable(test_basic_compose test_basic_compose.c
-    ${CMAKE_SOURCE_DIR}/src/engines/basic/compose.c
+    ${CMAKE_SOURCE_DIR}/engines/basic/compose.c
 )
 target_include_directories(test_basic_compose PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/engines/basic
+    ${CMAKE_SOURCE_DIR}/engines/basic
 )
 add_test(NAME test_basic_compose COMMAND test_basic_compose)
 
@@ -51,22 +51,22 @@ add_test(NAME test_engine_manager COMMAND test_engine_manager)
 
 add_executable(test_preedit_format
     test_inline_ui.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/preedit_format.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/preedit_format.c
 )
 target_include_directories(test_preedit_format PRIVATE
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_preedit_format COMMAND test_preedit_format)
 
 if(HAVE_SYSTRAY)
     add_executable(test_tray_icon_pixmap
         test_tray_icon_pixmap.c
-        ${CMAKE_SOURCE_DIR}/src/apps/typio/tray/icon_pixmap.cc
+        ${CMAKE_SOURCE_DIR}/daemon/tray/icon_pixmap.cc
     )
     target_include_directories(test_tray_icon_pixmap PRIVATE
         ${CMAKE_BINARY_DIR}
-        ${CMAKE_SOURCE_DIR}/src/apps/typio/tray
+        ${CMAKE_SOURCE_DIR}/daemon/tray
     )
     set_target_properties(test_tray_icon_pixmap PROPERTIES
         CXX_STANDARD 17
@@ -77,13 +77,13 @@ if(HAVE_SYSTRAY)
 
     add_executable(test_server_app
         test_server_app.c
-        ${CMAKE_SOURCE_DIR}/src/apps/typio/app.c
-        ${CMAKE_SOURCE_DIR}/src/apps/typio/state_controller.c
+        ${CMAKE_SOURCE_DIR}/daemon/app.c
+        ${CMAKE_SOURCE_DIR}/daemon/state/controller.c
     )
     target_compile_definitions(test_server_app PRIVATE TYPIO_DAEMON_TEST)
     target_include_directories(test_server_app PRIVATE
         ${CMAKE_BINARY_DIR}
-        ${CMAKE_SOURCE_DIR}/src/apps/typio
+        ${CMAKE_SOURCE_DIR}/daemon
         ${TYPIO_TEST_CORE_INCLUDE_DIRS}
     )
     target_link_libraries(test_server_app PRIVATE typio-core)
@@ -93,24 +93,46 @@ endif()
 
 add_executable(test_voice_proxy
     test_voice_proxy.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/voice/voice_proxy.c
+    ${CMAKE_SOURCE_DIR}/daemon/voice/voice_proxy.c
 )
 target_include_directories(test_voice_proxy PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/voice
+    ${CMAKE_SOURCE_DIR}/daemon/voice
+    ${TYPIO_TEST_CORE_INCLUDE_DIRS}
 )
-target_link_libraries(test_voice_proxy PRIVATE pthread)
+target_link_libraries(test_voice_proxy PRIVATE pthread typio-core)
 add_test(NAME test_voice_proxy COMMAND test_voice_proxy)
 set_tests_properties(test_voice_proxy PROPERTIES TIMEOUT 30)
+
+add_executable(test_uds_ipc
+    test_uds_ipc.c
+    ${CMAKE_SOURCE_DIR}/daemon/ipc/tip_protocol.c
+    ${CMAKE_SOURCE_DIR}/daemon/ipc/tip_json.c
+    ${CMAKE_SOURCE_DIR}/daemon/ipc/uds_server.c
+    ${CMAKE_SOURCE_DIR}/daemon/ipc/ipc_bus.c
+    ${CMAKE_SOURCE_DIR}/daemon/state/service.c
+    ${CMAKE_SOURCE_DIR}/daemon/state/controller.c
+)
+target_include_directories(test_uds_ipc PRIVATE
+    ${CMAKE_BINARY_DIR}
+    ${CMAKE_SOURCE_DIR}/daemon
+    ${TYPIO_TEST_CORE_INCLUDE_DIRS}
+)
+target_link_libraries(test_uds_ipc PRIVATE typio-core)
+add_test(NAME test_uds_ipc COMMAND test_uds_ipc)
+set_tests_properties(test_uds_ipc PROPERTIES TIMEOUT 30)
 
 if(HAVE_STATUS_BUS)
     add_executable(test_status_bus
         test_status_bus.c
-        ${CMAKE_SOURCE_DIR}/src/apps/typio/status/status.c
-        ${CMAKE_SOURCE_DIR}/src/apps/typio/state_controller.c
+        ${CMAKE_SOURCE_DIR}/daemon/state/dbus.c
+        ${CMAKE_SOURCE_DIR}/daemon/state/service.c
+        ${CMAKE_SOURCE_DIR}/daemon/ipc/tip_json.c
+        ${CMAKE_SOURCE_DIR}/daemon/ipc/tip_protocol.c
+        ${CMAKE_SOURCE_DIR}/daemon/state/controller.c
     )
     target_include_directories(test_status_bus PRIVATE
         ${CMAKE_BINARY_DIR}
-        ${CMAKE_SOURCE_DIR}/src/apps/typio
+        ${CMAKE_SOURCE_DIR}/daemon
         ${TYPIO_TEST_CORE_INCLUDE_DIRS}
         ${DBUS_INCLUDE_DIRS}
     )
@@ -121,18 +143,18 @@ endif()
 if(BUILD_CONTROL_PANEL)
     add_executable(test_control_config
         test_control_config.c
-        ${CMAKE_SOURCE_DIR}/src/apps/control/main.c
-        ${CMAKE_SOURCE_DIR}/src/apps/control/control_config.c
-        ${CMAKE_SOURCE_DIR}/src/apps/control/control_ui.c
-        ${CMAKE_SOURCE_DIR}/src/apps/control/control_window.c
-        ${CMAKE_SOURCE_DIR}/src/apps/control/control_widgets.c
-        ${CMAKE_SOURCE_DIR}/src/apps/control/control_models.c
-        ${CMAKE_SOURCE_DIR}/src/apps/control/control_bind.c
+        ${CMAKE_SOURCE_DIR}/control/main.c
+        ${CMAKE_SOURCE_DIR}/control/control_config.c
+        ${CMAKE_SOURCE_DIR}/control/control_ui.c
+        ${CMAKE_SOURCE_DIR}/control/control_window.c
+        ${CMAKE_SOURCE_DIR}/control/control_widgets.c
+        ${CMAKE_SOURCE_DIR}/control/control_models.c
+        ${CMAKE_SOURCE_DIR}/control/control_bind.c
     )
     target_compile_definitions(test_control_config PRIVATE TYPIO_CONTROL_TEST)
     target_include_directories(test_control_config PRIVATE
         ${CMAKE_BINARY_DIR}
-        ${CMAKE_SOURCE_DIR}/src/apps/control
+        ${CMAKE_SOURCE_DIR}/control
         ${TYPIO_TEST_CORE_INCLUDE_DIRS}
         ${GTK4_INCLUDE_DIRS}
     )
@@ -146,71 +168,71 @@ endif()
 
 add_executable(test_startup_guard
     test_startup_guard.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/startup_guard.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/boundary_bridge.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_model.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/startup_guard.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/boundary_bridge.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/lifecycle_model.c
 )
 target_include_directories(test_startup_guard PRIVATE
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_startup_guard COMMAND test_startup_guard)
 
 add_executable(test_startup_health
     test_startup_health.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/notify/health.c
+    ${CMAKE_SOURCE_DIR}/daemon/notify/health.c
 )
 target_include_directories(test_startup_health PRIVATE
     ${CMAKE_BINARY_DIR}
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/notify
+    ${CMAKE_SOURCE_DIR}/daemon/notify
 )
 target_link_libraries(test_startup_health PRIVATE typio-core)
 add_test(NAME test_startup_health COMMAND test_startup_health)
 
 add_executable(test_boundary_bridge
     test_boundary_bridge.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/boundary_bridge.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_model.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/boundary_bridge.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/lifecycle_model.c
 )
 target_include_directories(test_boundary_bridge PRIVATE
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_boundary_bridge COMMAND test_boundary_bridge)
 
 add_executable(test_repeat_guard
     test_repeat_guard.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/repeat_guard.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/repeat_guard.c
 )
 target_include_directories(test_repeat_guard PRIVATE
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_repeat_guard COMMAND test_repeat_guard)
 
 add_executable(test_frontend_aux
     test_frontend_aux.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/frontend_aux.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/frontend_aux.c
 )
 target_include_directories(test_frontend_aux PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_frontend_aux COMMAND $<TARGET_FILE:test_frontend_aux>)
 
 add_executable(test_vk_bridge
     test_vk_bridge.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/vk_bridge.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_model.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/vk_bridge.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/lifecycle_model.c
 )
 target_include_directories(test_vk_bridge PRIVATE
     ${CMAKE_BINARY_DIR}
-    ${CMAKE_BINARY_DIR}/src/apps/typio/wayland-protocols
+    ${CMAKE_BINARY_DIR}/daemon/wayland-protocols
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/tray
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/voice
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon
+    ${CMAKE_SOURCE_DIR}/daemon/tray
+    ${CMAKE_SOURCE_DIR}/daemon/voice
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
     ${WAYLAND_CLIENT_INCLUDE_DIRS}
     ${XKBCOMMON_INCLUDE_DIRS}
 )
@@ -224,16 +246,16 @@ add_test(NAME test_vk_bridge COMMAND $<TARGET_FILE:test_vk_bridge>)
 
 add_executable(test_identity
     test_identity.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/identity.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/identity.c
 )
 target_include_directories(test_identity PRIVATE
     ${CMAKE_BINARY_DIR}
-    ${CMAKE_BINARY_DIR}/src/apps/typio/wayland-protocols
+    ${CMAKE_BINARY_DIR}/daemon/wayland-protocols
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/tray
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/voice
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon
+    ${CMAKE_SOURCE_DIR}/daemon/tray
+    ${CMAKE_SOURCE_DIR}/daemon/voice
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
     ${DBUS_INCLUDE_DIRS}
     ${WAYLAND_CLIENT_INCLUDE_DIRS}
     ${XKBCOMMON_INCLUDE_DIRS}
@@ -244,11 +266,11 @@ add_test(NAME test_identity COMMAND $<TARGET_FILE:test_identity>)
 
 add_executable(test_candidate_guard
     test_candidate_guard.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/candidate_guard.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/candidate_guard.c
 )
 target_include_directories(test_candidate_guard PRIVATE
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
     ${XKBCOMMON_INCLUDE_DIRS}
 )
 target_link_libraries(test_candidate_guard PRIVATE typio-core)
@@ -256,27 +278,27 @@ add_test(NAME test_candidate_guard COMMAND test_candidate_guard)
 
 add_executable(test_text_ui_state
     test_text_ui_state.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/text_ui_state.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/text_ui_state.c
 )
 target_include_directories(test_text_ui_state PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_text_ui_state COMMAND test_text_ui_state)
 
 add_executable(test_key_arbiter
     test_key_arbiter.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/key_arbiter.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/shortcut_chord.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/shortcut_config.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/key_arbiter.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/shortcut_chord.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/shortcut_config.c
 )
 target_include_directories(test_key_arbiter PRIVATE
     ${CMAKE_BINARY_DIR}
-    ${CMAKE_BINARY_DIR}/src/apps/typio/wayland-protocols
+    ${CMAKE_BINARY_DIR}/daemon/wayland-protocols
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/tray
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/voice
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon
+    ${CMAKE_SOURCE_DIR}/daemon/tray
+    ${CMAKE_SOURCE_DIR}/daemon/voice
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
     ${DBUS_INCLUDE_DIRS}
     ${WAYLAND_CLIENT_INCLUDE_DIRS}
     ${XKBCOMMON_INCLUDE_DIRS}
@@ -287,16 +309,16 @@ add_test(NAME test_key_arbiter COMMAND test_key_arbiter)
 
 add_executable(test_key_route
     test_key_route.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/key_route.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/key_route.c
 )
 target_include_directories(test_key_route PRIVATE
     ${CMAKE_BINARY_DIR}
-    ${CMAKE_BINARY_DIR}/src/apps/typio/wayland-protocols
+    ${CMAKE_BINARY_DIR}/daemon/wayland-protocols
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/tray
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/voice
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon
+    ${CMAKE_SOURCE_DIR}/daemon/tray
+    ${CMAKE_SOURCE_DIR}/daemon/voice
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
     ${DBUS_INCLUDE_DIRS}
     ${WAYLAND_CLIENT_INCLUDE_DIRS}
     ${XKBCOMMON_INCLUDE_DIRS}
@@ -307,22 +329,22 @@ add_test(NAME test_key_route COMMAND test_key_route)
 
 add_executable(test_shortcut_chord
     test_shortcut_chord.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/shortcut_chord.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/shortcut_chord.c
 )
 target_include_directories(test_shortcut_chord PRIVATE
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
     ${XKBCOMMON_INCLUDE_DIRS}
 )
 add_test(NAME test_shortcut_chord COMMAND test_shortcut_chord)
 
 add_executable(test_modifier_policy
     test_modifier_policy.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/modifier_policy.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/modifier_policy.c
 )
 target_include_directories(test_modifier_policy PRIVATE
     ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
     ${WAYLAND_CLIENT_INCLUDE_DIRS}
     ${XKBCOMMON_INCLUDE_DIRS}
 )
@@ -330,19 +352,19 @@ add_test(NAME test_modifier_policy COMMAND test_modifier_policy)
 
 add_executable(test_key_tracking
     test_key_tracking.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/key_tracking.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/key_tracking.c
 )
 target_include_directories(test_key_tracking PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_key_tracking COMMAND test_key_tracking)
 
 add_executable(test_lifecycle
     test_lifecycle.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_model.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/lifecycle_model.c
 )
 target_include_directories(test_lifecycle PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_lifecycle COMMAND test_lifecycle)
 
@@ -350,68 +372,58 @@ add_executable(test_resume_model
     test_resume_model.c
 )
 target_include_directories(test_resume_model PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_resume_model COMMAND test_resume_model)
 
 add_executable(test_lifecycle_state
     test_lifecycle_state.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_state.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_model.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/lifecycle_state.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/lifecycle_model.c
 )
 target_include_directories(test_lifecycle_state PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_lifecycle_state COMMAND test_lifecycle_state)
 
 add_executable(test_reconcile_model
     test_reconcile_model.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/reconcile_model.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/reconcile_model.c
 )
 target_include_directories(test_reconcile_model PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_reconcile_model COMMAND test_reconcile_model)
 
-add_executable(test_checkpoint_codec
-    test_checkpoint_codec.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/checkpoint_codec.c
-)
-target_include_directories(test_checkpoint_codec PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
-)
-add_test(NAME test_checkpoint_codec COMMAND test_checkpoint_codec)
-
 add_executable(test_reconnect_backoff
     test_reconnect_backoff.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/reconnect_backoff.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/reconnect_backoff.c
 )
 target_include_directories(test_reconnect_backoff PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_reconnect_backoff COMMAND test_reconnect_backoff)
 
 add_executable(test_state_machine_properties
     test_state_machine_properties.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/reconcile_model.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_state.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_model.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/reconnect_backoff.c
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/checkpoint_codec.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/reconcile_model.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/lifecycle_state.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/lifecycle_model.c
+    ${CMAKE_SOURCE_DIR}/daemon/wayland/reconnect_backoff.c
 )
 target_include_directories(test_state_machine_properties PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+    ${CMAKE_SOURCE_DIR}/daemon/wayland
 )
 add_test(NAME test_state_machine_properties COMMAND test_state_machine_properties)
 
 if(BUILD_RIME_ENGINE)
     add_executable(test_rime_path_expand
         test_rime_path_expand.c
-        ${CMAKE_SOURCE_DIR}/src/engines/rime/path_expand.c
+        ${CMAKE_SOURCE_DIR}/engines/rime/path_expand.c
     )
     target_include_directories(test_rime_path_expand PRIVATE
         ${TYPIO_TEST_CORE_INCLUDE_DIRS}
-        ${CMAKE_SOURCE_DIR}/src/engines/rime
+        ${CMAKE_SOURCE_DIR}/engines/rime
     )
     target_link_libraries(test_rime_path_expand PRIVATE typio-core)
     add_test(NAME test_rime_path_expand COMMAND test_rime_path_expand)

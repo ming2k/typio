@@ -8,7 +8,7 @@ This document covers Typio's user-facing control surfaces:
 
 It replaces the older split between UI-only notes and control-center config flow notes. The goal is to keep information architecture, state ownership, and editing rules in one place.
 
-The broader ownership model for persisted config, runtime state, and staged edits is defined in [State Management](state-management.md).
+The broader ownership model for persisted config, runtime state, and staged edits is defined in [Config & Runtime Ownership](config-runtime-ownership.md).
 
 ## Scope
 
@@ -21,7 +21,7 @@ They must not become a second source of truth for runtime or config state.
 
 ## Sources Of Truth
 
-The canonical ownership model is defined in [State Management](state-management.md). Control-surface code should not redefine those domains locally.
+The canonical ownership model is defined in [Config & Runtime Ownership](config-runtime-ownership.md). Control-surface code should not redefine those domains locally.
 
 For UI work, the practical rules are:
 
@@ -97,9 +97,9 @@ Both the tray menu and control center use `typio_rime_schema_list_load()` from t
 
 Implementation locations:
 
-- `src/apps/control/` for the GTK control panel
-- `src/apps/typio/tray/` for the tray control surface
-- `src/core/include/typio/` and `src/core/src/` for shared config and schema helpers consumed by those surfaces
+- `control/` for the GTK control panel
+- `daemon/tray/` for the tray control surface
+- `core/include/typio/` and `core/src/` for shared config and schema helpers consumed by those surfaces
 
 ## Tray Menu Rules
 

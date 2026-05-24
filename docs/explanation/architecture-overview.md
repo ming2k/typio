@@ -7,9 +7,9 @@ Typio is split into a small core library and a Wayland-facing daemon. The daemon
 ```mermaid
 flowchart TD
     WC[Wayland compositor]
-    Daemon[typio daemon]
+    Daemon[daemon]
     DBus[("D-Bus<br/>org.typio.InputMethod1")]
-    Client[typio client]
+    Client[typio]
     Control[typio-control]
     Core[typio-core]
     Basic[built-in basic engine]
@@ -45,11 +45,13 @@ Typio runs on the following protocol layers:
 
 The source tree is organized by stable product boundary first:
 
-- `src/core/`
-  The `typio-core` Rust crate (`Cargo.toml` + `src/`) and the hand-written public C ABI headers in `include/typio/`. The crate implements the full ABI; everything else in the project links it. No platform dependencies.
-- `src/apps/`
-  Executable programs. `typio/` contains the Wayland IME host, the D-Bus command-line control surface, status bus, tray, and voice plumbing. `control/` is the GTK control panel.
-- `src/engines/`
+- `core/`
+  The `typio-core` Rust crate (`Cargo.toml` + `src/`) and the hand-written public C ABI headers in `include/typio/`. The crate implements the full ABI; everything else in the project links it. **No platform dependencies** — core knows nothing about Wayland, D-Bus, GTK, Vulkan, or the event loop. It is the platform-agnostic business kernel.
+- `daemon/`
+  The system-facing adapter layer. Owns the Wayland IME host, IPC bus, status bus, tray, and voice plumbing. Receives platform events and translates them into `core` abstractions; takes `core` callbacks and translates them back into platform requests.
+- `control/`
+  The GTK control panel.
+- `engines/`
   Built-in and pluggable input-engine implementations.
 
 Top-level `src/` directories sit on one axis: the reusable core library, user-facing applications, and engine implementations. The dependency direction — apps and engines both depend on core, never the reverse — is the rule the layout encodes. See [Core ↔ Apps Boundary](#core--apps-boundary) for the full contract.
@@ -58,7 +60,7 @@ Top-level `src/` directories sit on one axis: the reusable core library, user-fa
 
 ### `typio-core`
 
-Located under `src/core/`.
+Located under `core/`.
 
 Responsibilities:
 
@@ -71,12 +73,12 @@ Responsibilities:
 
 Internal split:
 
-- `src/core/include/typio/` — installed public C ABI headers (hand-written, single source of truth)
-- `src/core/Cargo.toml` + `src/core/src/` — the `typio-core` Rust crate that implements the entire ABI (config, input context, engine manager, schema registry, key events, logging, string utilities)
+- `core/include/typio/` — installed public C ABI headers (hand-written, single source of truth)
+- `core/Cargo.toml` + `core/src/` — the `typio-core` Rust crate that implements the entire ABI (config, input context, engine manager, schema registry, key events, logging, string utilities)
 
-### `typio` (daemon)
+### `daemon`
 
-Located under `src/apps/typio/`.
+Located under `daemon/`.
 
 Responsibilities:
 
@@ -104,19 +106,22 @@ Within the Wayland daemon, responsibilities are intentionally split by layer:
 
 Observability ownership follows the same boundary split. See [Timing Model](timing-model.md) for detailed timing rules and [Control Surfaces](control-surfaces.md) for control-surface binding rules.
 
-### `typio` (client mode)
+### `typio` (CLI)
 
-Implemented inside the `typio` executable alongside the daemon. It acts as a command-line interface (`typio engine`, `typio status`, etc.) that interacts with the running server using standard D-Bus method calls.
+Located under `cli/` (Rust). Built as the `typio` binary.
+
+A standalone command-line client (`typio engine`, `typio status`, etc.) that interacts with the running daemon over UDS (Unix Domain Socket), with D-Bus as a fallback. `typio-daemon` forwards to the `daemon` binary.
 
 Responsibilities:
 
 - provide a CLI for querying and controlling a running Typio daemon
-- communicate exclusively over the `org.typio.InputMethod1` D-Bus interface
-- no dependency on `typio-core`; pure D-Bus client
+- the daemon (`typio-daemon`) is started separately
+- communicate over the UDS socket (`$XDG_RUNTIME_DIR/typio/daemon.sock`)
+- no dependency on `typio-core`; pure IPC client
 
 ### `typio-control`
 
-Located under `src/apps/control/`.
+Located under `control/`.
 
 Responsibilities:
 
@@ -128,7 +133,7 @@ See [D-Bus Interface Reference](../reference/dbus-interface.md) for the full pro
 
 ### Built-In `basic` Engine
 
-Located at `src/engines/basic/basic.c`.
+Located at `engines/basic/basic.c`.
 
 Responsibilities:
 
@@ -160,11 +165,11 @@ The single most important rule for this codebase: **core is a library, apps are 
 | Engine plugin loading and switching (`engine_manager`) | core |
 | Config parsing (TOML), schema, persisted state | core |
 | Key-event *types* (`TypioKeyEvent`, `TypioModifier`) and voice-engine *types* (`TypioVoiceEngineOps`) | core |
-| Wayland protocol bindings, XKB state, popup Vulkan surface | apps (`src/apps/typio/wayland/`) |
+| Wayland protocol bindings, XKB state, popup Vulkan surface | apps (`daemon/wayland/`) |
 | Translating `wl_keyboard` events → `TypioKeyEvent` | apps |
 | Translating engine callbacks → `zwp_input_method_v2.commit_string` / preedit | apps |
 | D-Bus surfaces (`org.typio.InputMethod1`), tray, GTK panel | apps |
-| PipeWire capture, voice recording/transcribing state machine, voice orchestration | apps (`src/apps/typio/voice/`) |
+| PipeWire capture, voice recording/transcribing state machine, voice orchestration | apps (`daemon/voice/`) |
 | The main event loop, signal handlers, file descriptors | apps |
 
 ### Direction of data flow across the boundary
@@ -172,13 +177,13 @@ The single most important rule for this codebase: **core is a library, apps are 
 Calls go both ways; the dependency does not.
 
 - **App → Core (synchronous):** `typio_instance_init`, `typio_input_context_focus_in`, `typio_input_context_process_key(ctx, &event)`, `typio_instance_reload_config`. The app translates platform events into `Typio*` structs and pushes them in.
-- **Core → App (callbacks the app registered):** `commit_callback`, `preedit_callback`, `candidate_callback`, `engine_changed_callback`, `status_icon_changed_callback`. When an engine commits text or the active engine changes, core invokes the registered callbacks. The app turns those into protocol writes, tray updates, or D-Bus signals.
+- **Core → App (callbacks the app registered):** `composition_callback`, `commit_callback`, `engine_changed_callback`, `status_icon_changed_callback`. Composition (preedit+candidates) is one transactional value; commit is a separate ordered event ([ADR-0011](../adr/0011-composition-and-lifecycle-rewrite.md)). When an engine updates the composition, commits text, or the active engine changes, core invokes the registered callbacks. The app turns those into protocol writes, tray updates, or D-Bus signals.
 
 The app never exposes `wl_display*` or `xkb_state*` to core. Core never calls into platform APIs. This is what keeps core unit-testable in CI without a compositor.
 
 ### Decision rule for new code
 
-When deciding whether a file belongs in `src/core/` or `src/apps/`:
+When deciding whether a file belongs in `core/` or `daemon/`:
 
 | If the code… | …it goes in |
 |---|---|
@@ -186,14 +191,14 @@ When deciding whether a file belongs in `src/core/` or `src/apps/`:
 | Is data or state belonging to `TypioInstance`, `TypioInputContext`, engines, config, or the engine ABI | **core** |
 | Is a pure state machine, but only one frontend (Wayland, voice, panel) cares about it | **apps** — keep platform-named types with their platform, even when the code is pure |
 
-The third row is the one that catches people. *Purity* alone is not a reason to migrate to core. If no other host needs the concept (`TypioWlLifecyclePhase`, the voice service state machine, popup geometry), putting it in core just leaks platform vocabulary into a platform-agnostic library. Core's value is precisely what it *doesn't* mention.
+The third row is the one that catches people. *Purity* alone is not a reason to migrate to core. If no other host needs the concept (the Wayland session `reduce`/`diff` state machine, the voice service state machine, popup geometry), putting it in core just leaks platform vocabulary into a platform-agnostic library. Core's value is precisely what it *doesn't* mention.
 
 ### Worked example: voice
 
 Voice is the cleanest illustration of the boundary working correctly:
 
 - **In core:** `TypioEngineTypeVoice` and `TypioVoiceEngineOps` — the "PCM in, text out" engine ABI. Whisper and sherpa-onnx register as voice engines through the same `engine_manager` that loads keyboard engines.
-- **In apps (`src/apps/typio/voice/`):** PipeWire capture, the recording/transcribing state machine, the pthread that runs inference, the `eventfd` that wakes the main loop when inference finishes, the daemon-side reading of voice config sections.
+- **In apps (`daemon/voice/`):** PipeWire capture, the recording/transcribing state machine, the pthread that runs inference, the `eventfd` that wakes the main loop when inference finishes, the daemon-side reading of voice config sections.
 
 The reusable abstraction is already on the core side. The orchestration that drives it is platform-bound and stays in apps. A future X11 or CLI host would link the same voice engines through the same ABI, but would need its own audio capture and event-loop integration — that's exactly what "apps own platform glue" means.
 
@@ -304,20 +309,20 @@ Design rules:
 3. Typio grabs the keyboard and builds XKB state.
 4. Key presses become `TypioKeyEvent`.
 5. The active engine returns one of: not handled, handled internally, composing, committed.
-6. Commit and preedit callbacks are translated into `zwp_input_method_v2` requests.
-7. Candidate lists are rendered through `zwp_input_popup_surface_v2` when the session exposes the necessary Wayland globals. If candidate popup rendering is unavailable, Typio keeps candidate state visible inline in preedit.
+6. Composition and commit callbacks are translated into `zwp_input_method_v2` requests (the composition's preedit via `set_preedit_string`, commit via `commit_string`).
+7. The composition's candidate list is rendered through `zwp_input_popup_surface_v2` when the session exposes the necessary Wayland globals. If candidate popup rendering is unavailable, Typio keeps candidate state visible inline in preedit.
 
 ## Candidate Popup Pipeline
 
 The candidate-list UI is intentionally layered so state and rendering stay separate:
 
 1. the keyboard engine owns candidate content and the selected index
-2. `TypioInputContext` stores that state as the UI source of truth
-3. `wl_input_method.c` decides when text UI must be refreshed
+2. `TypioInputContext` stores the composition (preedit + candidates) as the UI source of truth
+3. the composition callback marks the popup dirty; the event-loop flush refreshes it once per iteration, diffing against the last composition sent
 4. `text_ui_backend.c` provides the Typio-side UI backend boundary
 5. `candidate_popup.c` classifies the change and dispatches to the correct render path over `zwp_input_popup_surface_v2`
 
-The important architectural rule is that `wl_input_method.c` depends on the text-UI backend abstraction, not on a concrete popup implementation.
+The important architectural rule is that the refresh path depends on the text-UI backend abstraction, not on a concrete popup implementation.
 
 ### Delta classification
 
@@ -349,11 +354,11 @@ The present runs synchronously on the event-loop thread, so `flux_surface_begin_
 
 ## Keyboard Safety Model
 
-The Wayland keyboard grab path uses an explicit per-key state machine for forwarded keys, synthetic releases, and startup suppression. Activation-boundary handoff policy is kept separate in `boundary_bridge.*`.
+The Wayland keyboard grab path stamps every key with the current grab **epoch** and tracks forwarded keys for symmetric release in `key_tracker.{c,h}`. A key whose epoch ≠ the current grab epoch is dropped at routing — the single fence for stale keys (re-sends across rebuild, suspend, or reconnect). Grab build/teardown, including the brief modifier carry across a focus handoff, is part of `session_effects` `apply`, not a separate boundary module.
 
 The intended forwarding model is conservative: if the IME does not consume a key, Typio forwards the original press/release sequence and separately keeps the virtual keyboard modifier state in sync. Modifier changes must not trigger synthetic releases for unrelated non-modifier keys in the main key path.
 
-The maintenance rules for this state machine live in the [Developer Maintenance Manual](../dev/maintenance.md). Any change to keyboard grab lifecycle or suppression behavior should update that document and the [Timing Model](timing-model.md) alongside the code.
+The rules for this path live in the [Timing Model](timing-model.md) and [ADR-0011](../adr/0011-composition-and-lifecycle-rewrite.md). Any change to grab lifecycle or epoch fencing should update those alongside the code.
 
 ## Current Scope
 
@@ -384,4 +389,4 @@ These are data-structure-level ownership rules. For the component-level boundary
 - `TypioVoiceService` owns the PipeWire capture, the audio buffer, the inference thread, and the `eventfd` notification.
 - Engine implementations own their own `user_data`.
 
-For persisted config vs runtime-state ownership across daemon and control surfaces, see [State Management](state-management.md).
+For persisted config vs runtime-state ownership across daemon and control surfaces, see [Config & Runtime Ownership](config-runtime-ownership.md).

@@ -10,7 +10,6 @@
  * threshold boundaries) that hand-written cases tend to miss.
  */
 
-#include "checkpoint_codec.h"
 #include "lifecycle_state.h"
 #include "reconciler.h"
 #include "reconnect_backoff.h"
@@ -260,46 +259,6 @@ TEST(backoff_is_monotonic_and_bounded_random) {
     }
 }
 
-/* ---- checkpoint_codec (random round-trip) --------------------------- */
-TEST(checkpoint_round_trip_random_blobs) {
-    static char blob[512];
-    static const char *engines[] = { "rime", "mozc", "basic", "x" };
-
-    for (int i = 0; i < 4000; ++i) {
-        rng_state = (uint32_t)i * 40503u + 5u;
-        size_t blob_size = rng_below(sizeof(blob) + 1);
-        for (size_t j = 0; j < blob_size; ++j)
-            blob[j] = (char)rng_below(256); /* binary-safe, includes NUL/high */
-
-        TypioCkpRecord in;
-        in.version = TYPIO_CKP_VERSION;
-        in.engine_name = engines[rng_below(4)];
-        in.engine_name_len = 0;
-        in.identity = (rng_below(2) == 0) ? "" : "app:test";
-        in.identity_len = 0;
-        in.boottime_ms = rng_next();
-        in.blob = blob_size ? blob : NULL;
-        in.blob_size = blob_size;
-
-        size_t size = 0;
-        char *buf = typio_ckp_encode(&in, &size);
-        ASSERT(buf != NULL);
-
-        TypioCkpRecord out;
-        ASSERT(typio_ckp_decode(buf, size, &out));
-        ASSERT(out.version == TYPIO_CKP_VERSION);
-        ASSERT(out.engine_name_len == strlen(in.engine_name));
-        ASSERT(memcmp(out.engine_name, in.engine_name, out.engine_name_len) == 0);
-        ASSERT(out.boottime_ms == in.boottime_ms);
-        ASSERT(out.blob_size == blob_size);
-        if (blob_size)
-            ASSERT(memcmp(out.blob, blob, blob_size) == 0);
-
-        /* Any single-byte corruption of magic must be rejected. */
-        free(buf);
-    }
-}
-
 int main(void) {
     printf("Running state machine property tests:\n");
 
@@ -310,7 +269,6 @@ int main(void) {
     run_test_resume_detector_respects_cooldown_window();
     run_test_lifecycle_projection_and_agreement_exhaustive();
     run_test_backoff_is_monotonic_and_bounded_random();
-    run_test_checkpoint_round_trip_random_blobs();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

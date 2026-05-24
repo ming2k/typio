@@ -1,6 +1,6 @@
 # Troubleshooting
 
-## `typio --list` shows no external engines
+## `typio-daemon --list` shows no external engines
 
 The built-in `basic` engine should still be listed. If it is the only engine, Typio is healthy and simply has no extra plugins installed yet.
 
@@ -96,7 +96,7 @@ A healthy process shows zero or a very small number. Hundreds of entries confirm
 
 ```bash
 typio stop
-typio &
+typio-daemon &
 ```
 
 The underlying leak is patched in the current source. Rebuilding and reinstalling eliminates it permanently.
@@ -104,13 +104,13 @@ The underlying leak is patched in the current source. Rebuilding and reinstallin
 ## Debug Logging
 
 ```bash
-typio --verbose
+typio-daemon --verbose
 ```
 
 Logs go to stderr. To keep a trace:
 
 ```bash
-typio --verbose 2>&1 | tee typio.log
+typio-daemon --verbose 2>&1 | tee typio.log
 ```
 
 Or use the helper script:
@@ -230,8 +230,8 @@ ldd /usr/local/lib/libtypio-core.so
 
 When reporting a problem, include:
 
-- `typio --version`
-- `typio --list`
+- `typio version`
+- `typio-daemon --list`
 - full `--verbose` output
 - compositor name and version
 - whether another input method was already running

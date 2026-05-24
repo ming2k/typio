@@ -106,7 +106,7 @@ Each `TypioConfigField` entry contains:
 
 Fields without `ui_label` are internal (no UI representation).
 
-Fields with `runtime_property` are still persisted config keys. The extra metadata means the key has a direct daemon runtime mirror and control surfaces should prefer that runtime property for display state when appropriate. See [State Management](state-management.md).
+Fields with `runtime_property` are still persisted config keys. The extra metadata means the key has a direct daemon runtime mirror and control surfaces should prefer that runtime property for display state when appropriate. See [Config & Runtime Ownership](config-runtime-ownership.md).
 
 ## How To Add A New Configuration Field
 

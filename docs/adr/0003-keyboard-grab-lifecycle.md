@@ -1,8 +1,14 @@
 # ADR-0003: Keyboard grab lifecycle
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0011](0011-composition-and-lifecycle-rewrite.md)
 - **Date**: 2026-05-22
 - **Deciders**: Project maintainers
+
+> The keyboard-grab decision below remains valid in intent (Wayland-native grab,
+> conservative forwarding, recovery backstops). Its *implementation* — the linear
+> phase FSM, per-key generation arrays, and the separate startup/boundary guards —
+> is replaced by the derived reduce+diff session model and single epoch fence in
+> ADR-0011.
 
 ## Context
 

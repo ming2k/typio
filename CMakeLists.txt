@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(typio VERSION 3.3.4 LANGUAGES C CXX)
+project(typio VERSION 4.0.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -218,7 +218,7 @@ set(_flux_meson_setup
         --reconfigure
         -Dcanvas=true
         -Dscene=false
-        -Dcompute=false
+        -Dcompute=true
         -Dexamples=false
         -Dtests=false
         ${_flux_build}
@@ -268,9 +268,39 @@ set_target_properties(flux::flux PROPERTIES
     INTERFACE_LINK_LIBRARIES      "Vulkan::Vulkan;Threads::Threads;m"
 )
 
-add_subdirectory(src/core)
-add_subdirectory(src/engines)
-add_subdirectory(src/apps)
+add_subdirectory(core)
+add_subdirectory(engines)
+add_subdirectory(daemon)
+
+# ── cli (Rust cargo build) ───────────────────────────────────────────
+set(TYPIO_CLI_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/cli/Cargo.toml")
+set(TYPIO_CLI_RELEASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cli/target/release")
+set(TYPIO_CLI_BIN "${TYPIO_CLI_RELEASE_DIR}/typio")
+
+add_custom_target(cli-rust ALL
+    COMMAND cargo build --release --manifest-path "${TYPIO_CLI_MANIFEST}"
+    BYPRODUCTS "${TYPIO_CLI_BIN}"
+    COMMENT "Building cli (Rust)"
+    VERBATIM
+)
+
+# Copy typio into the build root so ./build/typio is usable during development.
+add_custom_command(TARGET cli-rust POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${TYPIO_CLI_BIN}"
+        "${CMAKE_BINARY_DIR}/typio"
+    COMMENT "Copying typio CLI to build root"
+)
+
+install(PROGRAMS "${TYPIO_CLI_BIN}"
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
+    RENAME typio
+    OPTIONAL
+)
+
+if(BUILD_CONTROL_PANEL)
+    add_subdirectory(control)
+endif()
 
 if(BUILD_TESTS)
     enable_testing()

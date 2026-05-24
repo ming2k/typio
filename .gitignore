@@ -3,7 +3,8 @@ build/
 build-headless/
 out/
 cmake-build-*/
-src/core/target/
+core/target/
+cli/target/
 
 # AI assistant tooling (local, not project artifacts)
 .claude/
@@ -95,4 +96,4 @@ _deps
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db

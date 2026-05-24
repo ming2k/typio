@@ -1,6 +1,6 @@
 # API Reference Index
 
-The public C API lives under `src/core/include/typio/*.h`.
+The public C API lives under `core/include/typio/*.h`.
 
 - [Core API](core.md) — Lifecycle, input context, config, and events
 - [Engine API](engine.md) — Engine manager, operations, and plugin entry points

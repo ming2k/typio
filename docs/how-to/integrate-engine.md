@@ -9,7 +9,7 @@ This guide covers adding a new input engine to Typio, either as a built-in integ
 | **Built-in** | The engine is maintained by the Typio project, has tight coupling to internal APIs, or is shipped in official packages. |
 | **Plugin (shared library)** | The engine is third-party, experimental, or needs to be developed and distributed independently of Typio releases. |
 
-Built-in engines live in `src/engines/` and are linked into `typio-core` or the daemon. Plugin engines are `.so` files loaded at runtime from the engine directory.
+Built-in engines live in `engines/` and are linked into `typio-core` or the daemon. Plugin engines are `.so` files loaded at runtime from the engine directory.
 
 ---
 
@@ -18,19 +18,19 @@ Built-in engines live in `src/engines/` and are linked into `typio-core` or the 
 ### 1. Create the engine directory
 
 ```bash
-mkdir src/engines/myengine
+mkdir engines/myengine
 ```
 
 ### 2. Write the engine implementation
 
-A minimal keyboard engine needs `init`, `destroy`, and `process_key`. See [`src/engines/basic/basic.c`](../../src/engines/basic/basic.c) for a concise reference.
+A minimal keyboard engine needs `init`, `destroy`, and `process_key`. See [`engines/basic/basic.c`](../../engines/basic/basic.c) for a concise reference.
 
 Key rules:
 
 - Return `TYPIO_KEY_NOT_HANDLED` for keys you do not consume.
 - Do not block inside `process_key`.
 - Store engine-specific state in `engine->user_data`.
-- Use `typio_input_context_commit()`, `set_preedit()`, and `set_candidates()` to output text.
+- Use `typio_input_context_set_composition()` (preedit + candidates in one `TypioComposition`) and `typio_input_context_commit()` to output text ([ADR-0011](../adr/0011-composition-and-lifecycle-rewrite.md); pre-migration code still uses `set_preedit()` / `set_candidates()`).
 
 Example skeleton:
 
@@ -109,7 +109,7 @@ If your engine needs external libraries (e.g. `pkg_check_modules`), add them her
 
 ### 4. Wire into the build system
 
-Edit `src/engines/CMakeLists.txt`:
+Edit `engines/CMakeLists.txt`:
 
 ```cmake
 option(BUILD_MYENGINE "Build the MyEngine keyboard engine" OFF)
@@ -122,7 +122,7 @@ Edit the root `CMakeLists.txt` to add the option and any `find_package` / `pkg_c
 
 ### 5. Register the engine at startup
 
-Edit `src/apps/typio/wl_frontend.c` (or whichever frontend initializes the engine manager):
+Edit `daemon/wl_frontend.c` (or whichever frontend initializes the engine manager):
 
 ```c
 #ifdef BUILD_MYENGINE
@@ -198,7 +198,7 @@ Follow the proxy pattern used in `voice_engine_whisper.c` and `voice_engine_sher
 
 ### 3. Export backend discovery
 
-Add to `src/apps/typio/voice/voice_engine.h`:
+Add to `daemon/voice/voice_engine.h`:
 
 ```c
 #ifdef HAVE_MY_VOICE
@@ -207,7 +207,7 @@ extern TypioEngine *typio_engine_create_my_voice(void);
 #endif
 ```
 
-Add to `src/apps/typio/voice/voice_service.c` or the voice engine compilation unit:
+Add to `daemon/voice/voice_service.c` or the voice engine compilation unit:
 
 ```c
 #ifdef HAVE_MY_VOICE
@@ -258,8 +258,8 @@ install(TARGETS typio-my-plugin
 ### Verify
 
 ```bash
-typio --list
-typio --engine my-plugin --verbose
+daemon --list
+daemon --engine my-plugin --verbose
 ```
 
 See [How to Create a Custom Engine](create-custom-engine.md) for a complete minimal example.
@@ -269,7 +269,7 @@ See [How to Create a Custom Engine](create-custom-engine.md) for a complete mini
 ## Testing a New Engine
 
 1. **Unit test** — If the engine has pure logic (e.g. a key parser), add tests under `tests/`.
-2. **Integration test** — Run `typio --engine <name>` and exercise key sequences with `typio --verbose`.
+2. **Integration test** — Run `typio-daemon --engine <name>` and exercise key sequences with `typio-daemon --verbose`.
 3. **Config reload test** — Change the engine's `typio.toml` section and trigger reload (SIGHUP or D-Bus) to verify `reload_config` behavior.
 
 ---
@@ -282,7 +282,7 @@ See [How to Create a Custom Engine](create-custom-engine.md) for a complete mini
 - [ ] For voice: backend conforms to float32 mono 16 kHz contract.
 - [ ] `process_key` never blocks.
 - [ ] Engine state is stored in `user_data`, not globals.
-- [ ] CMake option added and wired into `src/engines/CMakeLists.txt`.
+- [ ] CMake option added and wired into `engines/CMakeLists.txt`.
 - [ ] Engine registered in the daemon startup path (built-in only).
 - [ ] Config schema updated if new keys are introduced.
 - [ ] Documentation updated: `docs/reference/engines.md` and this guide.

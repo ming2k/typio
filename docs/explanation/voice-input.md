@@ -13,7 +13,7 @@ Typio's voice input is a secondary pipeline that runs alongside the active keybo
 
 ```mermaid
 flowchart TD
-    subgraph Daemon["typio daemon (main thread, Wayland event loop)"]
+    subgraph Daemon["daemon (main thread, Wayland event loop)"]
         direction LR
         KR[key_route] --> EM[engine_mgr] --> VS[voice_service<br/>state machine]
         VS -. eventfd notification<br/>inference thread completion .-> VS

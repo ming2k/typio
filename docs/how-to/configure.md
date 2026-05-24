@@ -48,7 +48,7 @@ typio config get
 For a single run, override config paths or engine choice without editing files:
 
 ```bash
-typio --config ~/.config/typio-dev --data ~/.local/share/typio-dev --engine-dir ~/.local/lib/typio/engines --engine basic
+typio-daemon --config ~/.config/typio-dev --data ~/.local/share/typio-dev --engine-dir ~/.local/lib/typio/engines --engine basic
 ```
 
 Available overrides:

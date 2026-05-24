@@ -2,9 +2,9 @@
 
 The source tree is organized by stable product boundary first:
 
-## `src/core/`
+## `core/`
 
-The core library. A Rust crate (`typio-core`) exposing a hand-written C ABI, plus its public headers.
+The core library — platform-agnostic business logic. A Rust crate (`typio-core`) exposing a hand-written C ABI, plus its public headers.
 
 - `Cargo.toml` / `Cargo.lock` — crate manifest. Package: `typio-core`. Static library: `libtypio_core.a`.
 - `src/` — Rust sources. Each module corresponds to one ABI area:
@@ -19,14 +19,15 @@ The core library. A Rust crate (`typio-core`) exposing a hand-written C ABI, plu
 - `include/typio/` — installed public C headers (hand-written, single source of truth). Includes `log.h` (header-only `static inline typio_log`) and `string.h`.
 - `CMakeLists.txt` — drives `cargo build` (profile follows `CMAKE_BUILD_TYPE`) and wraps the Rust staticlib into the shared `typio-core` library.
 
-## `src/apps/`
+## `daemon/`
 
-Executable programs.
+The system-facing daemon. Platform-specific adapter layer: Wayland IME host, IPC bus, status bus, tray, and voice plumbing. Translates platform events (Wayland protocol, keyboard grab, D-Bus) into `core` abstractions and translates `core` callbacks back into platform requests. Pure daemon; no client code.
 
-- `typio/` — the Wayland IME host, the D-Bus command-line control surface, status bus, tray, and voice plumbing
-- `control/` — the GTK control panel
+## `control/`
 
-## `src/engines/`
+The GTK4 control panel (`typio-control`).
+
+## `engines/`
 
 Built-in and pluggable input-engine implementations.
 
@@ -34,6 +35,14 @@ Built-in and pluggable input-engine implementations.
 
 Unit and integration test binaries.
 
+## `cli/`
+
+The Rust command-line client (`typio`). Built separately from the daemon, it communicates over UDS (with D-Bus fallback) to query and control a running daemon. The daemon (`typio-daemon`) is started separately.
+
 ## Design rationale
 
-Top-level `src/` directories sit on one axis: the reusable core library, user-facing applications, and engine implementations. The core is a Rust crate to get memory and concurrency safety on the parts most easily corrupted; its C ABI keeps every other layer free to remain C/C++ without churn. Public headers live next to the crate so consumers see a single include root (`src/core/include/typio/`).
+Top-level directories sit on one axis: the platform-agnostic core library, the system-facing daemon, the command-line client, the control-panel application, and engine implementations.
+
+The rule the layout encodes is **core owns business logic; daemon owns platform glue**. `core/` knows nothing about Wayland, D-Bus, GTK, X11, Vulkan, or the event loop. `daemon/` knows everything about the platform but delegates all linguistic and configuration decisions to `core`. The C ABI is the narrow boundary between the two.
+
+The core is a Rust crate to get memory and concurrency safety on the parts most easily corrupted; its C ABI keeps every other layer free to remain C/C++ without churn. The CLI is also Rust because it needs no C dependencies and benefits from modern argument parsing and error handling. Public headers live next to the crate so consumers see a single include root (`core/include/typio/`).

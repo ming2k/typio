@@ -4,7 +4,7 @@
 
 - C11 for C code (Wayland frontend, engine plugins, protocol glue)
 - C++17 where C++ is already required
-- Rust 2021 edition for core business logic (`src/core/`, crate `typio-core`)
+- Rust 2021 edition for core business logic (`core/`, crate `typio-core`)
 
 ## Formatting
 

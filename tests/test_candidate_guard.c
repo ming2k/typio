@@ -49,15 +49,16 @@ TEST(consumes_arrow_keys_when_candidates_exist) {
         .comment = "",
         .label = "1",
     };
-    TypioCandidateList candidates = {
-        .candidates = &candidate,
-        .count = 1,
-        .selected = 0,
-    };
     TypioInputContext *ctx = typio_input_context_new(NULL);
 
     ASSERT(ctx != NULL);
-    typio_input_context_set_candidates(ctx, &candidates);
+    TypioComposition comp = {
+        .struct_size = sizeof(TypioComposition),
+        .candidates = &candidate,
+        .candidate_count = 1,
+        .selected = 0,
+    };
+    typio_input_context_set_composition(ctx, &comp);
 
     ASSERT(typio_wl_candidate_guard_should_consume(ctx, XKB_KEY_Up));
     ASSERT(typio_wl_candidate_guard_should_consume(ctx, XKB_KEY_Down));

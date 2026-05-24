@@ -4,6 +4,8 @@
 
 This manual documents the maintenance rules for Typio's Wayland keyboard pipeline. Its goal is to keep the implementation safe, robust, predictable, and easy to extend without reintroducing stale-key bugs or asymmetric key sequences.
 
+> [ADR-0011](../adr/0011-composition-and-lifecycle-rewrite.md) replaces the stored phase machine and the `startup_guard` / `boundary_bridge` / generation-array mechanisms named below with a derived reduce+diff session model and a single grab-epoch fence (`key_tracker`). Module names in this manual describe the pre-migration code; the *rules* (symmetric release, no stale keys, fail-safe over locked keyboard) carry over unchanged. See [Timing Model](../explanation/timing-model.md) for the target model.
+
 Use this document together with [Architecture Overview](../explanation/architecture-overview.md) when changing keyboard handling, engine interaction, or focus lifecycle code.
 
 ## Design Goals
@@ -49,7 +51,7 @@ Rule: no `TypioKeyTrackState` value may survive from one activation to the next.
 
 ## Key Tracking State Machine
 
-`TypioKeyTrackState` lives in `src/apps/typio/wayland/wl_frontend_internal.h`. Per-key ownership also tracks a `key_generation`: a key cycle belongs to the current grab only if Typio observed its press in the current generation.
+`TypioKeyTrackState` lives in `daemon/wayland/wl_frontend_internal.h`. Per-key ownership also tracks a `key_generation`: a key cycle belongs to the current grab only if Typio observed its press in the current generation.
 
 States:
 

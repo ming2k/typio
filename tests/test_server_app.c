@@ -1,5 +1,6 @@
 #include "app.h"
 
+#include "ipc/ipc_bus.h"
 #include "typio/typio.h"
 
 #include <assert.h>
@@ -367,6 +368,20 @@ void typio_tray_update_engine(TypioTray *tray, const char *engine_name, bool is_
 }
 #endif
 
+TypioIpcBus *typio_ipc_bus_new([[maybe_unused]] TypioInstance *instance) { return NULL; }
+void typio_ipc_bus_destroy([[maybe_unused]] TypioIpcBus *bus) {}
+int typio_ipc_bus_get_fd([[maybe_unused]] TypioIpcBus *bus) { return -1; }
+void typio_ipc_bus_dispatch([[maybe_unused]] TypioIpcBus *bus) {}
+void typio_ipc_bus_emit_properties_changed([[maybe_unused]] TypioIpcBus *bus) {}
+void typio_ipc_bus_set_runtime_state_callback([[maybe_unused]] TypioIpcBus *bus,
+                                               [[maybe_unused]] TypioIpcBusRuntimeStateCallback callback,
+                                               [[maybe_unused]] void *user_data) {}
+void typio_ipc_bus_set_stop_callback([[maybe_unused]] TypioIpcBus *bus,
+                                      [[maybe_unused]] TypioIpcBusStopCallback callback,
+                                      [[maybe_unused]] void *user_data) {}
+void typio_ipc_bus_bind_state_controller([[maybe_unused]] TypioIpcBus *bus,
+                                          [[maybe_unused]] struct TypioStateController *ctrl) {}
+
 #ifdef HAVE_STATUS_BUS
 TypioStatusBus *typio_status_bus_new([[maybe_unused]] TypioInstance *instance) { return NULL; }
 void typio_status_bus_destroy([[maybe_unused]] TypioStatusBus *bus) {}
@@ -390,6 +405,8 @@ void typio_wl_frontend_stop([[maybe_unused]] TypioWlFrontend *frontend) {}
 const char *typio_wl_frontend_get_error([[maybe_unused]] TypioWlFrontend *frontend) { return NULL; }
 void typio_wl_frontend_set_tray([[maybe_unused]] TypioWlFrontend *frontend,
                                 [[maybe_unused]] void *tray) {}
+void typio_wl_frontend_set_ipc_bus([[maybe_unused]] TypioWlFrontend *frontend,
+                                    [[maybe_unused]] void *bus) {}
 void typio_wl_frontend_set_status_bus([[maybe_unused]] TypioWlFrontend *frontend,
                                       [[maybe_unused]] void *status_bus) {}
 void typio_wl_frontend_remember_active_engine([[maybe_unused]] TypioWlFrontend *frontend,

@@ -24,7 +24,7 @@ Optional:
 
 | Dependency | Source | Resolved version | You need to install it? |
 |---|---|---|---|
-| **Rust core** (`src/core/`) | Cargo (CMake custom command) | latest stable | **Yes** — install `rustc` + `cargo` |
+| **Rust core** (`core/`) | Cargo (CMake custom command) | latest stable | **Yes** — install `rustc` + `cargo` |
 | **flux** (rendering framework) | ExternalProject (Meson) | `44de7ec` (v0.0.1) | **No** — built automatically |
 
 flux is built automatically during the CMake build step via Meson + Ninja.
@@ -41,10 +41,10 @@ packages shipped in the latest Arch Linux and Fedora releases.
 
 Typio uses a hybrid architecture:
 
-- **Rust** — The core library (`src/core/`, crate `typio-core`): instance lifecycle, config parsing and schema, input context state, engine ABI/manager/labels, key-event types, logging sink, string utilities, and Rime schema discovery.
-- **C / C++** — Everything else: the Wayland frontend (`src/apps/typio/wayland/`), engine plugin implementations (`src/engines/`), Vulkan/flux rendering, D-Bus status surfaces, GTK control panel.
+- **Rust** — The core library (`core/`, crate `typio-core`): instance lifecycle, config parsing and schema, input context state, engine ABI/manager/labels, key-event types, logging sink, string utilities, and Rime schema discovery.
+- **C / C++** — Everything else: the Wayland frontend (`daemon/wayland/`), engine plugin implementations (`engines/`), Vulkan/flux rendering, D-Bus status surfaces, GTK control panel.
 
-The hand-written C headers in `src/core/include/typio/*.h` are the ABI contract — the single source of truth. Rust implements matching `#[no_mangle] pub extern "C"` functions. CMake invokes `cargo build` automatically (release profile for `Release`/`RelWithDebInfo`/`MinSizeRel`; debug profile otherwise — keeping memory and link time low during iteration) and whole-archive-links the resulting `libtypio_core.a` into `libtypio-core`. No manual Cargo invocation is required during normal development.
+The hand-written C headers in `core/include/typio/*.h` are the ABI contract — the single source of truth. Rust implements matching `#[no_mangle] pub extern "C"` functions. CMake invokes `cargo build` automatically (release profile for `Release`/`RelWithDebInfo`/`MinSizeRel`; debug profile otherwise — keeping memory and link time low during iteration) and whole-archive-links the resulting `libtypio_core.a` into `libtypio-core`. No manual Cargo invocation is required during normal development.
 
 When modifying Rust code, edits are picked up automatically on the next `cmake --build` because CMake tracks all `.rs` files and `Cargo.toml` as dependencies.
 
@@ -90,13 +90,13 @@ dbus-run-session -- ctest --test-dir build --output-on-failure
 ## Run the daemon while iterating
 
 ```bash
-./build/src/apps/typio/typio --engine basic --verbose
+./build/daemon/typio-daemon --engine basic --verbose
 ```
 
 For plugin engine work, point the daemon at the build-tree engine directory:
 
 ```bash
-./build/src/apps/typio/typio --engine-dir ./build/engines --engine rime --verbose
+./build/daemon/typio-daemon --engine-dir ./build/engines --engine rime --verbose
 ```
 
 ## CMake options

@@ -1,21 +1,8 @@
 # CLI Reference
 
-## Daemon flags
-
-| Flag | Description |
-|------|-------------|
-| `--config DIR` | Config directory override |
-| `--data DIR` | Data directory override |
-| `--engine-dir DIR` | Extra engine search path |
-| `--engine NAME` | Active engine for this run |
-| `--list` | List available engines and exit |
-| `--verbose` | Enable debug logging to stderr |
-| `--version` | Print version and exit |
-| `--help` | Print help and exit |
+The `typio` executable is the command-line client. It controls a running `typio-daemon` over UDS (Unix Domain Socket). The daemon must be started separately.
 
 ## Client subcommands
-
-The `typio` executable also acts as a lightweight CLI that controls a running daemon over D-Bus.
 
 ```bash
 typio engine             # print active keyboard engine
@@ -35,3 +22,18 @@ typio help               # show help
 ```
 
 Use `typio rime deploy` after editing Rime source files under Typio's user data directory, such as `default.custom.yaml`, so librime rebuilds the generated `build/*.yaml` files before the next composition session.
+
+## `typio-daemon` flags
+
+`typio-daemon` is started independently. Common flags:
+
+| Flag | Description |
+|------|-------------|
+| `--config DIR` | Config directory override |
+| `--data DIR` | Data directory override |
+| `--engine-dir DIR` | Extra engine search path |
+| `--engine NAME` | Active engine for this run |
+| `--list` | List available engines and exit |
+| `--verbose` | Enable debug logging to stderr |
+| `--version` | Print version and exit |
+| `--help` | Print help and exit |

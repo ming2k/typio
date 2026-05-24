@@ -2,6 +2,8 @@
 
 This guide assumes you are familiar with building Typio from source and with C programming.
 
+> Output-API note: [ADR-0011](../adr/0011-composition-and-lifecycle-rewrite.md) replaces `set_preedit` + `set_candidates` with a single `typio_input_context_set_composition` (preedit + candidates in one `TypioComposition`; an empty one clears them); commit is unchanged. The examples below use the current calls until that migration lands.
+
 ## When to use this
 
 Use this when you want to add a new input engine to Typio as a shared-library plugin.
@@ -168,13 +170,13 @@ If `typio.pc` is in a non-standard prefix, export `PKG_CONFIG_PATH` before confi
 2. Confirm it appears:
 
 ```bash
-typio --list
+daemon --list
 ```
 
 3. Run Typio with that engine:
 
 ```bash
-typio --engine my-engine --verbose
+daemon --engine my-engine --verbose
 ```
 
 ## Practical guidance

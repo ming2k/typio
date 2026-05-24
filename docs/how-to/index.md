@@ -14,6 +14,7 @@ Task-oriented recipes for specific goals. Each guide assumes you have already co
 
 ## Operations
 
+- [Communicate over UDS](communicate-over-uds.md) — Send JSON-RPC commands to the daemon via its Unix Domain Socket.
 - [Troubleshooting](troubleshooting.md) — Diagnose common runtime problems.
 
 ## Looking for something else?

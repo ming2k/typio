@@ -45,9 +45,8 @@ static int tests_passed = 0;
 typedef struct CaptureState {
     char *commit_text;
     char *preedit_text;
-    size_t preedit_callback_count;
+    size_t composition_callback_count;
     size_t candidate_count;
-    size_t candidate_callback_count;
     int candidate_selected;
     uint64_t candidate_signature;
     char *status_icon;
@@ -108,44 +107,35 @@ static void capture_commit([[maybe_unused]] TypioInputContext *ctx, const char *
     capture->commit_text = text ? strdup(text) : nullptr;
 }
 
-static void capture_preedit([[maybe_unused]] TypioInputContext *ctx,
-                            const TypioPreedit *preedit,
-                            void *user_data) {
+static void capture_composition([[maybe_unused]] TypioInputContext *ctx,
+                                 const TypioComposition *composition,
+                                 void *user_data) {
     CaptureState *capture = user_data;
     size_t total = 0;
     char *buffer;
 
     free(capture->preedit_text);
     capture->preedit_text = nullptr;
-    capture->preedit_callback_count++;
+    capture->composition_callback_count++;
 
-    if (!preedit || preedit->segment_count == 0) {
-        return;
+    if (composition && composition->segment_count > 0) {
+        for (size_t i = 0; i < composition->segment_count; ++i) {
+            total += strlen(composition->segments[i].text);
+        }
+
+        buffer = calloc(total + 1, 1);
+        ASSERT_NOT_NULL(buffer);
+
+        for (size_t i = 0; i < composition->segment_count; ++i) {
+            strcat(buffer, composition->segments[i].text);
+        }
+
+        capture->preedit_text = buffer;
     }
 
-    for (size_t i = 0; i < preedit->segment_count; ++i) {
-        total += strlen(preedit->segments[i].text);
-    }
-
-    buffer = calloc(total + 1, 1);
-    ASSERT_NOT_NULL(buffer);
-
-    for (size_t i = 0; i < preedit->segment_count; ++i) {
-        strcat(buffer, preedit->segments[i].text);
-    }
-
-    capture->preedit_text = buffer;
-}
-
-static void capture_candidates([[maybe_unused]] TypioInputContext *ctx,
-                               const TypioCandidateList *candidates,
-                               void *user_data) {
-    CaptureState *capture = user_data;
-
-    capture->candidate_callback_count++;
-    capture->candidate_count = candidates ? candidates->count : 0;
-    capture->candidate_selected = candidates ? candidates->selected : -1;
-    capture->candidate_signature = candidates ? candidates->content_signature : 0;
+    capture->candidate_count = composition ? composition->candidate_count : 0;
+    capture->candidate_selected = composition ? composition->selected : -1;
+    capture->candidate_signature = composition ? composition->content_signature : 0;
 }
 
 static void capture_status_icon([[maybe_unused]] TypioInstance *instance,
@@ -181,8 +171,7 @@ static void reset_update_counters(CaptureState *capture) {
         return;
     }
 
-    capture->preedit_callback_count = 0;
-    capture->candidate_callback_count = 0;
+    capture->composition_callback_count = 0;
 }
 
 TEST(load_and_compose) {
@@ -229,8 +218,7 @@ TEST(load_and_compose) {
     ASSERT_NOT_NULL(ctx);
 
     typio_input_context_set_commit_callback(ctx, capture_commit, &capture);
-    typio_input_context_set_preedit_callback(ctx, capture_preedit, &capture);
-    typio_input_context_set_candidate_callback(ctx, capture_candidates, &capture);
+    typio_input_context_set_composition_callback(ctx, capture_composition, &capture);
     typio_input_context_focus_in(ctx);
 
     TypioKeyEvent *n_key = key_event_for_char('n');
@@ -570,8 +558,7 @@ TEST(selection_navigation_only_updates_candidates) {
 
     TypioInputContext *ctx = typio_instance_create_context(instance);
     ASSERT_NOT_NULL(ctx);
-    typio_input_context_set_preedit_callback(ctx, capture_preedit, &capture);
-    typio_input_context_set_candidate_callback(ctx, capture_candidates, &capture);
+    typio_input_context_set_composition_callback(ctx, capture_composition, &capture);
     typio_input_context_focus_in(ctx);
 
     n_key = key_event_for_char('n');
@@ -600,8 +587,7 @@ TEST(selection_navigation_only_updates_candidates) {
      * (callback fires once with identical text) and the candidate list keeps
      * the same content while only the highlighted index moves. The unchanged
      * preedit text is what lets the frontend skip the app round-trip. */
-    ASSERT_EQ(capture.preedit_callback_count, 1);
-    ASSERT_EQ(capture.candidate_callback_count, 1);
+    ASSERT_EQ(capture.composition_callback_count, 1);
     ASSERT(capture.preedit_text != nullptr);
     ASSERT_STR_EQ(capture.preedit_text, preedit_before);
     ASSERT_EQ(capture.candidate_signature, signature_before);

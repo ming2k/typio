@@ -291,6 +291,12 @@ const char *typio_voice_service_get_unavail_reason(TypioVoiceService *svc) {
     (void)svc;
     return "disabled";
 }
+
+void typio_voice_service_set_idle_timeout_ms(TypioVoiceService *svc,
+                                              uint32_t timeout_ms) {
+    (void)svc;
+    (void)timeout_ms;
+}
 #endif
 
 TEST(basic_engine_bypasses_for_printable_text) {

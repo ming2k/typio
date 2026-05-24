@@ -10,7 +10,8 @@
  *   - destroy() during reload
  */
 
-#include "../src/apps/typio/voice/voice_proxy.h"
+#include "../daemon/voice/voice_proxy.h"
+#include "typio/log.h"
 
 #include <assert.h>
 #include <pthread.h>
@@ -98,7 +99,7 @@ static void wait_until(atomic_int *flag, int target, const char *what) {
         struct timespec ts = {0, 1000000};  /* 1ms */
         nanosleep(&ts, NULL);
     }
-    fprintf(stderr, "wait_until timeout: %s\n", what);
+    typio_log_error("wait_until timeout: %s", what);
     abort();
 }
 

@@ -1,0 +1,15 @@
+[package]
+name = "typio-cli"
+version = "4.0.0"
+edition = "2024"
+authors = ["Typio Contributors"]
+description = "Typio command-line client"
+
+[[bin]]
+name = "typio"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

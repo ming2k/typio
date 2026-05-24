@@ -1,6 +1,8 @@
 # Core API Reference
 
-This document summarizes the stable public C surface under `src/core/include/typio/*.h`. For exact signatures and inline comments, read the installed headers.
+This document summarizes the stable public C surface under `core/include/typio/*.h`. For exact signatures and inline comments, read the installed headers.
+
+> The composition output API is being migrated per [ADR-0011](../../adr/0011-composition-and-lifecycle-rewrite.md): `set_preedit` + `set_candidates` (and their two callbacks) become a single transactional `set_composition` + `TypioComposition` callback, with commit kept as a separate ordered event. Signatures below reflect the current headers until that lands.
 
 ## `TypioInstance`
 

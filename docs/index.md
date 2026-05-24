@@ -19,7 +19,7 @@ Typio is a native Wayland input method daemon. The low-level Wayland frontend an
   - [Engine Reference](reference/engines.md) — Keyboard and voice engine configs, capabilities, and ABI
 - **[Explanation](explanation/)** — Understanding-oriented design documents.
   - [Architecture Overview](explanation/architecture-overview.md)
-  - [State Management](explanation/state-management.md)
+  - [Config & Runtime Ownership](explanation/config-runtime-ownership.md)
   - [Timing Model](explanation/timing-model.md)
   - [Control Surfaces](explanation/control-surfaces.md)
   - [Configuration System](explanation/configuration-system.md)
