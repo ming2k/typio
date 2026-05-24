@@ -13,9 +13,8 @@ pub use switch::*;
 
 use crate::config;
 use crate::engine::{
-    typio_engine_activate, typio_engine_deactivate, typio_engine_free,
-    typio_engine_set_config_path, _typio_engine_base_focus_in,
-    _typio_engine_base_focus_out, _typio_engine_base_reset,
+    typio_engine_activate, typio_engine_free,
+    typio_engine_set_config_path,
 };
 use crate::log::_typio_log;
 use crate::types::*;
@@ -46,8 +45,7 @@ pub(crate) use crate::instance::{
     typio_instance_clear_mode, typio_instance_clear_status_icon,
     typio_instance_get_config, typio_instance_get_config_dir,
     typio_instance_get_focused_context, typio_instance_get_state_dir,
-    typio_instance_notify_engine_changed, typio_instance_notify_mode,
-    typio_instance_notify_voice_engine_changed,
+    typio_instance_notify_mode,
 };
 
 #[allow(dead_code)]
@@ -77,7 +75,7 @@ pub(crate) struct EngineEntry {
 impl Drop for EngineEntry {
     fn drop(&mut self) {
         if !self.instance.is_null() {
-            unsafe { typio_engine_free(self.instance) };
+            typio_engine_free(self.instance);
         }
         if let Some(handle) = self.library_handle.take() {
             unsafe { dlclose(handle.0) };
@@ -112,7 +110,7 @@ pub(crate) fn c_str_to_str(ptr: *const c_char) -> Option<&'static str> {
 
 pub(crate) fn log_msg(level: TypioLogLevel, msg: &str) {
     if let Ok(cmsg) = CString::new(msg) {
-        unsafe { _typio_log(level, cmsg.as_ptr()) };
+        _typio_log(level, cmsg.as_ptr());
     }
 }
 
@@ -126,7 +124,7 @@ pub(crate) fn switch_threshold_ms(instance: *mut TypioInstance) -> u64 {
     }
 
     if !instance.is_null() {
-        let cfg = unsafe { typio_instance_get_config(instance) };
+        let cfg = typio_instance_get_config(instance);
         if !cfg.is_null() {
             let key = CString::new("engine.switch_stable_threshold_ms").unwrap();
             let val = config::typio_config_get_int(cfg, key.as_ptr(), 1000);
@@ -184,7 +182,7 @@ impl TypioEngineManager {
         if self.instance.is_null() {
             return None;
         }
-        let state_dir = unsafe { typio_instance_get_state_dir(self.instance) };
+        let state_dir = typio_instance_get_state_dir(self.instance);
         if state_dir.is_null() {
             return None;
         }
@@ -297,7 +295,7 @@ impl TypioEngineManager {
         if instance.is_null() {
             return None;
         }
-        let config_dir = unsafe { typio_instance_get_config_dir(instance) };
+        let config_dir = typio_instance_get_config_dir(instance);
         if config_dir.is_null() {
             return None;
         }
@@ -335,7 +333,7 @@ impl TypioEngineManager {
 
         let info = if entry.info.is_null() {
             log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: missing info", entry.name.to_string_lossy()));
-            unsafe { typio_engine_free(entry.instance) };
+            typio_engine_free(entry.instance);
             entry.instance = ptr::null_mut();
             return TypioResult::TypioErrorInvalidArgument;
         } else {
@@ -346,7 +344,7 @@ impl TypioEngineManager {
 
         if engine.base_ops.is_null() {
             log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: missing base_ops", entry.name.to_string_lossy()));
-            unsafe { typio_engine_free(entry.instance) };
+            typio_engine_free(entry.instance);
             entry.instance = ptr::null_mut();
             return TypioResult::TypioErrorInvalidArgument;
         }
@@ -355,14 +353,14 @@ impl TypioEngineManager {
             TypioEngineType::TypioEngineTypeKeyboard => {
                 if engine.keyboard.is_null() {
                     log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: keyboard engine missing keyboard ops", entry.name.to_string_lossy()));
-                    unsafe { typio_engine_free(entry.instance) };
+                    typio_engine_free(entry.instance);
                     entry.instance = ptr::null_mut();
                     return TypioResult::TypioErrorInvalidArgument;
                 }
                 let kb = unsafe { &*engine.keyboard };
                 if kb.process_key.is_none() {
                     log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: keyboard engine missing process_key", entry.name.to_string_lossy()));
-                    unsafe { typio_engine_free(entry.instance) };
+                    typio_engine_free(entry.instance);
                     entry.instance = ptr::null_mut();
                     return TypioResult::TypioErrorInvalidArgument;
                 }
@@ -370,14 +368,14 @@ impl TypioEngineManager {
             TypioEngineType::TypioEngineTypeVoice => {
                 if engine.voice.is_null() {
                     log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: voice engine missing voice ops", entry.name.to_string_lossy()));
-                    unsafe { typio_engine_free(entry.instance) };
+                    typio_engine_free(entry.instance);
                     entry.instance = ptr::null_mut();
                     return TypioResult::TypioErrorInvalidArgument;
                 }
                 let voice = unsafe { &*engine.voice };
                 if voice.process_audio.is_none() {
                     log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: voice engine missing process_audio", entry.name.to_string_lossy()));
-                    unsafe { typio_engine_free(entry.instance) };
+                    typio_engine_free(entry.instance);
                     entry.instance = ptr::null_mut();
                     return TypioResult::TypioErrorInvalidArgument;
                 }
@@ -388,7 +386,7 @@ impl TypioEngineManager {
         let engine_name = entry.name.to_string_lossy().to_string();
         let instance_ptr = self.instance;
         if let Some(path) = Self::engine_config_path(instance_ptr, &engine_name) {
-            unsafe { typio_engine_set_config_path(entry.instance, path.as_ptr()) };
+            typio_engine_set_config_path(entry.instance, path.as_ptr());
         }
 
         TypioResult::TypioOk
@@ -397,7 +395,7 @@ impl TypioEngineManager {
     pub(crate) fn try_restore_engine(&self, entry: Option<&EngineEntry>, slot_name: &str) {
         if let Some(entry) = entry {
             if !entry.instance.is_null() {
-                let result = unsafe { typio_engine_activate(entry.instance, self.instance) };
+                let result = typio_engine_activate(entry.instance, self.instance);
                 if result != TypioResult::TypioOk {
                     log_msg(TypioLogLevel::TypioLogError, &format!(
                         "Failed to restore previous {} engine '{}' after switch failure: {:?}",
@@ -412,7 +410,7 @@ impl TypioEngineManager {
         if self.instance.is_null() {
             return;
         }
-        let ctx = unsafe { typio_instance_get_focused_context(self.instance) };
+        let ctx = typio_instance_get_focused_context(self.instance);
         if ctx.is_null() {
             return;
         }
@@ -427,8 +425,8 @@ impl TypioEngineManager {
             }
         }
 
-        unsafe { typio_instance_clear_status_icon(self.instance) };
-        unsafe { typio_instance_clear_mode(self.instance) };
+        typio_instance_clear_status_icon(self.instance);
+        typio_instance_clear_mode(self.instance);
 
         if !new_engine.is_null() {
             let engine = unsafe { &*new_engine };
@@ -446,7 +444,7 @@ impl TypioEngineManager {
                 if let Some(get_mode) = kb.get_mode {
                     let mode = get_mode(new_engine, ctx);
                     if !mode.is_null() {
-                        unsafe { typio_instance_notify_mode(self.instance, mode) };
+                        typio_instance_notify_mode(self.instance, mode);
                     }
                 }
             }

@@ -15,7 +15,7 @@ pub extern "C" fn typio_instance_dup_rime_schema(instance: *mut TypioInstance) -
     }
     let inst = unsafe { &*instance };
     if let Some(schema) = dup_state_string(inst, TYPIO_RIME_STATE_FILE, TYPIO_RIME_STATE_KEY) {
-        return unsafe { typio_strdup(schema.as_ptr()) };
+        return typio_strdup(schema.as_ptr());
     }
     let legacy = if !inst.config.is_null() {
         let key = CString::new("engines.rime.schema").unwrap();
@@ -26,7 +26,7 @@ pub extern "C" fn typio_instance_dup_rime_schema(instance: *mut TypioInstance) -
     if !legacy.is_null() {
         let s = unsafe { CStr::from_ptr(legacy) }.to_string_lossy();
         if !s.is_empty() {
-            return unsafe { typio_strdup(legacy) };
+            return typio_strdup(legacy);
         }
     }
     ptr::null_mut()

@@ -3,6 +3,7 @@ build/
 build-headless/
 out/
 cmake-build-*/
+src/core/target/
 
 # AI assistant tooling (local, not project artifacts)
 .claude/

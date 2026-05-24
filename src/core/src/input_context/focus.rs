@@ -19,13 +19,11 @@ pub extern "C" fn typio_input_context_focus_in(ctx: *mut TypioInputContext) {
     if ctx_ref.focused { return; }
     ctx_ref.focused = true;
 
-    unsafe {
-        typio_instance_set_focused_context(ctx_ref.instance, ctx);
-        let manager = typio_instance_get_engine_manager(ctx_ref.instance);
-        let engine = typio_engine_manager_get_active(manager);
-        if !engine.is_null() {
-            _typio_engine_base_focus_in(engine, ctx);
-        }
+    typio_instance_set_focused_context(ctx_ref.instance, ctx);
+    let manager = typio_instance_get_engine_manager(ctx_ref.instance);
+    let engine = typio_engine_manager_get_active(manager);
+    if !engine.is_null() {
+        _typio_engine_base_focus_in(engine, ctx);
     }
 }
 
@@ -36,14 +34,12 @@ pub extern "C" fn typio_input_context_focus_out(ctx: *mut TypioInputContext) {
 
     if !ctx_ref.focused { return; }
 
-    unsafe {
-        let manager = typio_instance_get_engine_manager(ctx_ref.instance);
-        let engine = typio_engine_manager_get_active(manager);
-        if !engine.is_null() {
-            _typio_engine_base_focus_out(engine, ctx);
-        }
-        typio_instance_set_focused_context(ctx_ref.instance, ptr::null_mut());
+    let manager = typio_instance_get_engine_manager(ctx_ref.instance);
+    let engine = typio_engine_manager_get_active(manager);
+    if !engine.is_null() {
+        _typio_engine_base_focus_out(engine, ctx);
     }
+    typio_instance_set_focused_context(ctx_ref.instance, ptr::null_mut());
 
     ctx_ref.focused = false;
 }

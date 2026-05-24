@@ -491,12 +491,6 @@ static TypioResult mock_init(TypioEngine *engine, [[maybe_unused]] TypioInstance
 static void mock_destroy([[maybe_unused]] TypioEngine *engine) {
 }
 
-static TypioKeyProcessResult mock_process_key([[maybe_unused]] TypioEngine *engine,
-                                              [[maybe_unused]] TypioInputContext *ctx,
-                                              [[maybe_unused]] const TypioKeyEvent *event) {
-    return TYPIO_KEY_NOT_HANDLED;
-}
-
 static const TypioEngineInfo mock_voice_info = {
     .name = "mock-voice",
     .display_name = "Mock Voice Engine",

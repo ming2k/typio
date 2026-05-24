@@ -1,5 +1,7 @@
 //! Event handling — Rust implementation of event.c
 
+#![allow(non_upper_case_globals)]
+
 use crate::types::*;
 use std::ffi::{c_int, c_void};
 use std::ptr;

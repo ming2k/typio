@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.3] - 2026-05-24
+
+### Fixed
+
+- **Ninja generator baked quoted path into `TYPIO_DEFAULT_ENGINE_DIR`.**
+  `src/core/CMakeLists.txt` set the compile-time env var as
+  `"${CMAKE_INSTALL_FULL_LIBDIR}/typio/engines"`. Under the Makefile
+  generator the shell strips the quotes, but under Ninja (`-G Ninja`)
+  the quotes are preserved verbatim. The daemon then tried to open
+  `\"/usr/lib/typio/engines\"` (including literal quote characters),
+  got `ENOENT`, and loaded zero plugin engines — so rime and mozc
+  were unavailable when launched from the `.desktop` file. Removed the
+  extraneous quotes in CMake and added a defensive `trim_matches('"')`
+  in Rust so any future generator quirk is harmless.
+
 ## [3.3.2] - 2026-05-24
 
 ### Fixed

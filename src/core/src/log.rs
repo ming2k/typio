@@ -82,9 +82,7 @@ pub extern "C" fn _typio_log(level: TypioLogLevel, msg: *const c_char) {
     store_recent_line(&mut state, &rendered);
 
     if let Some(cb) = state.callback {
-        unsafe {
-            cb(level, msg, state.user_data);
-        }
+        cb(level, msg, state.user_data);
     } else {
         eprintln!("{}", rendered);
     }

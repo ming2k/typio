@@ -103,7 +103,7 @@ pub extern "C" fn typio_engine_manager_list_ordered_keyboards(
     let mut ordered: Vec<&str> = Vec::with_capacity(keyboard_names.len());
 
     if !manager_ref.instance.is_null() {
-        let cfg = unsafe { super::typio_instance_get_config(manager_ref.instance) };
+        let cfg = super::typio_instance_get_config(manager_ref.instance);
         if !cfg.is_null() {
             let key = CString::new("engine_order").unwrap();
             let order_count = config::typio_config_get_array_size(cfg, key.as_ptr());
@@ -178,7 +178,7 @@ pub extern "C" fn typio_engine_manager_get_engine(
                 return ptr::null_mut();
             }
             if let Some(path) = TypioEngineManager::engine_config_path(manager_ref.instance, &name_str) {
-                unsafe { typio_engine_set_config_path(entry.instance, path.as_ptr()) };
+                typio_engine_set_config_path(entry.instance, path.as_ptr());
             }
         }
     }

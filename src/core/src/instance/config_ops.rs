@@ -105,7 +105,7 @@ pub extern "C" fn typio_instance_reload_config(instance: *mut TypioInstance) -> 
     let current_name = if active.is_null() {
         None
     } else {
-        let name = unsafe { typio_engine_get_name(active) };
+        let name = typio_engine_get_name(active);
         if name.is_null() {
             None
         } else {
@@ -147,7 +147,7 @@ pub extern "C" fn typio_instance_reload_config(instance: *mut TypioInstance) -> 
         let current_voice_name = if active_voice.is_null() {
             None
         } else {
-            let name = unsafe { typio_engine_get_name(active_voice) };
+            let name = typio_engine_get_name(active_voice);
             if name.is_null() {
                 None
             } else {

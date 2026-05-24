@@ -4,8 +4,8 @@ use super::{c_str_to_str, log_msg, TypioEngineManager};
 use crate::engine::{typio_engine_activate, typio_engine_deactivate};
 use crate::instance::{
     typio_instance_clear_mode, typio_instance_clear_status_icon,
-    typio_instance_get_focused_context, typio_instance_notify_engine_changed,
-    typio_instance_notify_mode, typio_instance_notify_voice_engine_changed,
+    typio_instance_notify_engine_changed,
+    typio_instance_notify_voice_engine_changed,
 };
 use crate::types::*;
 use std::ffi::{c_char, CStr, CString};
@@ -44,7 +44,7 @@ pub extern "C" fn typio_engine_manager_set_active(
         if let Some(current_idx) = current {
             let entry = &manager_ref.entries[current_idx];
             if !entry.instance.is_null() {
-                unsafe { typio_engine_deactivate(entry.instance) };
+                typio_engine_deactivate(entry.instance);
             }
         }
 
@@ -57,7 +57,7 @@ pub extern "C" fn typio_engine_manager_set_active(
         }
 
         let instance_ptr = manager_ref.entries[idx].instance;
-        let result = unsafe { typio_engine_activate(instance_ptr, manager_ref.instance) };
+        let result = typio_engine_activate(instance_ptr, manager_ref.instance);
         if result != TypioResult::TypioOk {
             if let Some(current_idx) = current {
                 manager_ref.try_restore_engine(manager_ref.entries.get(current_idx), "voice");
@@ -67,7 +67,7 @@ pub extern "C" fn typio_engine_manager_set_active(
 
         let info = manager_ref.entries[idx].info;
         manager_ref.active_voice_index = Some(idx);
-        unsafe { typio_instance_notify_voice_engine_changed(manager_ref.instance, info) };
+        typio_instance_notify_voice_engine_changed(manager_ref.instance, info);
         log_msg(TypioLogLevel::TypioLogInfo, &format!(
             "Active voice engine: {}",
             c_str_to_str(unsafe { (*info).name }).unwrap_or("?")
@@ -83,7 +83,7 @@ pub extern "C" fn typio_engine_manager_set_active(
     if let Some(current_idx) = current {
         let entry = &manager_ref.entries[current_idx];
         if !entry.instance.is_null() {
-            unsafe { typio_engine_deactivate(entry.instance) };
+            typio_engine_deactivate(entry.instance);
         }
     }
 
@@ -96,7 +96,7 @@ pub extern "C" fn typio_engine_manager_set_active(
     }
 
     let instance_ptr = manager_ref.entries[idx].instance;
-    let result = unsafe { typio_engine_activate(instance_ptr, manager_ref.instance) };
+    let result = typio_engine_activate(instance_ptr, manager_ref.instance);
     if result != TypioResult::TypioOk {
         if let Some(current_idx) = current {
             manager_ref.try_restore_engine(manager_ref.entries.get(current_idx), "keyboard");
@@ -107,15 +107,15 @@ pub extern "C" fn typio_engine_manager_set_active(
     manager_ref.active_keyboard_index = Some(idx);
     manager_ref.last_switch = Some(Instant::now());
 
-    unsafe { typio_instance_clear_status_icon(manager_ref.instance) };
-    unsafe { typio_instance_clear_mode(manager_ref.instance) };
+    typio_instance_clear_status_icon(manager_ref.instance);
+    typio_instance_clear_mode(manager_ref.instance);
 
     let current_engine = current.and_then(|i| manager_ref.entries.get(i)).map(|e| e.instance).unwrap_or(ptr::null_mut());
     let new_engine = manager_ref.entries[idx].instance;
     manager_ref.rebind_focused_context(current_engine, new_engine);
 
     let info = manager_ref.entries[idx].info;
-    unsafe { typio_instance_notify_engine_changed(manager_ref.instance, info) };
+    typio_instance_notify_engine_changed(manager_ref.instance, info);
 
     TypioResult::TypioOk
 }

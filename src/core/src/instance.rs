@@ -15,14 +15,14 @@ pub use rime_state::*;
 
 use crate::config;
 use crate::config_schema;
-use crate::engine::typio_engine_get_name;
+
 use crate::engine_manager;
 use crate::engine_manager::log_msg;
 use crate::input_context;
 use crate::log::typio_log_set_callback;
 use crate::string::typio_strdup;
 use crate::types::*;
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::ptr;
 
 const TYPIO_CONFIG_FILE_NAME: &str = "typio.toml";
@@ -185,17 +185,17 @@ pub(super) fn engine_mode_store(dst: &mut TypioEngineMode, src: &TypioEngineMode
     dst.mode_id = if src.mode_id.is_null() {
         ptr::null()
     } else {
-        unsafe { typio_strdup(src.mode_id) }
+        typio_strdup(src.mode_id)
     };
     dst.display_label = if src.display_label.is_null() {
         ptr::null()
     } else {
-        unsafe { typio_strdup(src.display_label) }
+        typio_strdup(src.display_label)
     };
     dst.icon_name = if src.icon_name.is_null() {
         ptr::null()
     } else {
-        unsafe { typio_strdup(src.icon_name) }
+        typio_strdup(src.icon_name)
     };
 }
 
@@ -374,7 +374,7 @@ pub extern "C" fn typio_instance_new_with_config(config: *const TypioInstanceCon
     let log_callback = if !config.is_null() {
         let cfg = unsafe { &*config };
         if let Some(cb) = cfg.log_callback {
-            unsafe { typio_log_set_callback(cb, cfg.log_user_data) };
+            typio_log_set_callback(cb, cfg.log_user_data);
             Some(cb)
         } else {
             None
@@ -498,7 +498,8 @@ pub extern "C" fn typio_instance_init(instance: *mut TypioInstance) -> TypioResu
     // user dir is loaded first so user-installed engines shadow the system
     // ones; load_dir refuses duplicates and just logs.
     let system_engine_dir: Option<&str> = option_env!("TYPIO_DEFAULT_ENGINE_DIR")
-        .filter(|s| !s.is_empty());
+        .filter(|s| !s.is_empty())
+        .map(|s| s.trim_matches('"')); // defend against quoting differences between Makefile and Ninja generators
     if let Some(system_dir) = system_engine_dir {
         if system_dir != engine_dir {
             let system_dir_c = CString::new(system_dir).unwrap();
