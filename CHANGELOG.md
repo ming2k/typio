@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Voice results now filter out `[...]` tags before text insertion.**
+  Whisper backends emit meta-tags such as `[inaudible]`, `[music]`,
+  `[laughter]`, `[applause]`, etc. These were previously committed to
+  the active input context verbatim, cluttering the user's document.
+  `typio_voice_filter_tags_inplace()` now strips any `[...]` block
+  (and collapses surrounding whitespace) before the text reaches the
+  frontend. The raw transcript — including tags — is still logged at
+  `INFO` level for debugging. Both dispatch paths (`voice_service.c`
+  and the Wayland aux adapter in `aux_adapters.c`) apply the filter.
+
 ## [3.3.3] - 2026-05-24
 
 ### Fixed

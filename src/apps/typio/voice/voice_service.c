@@ -438,6 +438,31 @@ void typio_voice_service_stop(TypioVoiceService *svc) {
     }
 }
 
+/** Remove [...] tags (e.g. [inaudible], [music]) from voice text in-place. */
+void typio_voice_filter_tags_inplace(char *text) {
+    if (!text || !text[0]) return;
+
+    char *write = text;
+    const char *read = text;
+
+    while (*read) {
+        if (*read == '[') {
+            const char *tag_end = read + 1;
+            while (*tag_end && *tag_end != ']') tag_end++;
+            if (*tag_end == ']') {
+                read = tag_end + 1;
+                while (*read == ' ') read++;
+                if (write > text && *read && *(write - 1) != ' ') {
+                    *write++ = ' ';
+                }
+                continue;
+            }
+        }
+        *write++ = *read++;
+    }
+    *write = '\0';
+}
+
 int typio_voice_service_get_fd(TypioVoiceService *svc) {
     if (!svc || svc->event_fd < 0) {
         return -1;
@@ -478,6 +503,9 @@ void typio_voice_service_dispatch(TypioVoiceService *svc,
     }
 
     if (text && text[0] != '\0' && ctx) {
+        typio_log(TYPIO_LOG_INFO, "Voice raw: \"%s\"", text);
+        typio_voice_filter_tags_inplace(text);
+
         /* Trim leading whitespace (some backends add a leading space) */
         const char *p = text;
         while (*p == ' ') {
@@ -486,6 +514,8 @@ void typio_voice_service_dispatch(TypioVoiceService *svc,
         if (*p != '\0') {
             typio_log(TYPIO_LOG_INFO, "Voice result: \"%s\"", p);
             typio_input_context_commit(ctx, p);
+        } else {
+            typio_log(TYPIO_LOG_INFO, "Voice result: (empty after tag filter)");
         }
     }
 

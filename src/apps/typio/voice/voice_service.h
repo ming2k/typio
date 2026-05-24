@@ -30,6 +30,9 @@ char *typio_voice_service_collect(TypioVoiceService *svc);
 bool typio_voice_service_is_available(TypioVoiceService *svc);
 void typio_voice_service_reload(TypioVoiceService *svc);
 
+/** Remove [...] tags (e.g. [inaudible], [music]) from voice text in-place. */
+void typio_voice_filter_tags_inplace(char *text);
+
 /** Return a human-readable reason why voice is unavailable, or NULL if ready. */
 const char *typio_voice_service_get_unavail_reason(TypioVoiceService *svc);
 

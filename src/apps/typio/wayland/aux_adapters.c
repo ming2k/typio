@@ -112,13 +112,16 @@ static void voice_aux_ready(void *userdata) {
     typio_wl_text_ui_backend_hide_status(d->frontend->text_ui_backend);
 
     if (text && ctx) {
+        typio_log(TYPIO_LOG_INFO, "Voice raw: \"%s\"", text);
+        typio_voice_filter_tags_inplace(text);
+
         const char *p = text;
         while (*p == ' ') p++;
         if (*p != '\0') {
             typio_log(TYPIO_LOG_INFO, "Voice result: \"%s\"", p);
             typio_wl_commit_string(d->frontend, p);
         } else {
-            typio_log(TYPIO_LOG_INFO, "Voice result: (empty after trim)");
+            typio_log(TYPIO_LOG_INFO, "Voice result: (empty after tag filter)");
         }
     } else if (!text || !text[0]) {
         typio_log(TYPIO_LOG_INFO, "Voice result: (empty)");
