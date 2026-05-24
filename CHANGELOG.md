@@ -5,6 +5,101 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-05-24
+
+### Added
+
+- **Resume signal.** New `resume_signal.{c,h}` detects system wake-up
+  through two complementary sources: a logind `PrepareForSleep`
+  subscriber on a private system-bus connection (when libdbus is
+  available) and a `CLOCK_BOOTTIME` / `CLOCK_MONOTONIC` gap heuristic
+  that always runs (`monotonic_time.h` gains `typio_wl_boottime_ms`).
+  Both fan in to a single callback with a 5 s cooldown so a coincident
+  logind notice and detected gap recover only once. The DBus dispatch
+  drain is bounded at 16 messages per tick to match the status bus.
+- **On-resume scrub** in `lifecycle.c` (`typio_wl_lifecycle_on_resume`)
+  tears down the keyboard grab, unconditionally drops carried VK
+  modifiers (a modifier held across suspend never produced a key-up),
+  bumps `active_key_generation` to fence stale events, clears per-key
+  tracking and generations, drops the compositor preedit, and forces
+  the phase back to INACTIVE. The input-method handler captures
+  whether we were composing first and rebuilds the grab proactively
+  rather than waiting for an `activate` that may never come — the
+  input context is not focus-out'd, so the engine's in-flight
+  composition survives the wake.
+- **Orthogonal lifecycle state model.** `lifecycle_state.{c,h}`
+  decomposes the live state into (connection, focus, grab,
+  composition) axes *observed from frontend fields* (no stored
+  duplicate) with a pure projection back to the legacy phase. The
+  grab axis records grab presence only; vk-keymap readiness stays
+  separate so a vk-degraded grab is not torn down.
+- **Reconciler.** `reconciler.{c,h}` + pure `reconcile_model.c` run
+  once per event-loop iteration: observe, project, compare against
+  the declared phase. A divergence must persist past
+  `TYPIO_WL_RECONCILE_THRESHOLD_MS` (2 s) before any repair fires;
+  on REPAIR the reconciler reuses the resume recovery path. Gated
+  against the benign "focused, no keyboard engine" steady state so
+  voice-only configurations don't loop.
+- **Session checkpoint (Stage 3a).** `checkpoint_codec.{c,h}` defines
+  a versioned, length-prefixed, little-endian, binary-safe wire
+  format with magic, engine name, optional client identity, and a
+  `CLOCK_BOOTTIME` stamp (one comparison answers both "fresh" and
+  "previous boot"). `session_checkpoint.{c,h}` writes atomically
+  (temp + `rename`, no fsync — checkpoint only needs to survive a
+  *process* crash, not power loss, so the per-delta write does not
+  stall the UI flush path) to
+  `$XDG_RUNTIME_DIR/typio/session.ckpt` on each preedit delta,
+  discards on commit/clear, and one-shot-restores on the first
+  activation after daemon start. Two optional ops added to
+  `TypioKeyboardEngineOps` (`snapshot_session`, `restore_session`);
+  NULL means "no durable session" — `basic` leaves them NULL. The
+  Rust core gains `typio_engine_has_session_ops` + dispatch wrappers
+  mirroring the existing process_key path. Implemented for librime
+  in `rime_checkpoint.c` (raw input buffer + ascii_mode, gated by
+  `RIME_API_AVAILABLE`).
+- **In-process Wayland reconnect (Stage 3b).** Display loss
+  (POLLHUP/POLLERR, failed read, failed flush) is no longer fatal.
+  `wl_frontend.c` was refactored into reusable
+  `frontend_wayland_bind` / `frontend_wayland_unbind`;
+  `typio_wl_frontend_reconnect` unbinds, re-`wl_display_connect`s
+  with capped exponential backoff (`reconnect_backoff.{c,h}`:
+  250 ms → 8 s, 12 attempts), rebinds globals, and recreates the
+  input method, virtual keyboard, and text UI. Engine/session
+  state, aux handlers, config watch, and the resume signal are
+  preserved across the outage. On reconnect the lifecycle is reset
+  to INACTIVE, key generation is bumped, and tracking cleared. The
+  watchdog is parked during the blocking backoff. If every attempt
+  fails the daemon exits and hands off to the service manager.
+- **Property-test harness** (`tests/test_state_machine_properties.c`)
+  drives long LCG-randomized sequences through the pure state
+  machines and checks each against an independent re-derivation of
+  its spec: reconcile timer/action correspondence, persistent
+  divergence always converges within one threshold window, resume
+  gap/cooldown spec match, exhaustive lifecycle projection and
+  agreement over all axis combinations, monotone bounded backoff,
+  binary-safe checkpoint codec round-trips. Plus focused example
+  tests for each pure model.
+
+### Changed
+
+- **`typio_wl_commit` is now the single chokepoint** for input-method
+  protocol commits and refuses to commit when the serial is 0 (before
+  the first `done`, when the compositor silently drops it). Records
+  `last_committed_serial` as a diagnostic breadcrumb and a hook for
+  future reconnect logic.
+
+### Fixed
+
+- Stuck modifier or runaway key repeat after laptop wake / lid close
+  when the compositor does not re-narrate focus on resume.
+- Half-typed composition lost across a daemon crash + systemd restart
+  (now restored from `$XDG_RUNTIME_DIR` checkpoint for engines that
+  implement the session ops).
+- Daemon exiting on every transient Wayland disconnect instead of
+  reconnecting in-process and preserving engine state.
+- Silently-dropped keyboard grab with no matching `deactivate` event
+  leaving the IME wedged in `ACTIVE` with no way to receive keys.
+
 ## [3.2.7] - 2026-05-24
 
 ### Changed

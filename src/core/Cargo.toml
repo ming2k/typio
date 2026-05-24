@@ -1,6 +1,6 @@
 [package]
 name = "typio-core"
-version = "3.2.7"
+version = "3.3.0"
 edition = "2021"
 authors = ["Typio Contributors"]
 license = "MIT"
