@@ -1,0 +1,7 @@
+[wrap-git]
+url = https://github.com/ming2k/flux.git
+revision = 59dbb25
+depth = 1
+
+[provide]
+dependency_names = flux

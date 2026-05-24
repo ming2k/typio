@@ -16,63 +16,61 @@ Use this approach when you want a permanent system installation or are preparing
 
 See the [Getting Started tutorial](../tutorials/01-getting-started.md) for the full package-name table by distro.  Quick reference:
 
-| Feature | CMake option | Packages needed |
+| Feature | Meson option | Packages needed |
 |---|---|---|
-| Rime engine | `-DBUILD_RIME_ENGINE=ON` | `librime` dev files |
-| GTK4 control panel | `-DBUILD_CONTROL_PANEL=ON` | `gtk4` dev files |
-| StatusNotifierItem tray | `-DENABLE_SYSTRAY=ON` | `dbus-1` dev files |
-| Voice input | `-DBUILD_WHISPER=ON` or `-DBUILD_SHERPA_ONNX=ON` | PipeWire dev files + voice backend library |
+| Rime engine | `-Dbuild_rime_engine=true` | `librime` dev files |
+| GTK4 control panel | `-Dbuild_control_panel=true` | `gtk4` dev files |
+| StatusNotifierItem tray | `-Denable_systray=true` | `dbus-1` dev files |
+| Voice input | `-Dbuild_whisper=true` or `-Dbuild_sherpa_onnx=true` | PipeWire dev files + voice backend library |
 
-> **Voice backends:** `whisper.cpp` and `sherpa-onnx` are typically not packaged by distributions.  You must build and install them manually before enabling the corresponding CMake option.  See the voice-input explanation doc for details.
+> **Voice backends:** `whisper.cpp` and `sherpa-onnx` are typically not packaged by distributions.  You must build and install them manually before enabling the corresponding Meson option.  See the voice-input explanation doc for details.
 
 ## Build
 
 Default build:
 
 ```bash
-cmake -S . -B build
-cmake --build build
+meson setup build
+ninja -C build
 ```
 
 With optional Rime engine:
 
 ```bash
-cmake -S . -B build -DBUILD_RIME_ENGINE=ON
-cmake --build build
+meson setup build -Dbuild_rime_engine=true
+ninja -C build
 ```
 
 ## Useful build options
 
 | Option | Default | Purpose |
 |--------|---------|---------|
-| `BUILD_SHARED_LIBS` | `ON` | Build `typio-core` as a shared library |
-| `BUILD_TESTS` | `ON` | Build the automated tests |
-| `BUILD_BASIC_ENGINE` | `ON` | Build the built-in basic keyboard engine |
-| `BUILD_RIME_ENGINE` | `OFF` | Build the optional Rime engine plugin |
-| `BUILD_CONTROL_PANEL` | `OFF` | Build the `typio-control` GTK4 control panel |
-| `ENABLE_WAYLAND` | `ON` | Enable the Wayland frontend |
-| `ENABLE_STATUS_BUS` | `ON` | Enable the D-Bus runtime status/control interface |
-| `ENABLE_SYSTRAY` | `OFF` | Enable StatusNotifierItem tray support |
-| `ENABLE_ASAN` | `OFF` | Enable AddressSanitizer |
-| `ENABLE_UBSAN` | `OFF` | Enable UndefinedBehaviorSanitizer |
+| `buildtype` | `debug` | Build type (`plain`, `debug`, `debugoptimized`, `release`, `minsize`) |
+| `build_tests` | `true` | Build the automated tests |
+| `build_basic_engine` | `true` | Build the built-in basic keyboard engine |
+| `build_rime_engine` | `false` | Build the optional Rime engine plugin |
+| `build_control_panel` | `false` | Build the `typio-control` GTK4 control panel |
+| `enable_wayland` | `true` | Enable the Wayland frontend |
+| `enable_status_bus` | `true` | Enable the D-Bus runtime status/control interface |
+| `enable_systray` | `false` | Enable StatusNotifierItem tray support |
 
 ## Install
 
 System-wide install:
 
 ```bash
-sudo cmake --install build --prefix /usr/local
+sudo ninja -C build install
 ```
 
 Staging install (disposable, no root):
 
 ```bash
-cmake --install build --prefix /tmp/typio-staging
-/tmp/typio-staging/bin/typio version
+DESTDIR=/tmp/typio-staging ninja -C build install
+find /tmp/typio-staging -type f -o -type l | sort
 rm -rf /tmp/typio-staging
 ```
 
-Installed paths (with `/usr/local` prefix):
+Installed paths (with default `/usr/local` prefix):
 
 - `/usr/local/bin/typio` — CLI entry point
 - `/usr/local/libexec/typio/typio-daemon` — background daemon
@@ -84,7 +82,7 @@ Installed paths (with `/usr/local` prefix):
 - `/usr/local/share/applications/typio.desktop`
 - `/etc/xdg/autostart/typio.desktop`
 
-Override the autostart location with `-DTYPIO_AUTOSTART_DIR=/some/path` if needed.
+Override the prefix at setup time with `--prefix /some/path` if needed.
 
 ## Verification
 

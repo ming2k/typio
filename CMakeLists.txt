@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(typio VERSION 4.0.0 LANGUAGES C CXX)
+project(typio VERSION 4.1.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -322,8 +322,15 @@ install(
     DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor"
 )
 
+set(TYPIO_DAEMON_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/typio")
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/data/applications/typio.desktop.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/data/applications/typio.desktop"
+    @ONLY
+)
 install(
-    FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/applications/typio.desktop"
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/data/applications/typio.desktop"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/applications"
 )
 
@@ -334,9 +341,24 @@ if(BUILD_CONTROL_PANEL)
     )
 endif()
 
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/data/autostart/typio.desktop.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/data/autostart/typio.desktop"
+    @ONLY
+)
 install(
-    FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/autostart/typio.desktop"
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/data/autostart/typio.desktop"
     DESTINATION "${TYPIO_AUTOSTART_DIR}"
+)
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/data/typio.service.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/data/typio.service"
+    @ONLY
+)
+install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/data/typio.service"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/systemd/user"
 )
 
 install(

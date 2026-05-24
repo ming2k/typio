@@ -17,7 +17,7 @@ The core library — platform-agnostic business logic. A Rust crate (`typio-core
   - `rime_schema_list.rs` — Rime schema discovery
   - `build_info.rs` — build version metadata
 - `include/typio/` — installed public C headers (hand-written, single source of truth). Includes `log.h` (header-only `static inline typio_log`) and `string.h`.
-- `CMakeLists.txt` — drives `cargo build` (profile follows `CMAKE_BUILD_TYPE`) and wraps the Rust staticlib into the shared `typio-core` library.
+- `CMakeLists.txt` / `meson.build` — drives `cargo build` (profile follows build type) and wraps the Rust staticlib into the shared `typio-core` library. Meson is the primary build system; CMake is deprecated.
 
 ## `daemon/`
 

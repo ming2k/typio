@@ -5,21 +5,21 @@ This document is for contributors. It covers how to run and write tests.
 ## Run the test suite
 
 ```bash
-ctest --test-dir build --output-on-failure
+meson test -C build --print-errorlogs
 ```
 
 Run with an isolated D-Bus session when validating status-bus, tray, or CI-like behavior:
 
 ```bash
-dbus-run-session -- ctest --test-dir build --output-on-failure
+dbus-run-session -- meson test -C build --print-errorlogs
 ```
 
 Run sanitizer coverage:
 
 ```bash
-cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON -DENABLE_UBSAN=ON
-cmake --build build-asan
-dbus-run-session -- ctest --test-dir build-asan --output-on-failure
+meson setup build-asan --buildtype=debug -Db_sanitize=address,undefined
+ninja -C build-asan
+meson test -C build-asan --print-errorlogs
 ```
 
 Use the helper script for the standard ASan/LSan configuration:
@@ -31,11 +31,11 @@ bash scripts/run_asan.sh
 Manual sanitizer build:
 
 ```bash
-cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
-cmake --build build-asan
+meson setup build-asan --buildtype=debug -Db_sanitize=address
+ninja -C build-asan
 ASAN_OPTIONS=detect_leaks=1:suppressions=$PWD/tests/asan_suppressions.txt \
 LSAN_OPTIONS=suppressions=$PWD/tests/asan_suppressions.txt \
-dbus-run-session -- ctest --test-dir build-asan --output-on-failure
+dbus-run-session -- meson test -C build-asan --print-errorlogs
 ```
 
 Use `dbus-run-session` for sanitizer and CI-like runs so status-bus and tray tests get an isolated session bus instead of depending on the developer's desktop session.
@@ -49,7 +49,7 @@ Use `dbus-run-session` for sanitizer and CI-like runs so status-bus and tray tes
 ./build/tests/test_status_bus
 ```
 
-When `BUILD_RIME_ENGINE=ON`, the build also includes:
+When `build_rime_engine=true`, the build also includes:
 
 ```bash
 ./build/tests/test_rime_engine
@@ -73,7 +73,7 @@ Prefer small state-policy tests for Wayland behavior. Do not rely only on manual
 
 ## Style
 
-- Use C11 for C code and C++17 where C++ is already required.
+- Use C23 for C code and C++17 where C++ is already required.
 - Use Rust 2021 edition for `core/` (crate `typio-core`).
 - Keep public API names in the `typio_*` / `Typio*` style already used by the repo.
 - Prefer local helpers and direct data flow over broad abstractions.

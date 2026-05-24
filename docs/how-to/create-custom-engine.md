@@ -11,7 +11,7 @@ Use this when you want to add a new input engine to Typio as a shared-library pl
 ## Prerequisites
 
 - Typio built and installed (or at least `typio-core` headers and pkg-config file available)
-- C compiler and CMake
+- C compiler and Meson (or CMake as a fallback)
 
 ## Required exported symbols
 
@@ -147,6 +147,23 @@ static TypioEngine *my_voice_create(void) {
 
 ## Build example
 
+### Meson (recommended)
+
+```meson
+project('typio-my-engine', 'c',
+    meson_version: '>=1.0.0')
+
+typio_dep = dependency('typio')
+
+my_engine = shared_module('typio-my-engine', 'my_engine.c',
+    dependencies: typio_dep,
+    install: true,
+    install_dir: get_option('libdir') / 'typio' / 'engines',
+)
+```
+
+### CMake (deprecated)
+
 ```cmake
 cmake_minimum_required(VERSION 3.16)
 project(typio-my-engine C)
@@ -170,13 +187,13 @@ If `typio.pc` is in a non-standard prefix, export `PKG_CONFIG_PATH` before confi
 2. Confirm it appears:
 
 ```bash
-daemon --list
+typio-daemon --list
 ```
 
 3. Run Typio with that engine:
 
 ```bash
-daemon --engine my-engine --verbose
+typio-daemon --engine my-engine --verbose
 ```
 
 ## Practical guidance

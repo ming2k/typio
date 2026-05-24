@@ -12,11 +12,14 @@ By the end of this tutorial you will have:
 
 ## Prerequisites
 
-- CMake 3.20+
-- C11 and C++17 compiler
+- Meson 1.0+ (or CMake 3.20+ as a fallback)
+- Ninja 1.10+
+- C23 and C++17 compiler
 - Rust toolchain (latest stable `rustc` + `cargo`)
 - `pkg-config`
 - A running Wayland session
+
+> **Note:** `flux` (the rendering framework) is **not** a system dependency. It is resolved as a Meson subproject when available; otherwise candidate popup rendering is gracefully disabled.
 
 ### Default build dependencies
 
@@ -25,6 +28,7 @@ These are required for the default build (all builtin options left at their defa
 | Component | Debian/Ubuntu | Arch Linux | Fedora |
 |---|---|---|---|
 | Rust toolchain | `rustup` (see [rustup.rs](https://rustup.rs)) | `rust` | `rust` |
+| Meson + Ninja | `meson` | `meson` | `meson` |
 | Wayland client | `libwayland-dev` | `wayland` | `wayland-devel` |
 | xkbcommon | `libxkbcommon-dev` | `libxkbcommon` | `libxkbcommon-devel` |
 | wayland-protocols | `wayland-protocols` | `wayland-protocols` | `wayland-protocols-devel` |
@@ -35,17 +39,15 @@ These are required for the default build (all builtin options left at their defa
 | D-Bus | `libdbus-1-dev` | `dbus` | `dbus-devel` |
 | glslang | `glslang-tools` | `glslang` | `glslang` |
 
-> **Note:** `flux` (the rendering framework) is **not** a system dependency. It is built automatically from source (Meson + Ninja) on the first `cmake --build` run. `meson` and `ninja` must be in your `PATH`.
-
 ### Optional dependencies
 
-| Feature | CMake option | Debian/Ubuntu | Arch Linux | Fedora |
+| Feature | Meson option | Debian/Ubuntu | Arch Linux | Fedora |
 |---|---|---|---|---|
-| Rime engine | `-DBUILD_RIME_ENGINE=ON` | `librime-dev` | `librime` | `librime-devel` |
-| GTK4 control panel | `-DBUILD_CONTROL_PANEL=ON` | `libgtk-4-dev` | `gtk4` | `gtk4-devel` |
-| StatusNotifierItem tray | `-DENABLE_SYSTRAY=ON` | `libdbus-1-dev` | `dbus` | `dbus-devel` |
-| Voice input (Whisper) | `-DBUILD_WHISPER=ON` | whisper.cpp (see below) | whisper.cpp (see below) | whisper.cpp (see below) |
-| Voice input (Sherpa) | `-DBUILD_SHERPA_ONNX=ON` | sherpa-onnx (see below) | sherpa-onnx (see below) | sherpa-onnx (see below) |
+| Rime engine | `-Dbuild_rime_engine=true` | `librime-dev` | `librime` | `librime-devel` |
+| GTK4 control panel | `-Dbuild_control_panel=true` | `libgtk-4-dev` | `gtk4` | `gtk4-devel` |
+| StatusNotifierItem tray | `-Denable_systray=true` | `libdbus-1-dev` | `dbus` | `dbus-devel` |
+| Voice input (Whisper) | `-Dbuild_whisper=true` | whisper.cpp (see below) | whisper.cpp (see below) | whisper.cpp (see below) |
+| Voice input (Sherpa) | `-Dbuild_sherpa_onnx=true` | sherpa-onnx (see below) | sherpa-onnx (see below) | sherpa-onnx (see below) |
 
 Voice backends require **PipeWire**: `libpipewire-0.3-dev` (Debian), `pipewire` (Arch), `pipewire-devel` (Fedora).
 
@@ -57,7 +59,7 @@ Debian/Ubuntu (default build only):
 
 ```bash
 # Install Rust first: https://rustup.rs
-sudo apt install build-essential cmake pkg-config \
+sudo apt install build-essential meson pkg-config \
     libwayland-dev libxkbcommon-dev wayland-protocols \
     libvulkan-dev libfreetype6-dev libharfbuzz-dev libfontconfig-dev \
     libdbus-1-dev glslang-tools
@@ -67,7 +69,7 @@ Arch Linux (default build only):
 
 ```bash
 # Install Rust first: https://rustup.rs
-sudo pacman -S base-devel cmake pkgconf \
+sudo pacman -S base-devel meson pkgconf \
     wayland libxkbcommon wayland-protocols \
     vulkan-headers freetype2 harfbuzz fontconfig \
     dbus glslang
@@ -77,7 +79,7 @@ Fedora (default build only):
 
 ```bash
 # Install Rust first: https://rustup.rs
-sudo dnf install gcc cmake pkgconf-pkg-config \
+sudo dnf install gcc meson pkgconf-pkg-config \
     wayland-devel libxkbcommon-devel wayland-protocols-devel \
     vulkan-loader-devel freetype-devel harfbuzz-devel fontconfig-devel \
     dbus-devel glslang
@@ -89,37 +91,37 @@ sudo dnf install gcc cmake pkgconf-pkg-config \
 cd /path/to/workspace
 git clone <repo-url> typio
 cd typio
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+meson setup build
 ```
 
-You should see CMake configure output ending with a build summary and no errors.
+You should see Meson configure output ending with a build summary and no errors.
 
 > **If configuration fails:** Check that `pkg-config` can find `wayland-client` and `xkbcommon`.
 
 ## Step 2: Build
 
 ```bash
-cmake --build build
+ninja -C build
 ```
 
 You should see compilation complete and the following binaries appear:
 
 ```text
-build/daemon/daemon
-cli/target/release/typio
+build/daemon/typio-daemon
+build/cli/typio
 ```
 
 ## Step 3: Run the smoke tests
 
 ```bash
-ctest --test-dir build --output-on-failure
+meson test -C build --print-errorlogs
 ```
 
 All tests should pass. This verifies your environment is correctly configured.
 
 > **If D-Bus tests fail:** Run with an isolated session bus:
 > ```bash
-> dbus-run-session -- ctest --test-dir build --output-on-failure
+> dbus-run-session -- meson test -C build --print-errorlogs
 > ```
 
 ## Step 4: See it working

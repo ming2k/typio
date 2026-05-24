@@ -6,14 +6,14 @@ Typio is a native Wayland input method daemon. The low-level Wayland frontend an
 
 ```bash
 # Configure and build
-cmake -S . -B build
-cmake --build build
+meson setup build
+ninja -C build
 
 # Run tests
-ctest --test-dir build --output-on-failure
+meson test -C build --print-errorlogs
 
 # Run directly from the build tree
-./build/daemon/daemon --engine basic --verbose
+./build/daemon/typio-daemon --engine basic --verbose
 ```
 
 Expected output: startup logs ending with `engine basic activated`.

@@ -2,11 +2,13 @@
 Version=1.0
 Type=Application
 Name=Typio
-Comment=Typio input method daemon
-Exec=/usr/lib/typio/typio-daemon
+Comment=Start the Typio input method daemon
+Exec=@TYPIO_DAEMON_DIR@/typio-daemon
 TryExec=typio
 Icon=typio-keyboard
 Terminal=false
 StartupNotify=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
 Categories=System;Utility;
 Keywords=input;ime;keyboard;typio;

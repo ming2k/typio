@@ -1,10 +1,15 @@
 # Build directories
 build/
+build-meson/
 build-headless/
 out/
 cmake-build-*/
 core/target/
 cli/target/
+
+# Meson subproject artifacts
+subprojects/.wraplock
+subprojects/flux
 
 # AI assistant tooling (local, not project artifacts)
 .claude/

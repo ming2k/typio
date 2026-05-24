@@ -12,6 +12,7 @@ Lookup-oriented documentation. These pages are dense, complete, and accurate —
 
 - [CLI Reference](cli.md) — Command-line flags and `typio` client subcommands
 - [Configuration Reference](configuration.md) — All `typio.toml` keys, types, and defaults
+- [Installation Layout Reference](install-layout.md) — Every file and directory created by `ninja install`
 - [IPC Protocol Reference](ipc-protocol.md) — UDS socket path, JSON-RPC wire format, methods, and properties
 - [D-Bus Interface Reference](dbus-interface.md) — Properties, methods, and signals on `org.typio.InputMethod1` (legacy, optional)
 - [Engine Reference](engines.md) — Built-in keyboard and voice engines, config keys, capabilities, and plugin ABI

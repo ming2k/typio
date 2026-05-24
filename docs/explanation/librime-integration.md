@@ -339,7 +339,18 @@ This design separates mandatory lifecycle operations from keyboard-specific call
 
 ### 11.3 Build Integration
 
-`engines/rime/CMakeLists.txt`:
+**Meson** (`engines/rime/meson.build`):
+
+```meson
+rime_engine = shared_module('typio-engine-rime',
+    ['path_expand.c', 'rime_engine.c'],
+    dependencies: [typio_core_dep, rime_dep],
+    install: true,
+    install_dir: enginedir,
+)
+```
+
+**CMake** (`engines/rime/CMakeLists.txt`, deprecated):
 
 ```cmake
 add_library(typio-engine-rime MODULE
@@ -353,9 +364,9 @@ target_link_libraries(typio-engine-rime PRIVATE
 )
 ```
 
-- Compiled as `MODULE` (plugin `.so`)
-- Installed to `${TYPIO_INSTALL_ENGINEDIR}` (default `${prefix}/lib/typio/engines/`)
-- Discovers and links librime via `pkg_check_modules(RIME rime)`
+- Compiled as a shared module (plugin `.so`)
+- Installed to the engine directory (default `${prefix}/lib/typio/engines/`)
+- Discovers and links librime via `pkg-config`
 
 ## 12. librime Documentation & Links
 
@@ -399,7 +410,8 @@ target_link_libraries(typio-engine-rime PRIVATE
 
 ```
 engines/rime/
-├── CMakeLists.txt       # build config (MODULE plugin)
+├── meson.build          # build config (shared module plugin)
+├── CMakeLists.txt       # build config (deprecated)
 ├── rime_internal.h      # shared data structures, constants, and cross-module API
 ├── rime_utils.c         # small utility helpers (monotonic time, directory creation)
 ├── rime_config.c        # configuration loading and cleanup

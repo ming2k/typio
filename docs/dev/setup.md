@@ -4,8 +4,9 @@ This document is for contributors who will modify Typio source code. **If you on
 
 ## Requirements
 
-- CMake 3.20+
-- C11 and C++17 compiler
+- Meson 1.0+ (primary build system)
+- Ninja 1.10+
+- C23 and C++17 compiler
 - Rust toolchain (latest stable `rustc` + `cargo`)
 - `pkg-config`
 - Wayland client development files
@@ -16,26 +17,20 @@ This document is for contributors who will modify Typio source code. **If you on
 
 Optional:
 
-- `librime` for `BUILD_RIME_ENGINE=ON`
-- `gtk4` for `BUILD_CONTROL_PANEL=ON`
-- `dbus-1` for `ENABLE_STATUS_BUS=ON` or `ENABLE_SYSTRAY=ON`
+- `librime` for `build_rime_engine=true`
+- `gtk4` for `build_control_panel=true`
+- `dbus-1` for `enable_status_bus=true` or `enable_systray=true`
 
 ## External dependencies
 
 | Dependency | Source | Resolved version | You need to install it? |
 |---|---|---|---|
-| **Rust core** (`core/`) | Cargo (CMake custom command) | latest stable | **Yes** — install `rustc` + `cargo` |
-| **flux** (rendering framework) | ExternalProject (Meson) | `44de7ec` (v0.0.1) | **No** — built automatically |
+| **Rust core** (`core/`) | Cargo (Meson `custom_target`) | latest stable | **Yes** — install `rustc` + `cargo` |
+| **flux** (rendering framework) | Meson subproject (git fallback) | `44de7ec` (v0.0.1) | **No** — resolved automatically when `subprojects/` is present |
 
-flux is built automatically during the CMake build step via Meson + Ninja.
-A sibling directory `../flux` is used automatically if present; otherwise
-the source is cloned from `https://github.com/ming2k/flux.git`.
-To point at a different checkout, set the environment variable `FLUX_SOURCE_DIR`
-or pass `-DFLUX_SOURCE_DIR=/path/to/flux` to CMake.
+flux is resolved as a Meson subproject when `subprojects/flux.wrap` (or a local `subprojects/flux/` checkout) is present. If the subproject is unavailable, the build continues with candidate popup rendering disabled (stubs are used).
 
-System libraries are discovered via `pkg-config`.  CMake does not enforce
-upper-bound versions, but the project is regularly tested against the
-packages shipped in the latest Arch Linux and Fedora releases.
+System libraries are discovered via `pkg-config`.  Meson does not enforce upper-bound versions, but the project is regularly tested against the packages shipped in the latest Arch Linux and Fedora releases.
 
 ### Hybrid C/Rust architecture
 
@@ -44,9 +39,9 @@ Typio uses a hybrid architecture:
 - **Rust** — The core library (`core/`, crate `typio-core`): instance lifecycle, config parsing and schema, input context state, engine ABI/manager/labels, key-event types, logging sink, string utilities, and Rime schema discovery.
 - **C / C++** — Everything else: the Wayland frontend (`daemon/wayland/`), engine plugin implementations (`engines/`), Vulkan/flux rendering, D-Bus status surfaces, GTK control panel.
 
-The hand-written C headers in `core/include/typio/*.h` are the ABI contract — the single source of truth. Rust implements matching `#[no_mangle] pub extern "C"` functions. CMake invokes `cargo build` automatically (release profile for `Release`/`RelWithDebInfo`/`MinSizeRel`; debug profile otherwise — keeping memory and link time low during iteration) and whole-archive-links the resulting `libtypio_core.a` into `libtypio-core`. No manual Cargo invocation is required during normal development.
+The hand-written C headers in `core/include/typio/*.h` are the ABI contract — the single source of truth. Rust implements matching `#[no_mangle] pub extern "C"` functions. Meson invokes `cargo build` automatically (release profile for `release`/`minsize` buildtype; debug profile otherwise — keeping memory and link time low during iteration) and whole-archive-links the resulting `libtypio_core.a` into `libtypio-core`. No manual Cargo invocation is required during normal development.
 
-When modifying Rust code, edits are picked up automatically on the next `cmake --build` because CMake tracks all `.rs` files and `Cargo.toml` as dependencies.
+When modifying Rust code, edits are picked up automatically on the next `ninja -C build` because the `custom_target` depends on `Cargo.toml` and source files.
 
 For the concrete distro package names required for a default build, see
 [Getting Started: Prerequisites](../tutorials/01-getting-started.md).
@@ -56,35 +51,34 @@ For the concrete distro package names required for a default build, see
 Use a debug build with compile commands when editing code:
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-cmake --build build
+meson setup build --buildtype=debug
+ninja -C build
 ```
 
 For a full debug build with every optional feature turned on — useful before pushing changes that may touch the engine, voice, or control-panel paths:
 
 ```bash
-cmake -S . -B build \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-  -DBUILD_RIME_ENGINE=ON \
-  -DBUILD_MOZC_ENGINE=ON \
-  -DBUILD_WHISPER=ON \
-  -DBUILD_SHERPA_ONNX=ON \
-  -DBUILD_CONTROL_PANEL=ON \
-  -DENABLE_SYSTRAY=ON
-cmake --build build
+meson setup build \
+  --buildtype=debug \
+  -Dbuild_rime_engine=true \
+  -Dbuild_mozc_engine=true \
+  -Dbuild_whisper=true \
+  -Dbuild_sherpa_onnx=true \
+  -Dbuild_control_panel=true \
+  -Denable_systray=true
+ninja -C build
 ```
 
 ## Run tests
 
 ```bash
-ctest --test-dir build --output-on-failure
+meson test -C build --print-errorlogs
 ```
 
 For isolated D-Bus runs (sanitizer and CI-like):
 
 ```bash
-dbus-run-session -- ctest --test-dir build --output-on-failure
+dbus-run-session -- meson test -C build --print-errorlogs
 ```
 
 ## Run the daemon while iterating
@@ -99,21 +93,20 @@ For plugin engine work, point the daemon at the build-tree engine directory:
 ./build/daemon/typio-daemon --engine-dir ./build/engines --engine rime --verbose
 ```
 
-## CMake options
+## Meson options
 
 | Option | Default | Meaning |
 |--------|---------|---------|
-| `BUILD_SHARED_LIBS` | `ON` | Build `typio-core` as a shared library for plugin use |
-| `BUILD_CONTROL_PANEL` | `OFF` | Build the `typio-control` GTK4 control panel |
-| `BUILD_TESTS` | `ON` | Build unit and integration tests |
-| `BUILD_BASIC_ENGINE` | `ON` | Build the built-in basic keyboard engine |
-| `BUILD_RIME_ENGINE` | `OFF` | Build the optional `librime` engine plugin |
-| `BUILD_MOZC_ENGINE` | `OFF` | Build the optional Mozc engine plugin |
-| `ENABLE_WAYLAND` | `ON` | Enable the Wayland frontend |
-| `ENABLE_STATUS_BUS` | `ON` | Enable the D-Bus runtime status/control interface |
-| `ENABLE_SYSTRAY` | `OFF` | Enable StatusNotifierItem support |
-| `ENABLE_ASAN` | `OFF` | Enable AddressSanitizer |
-| `ENABLE_UBSAN` | `OFF` | Enable UndefinedBehaviorSanitizer |
+| `build_basic_engine` | `true` | Build the built-in basic keyboard engine |
+| `build_rime_engine` | `false` | Build the optional `librime` engine plugin |
+| `build_mozc_engine` | `false` | Build the optional Mozc engine plugin |
+| `build_control_panel` | `false` | Build the `typio-control` GTK4 control panel |
+| `build_tests` | `true` | Build unit and integration tests |
+| `build_whisper` | `false` | Build the Whisper voice backend |
+| `build_sherpa_onnx` | `false` | Build the Sherpa-ONNX voice backend |
+| `enable_wayland` | `true` | Enable the Wayland frontend |
+| `enable_status_bus` | `true` | Enable the D-Bus runtime status/control interface |
+| `enable_systray` | `false` | Enable StatusNotifierItem support |
 
 ## Project layout
 

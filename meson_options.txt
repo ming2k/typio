@@ -1,0 +1,24 @@
+option('build_control_panel', type: 'boolean', value: false,
+    description: 'Build GTK4 control panel')
+option('build_tests', type: 'boolean', value: true,
+    description: 'Build tests')
+option('build_basic_engine', type: 'boolean', value: true,
+    description: 'Build built-in basic keyboard engine')
+option('build_rime_engine', type: 'boolean', value: false,
+    description: 'Build Rime engine')
+option('build_mozc_engine', type: 'boolean', value: false,
+    description: 'Build Mozc Japanese engine')
+option('enable_wayland', type: 'boolean', value: true,
+    description: 'Build Wayland input method frontend')
+option('enable_status_bus', type: 'boolean', value: true,
+    description: 'Enable D-Bus runtime status/control interface')
+option('enable_systray', type: 'boolean', value: false,
+    description: 'Enable StatusNotifierItem tray support')
+option('build_whisper', type: 'boolean', value: false,
+    description: 'Build Whisper voice input')
+option('build_sherpa_onnx', type: 'boolean', value: false,
+    description: 'Build sherpa-onnx voice input')
+option('enable_asan', type: 'boolean', value: false,
+    description: 'Enable AddressSanitizer')
+option('enable_ubsan', type: 'boolean', value: false,
+    description: 'Enable UndefinedBehaviorSanitizer')

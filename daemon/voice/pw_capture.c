@@ -8,8 +8,12 @@
 #include "pw_capture.h"
 #include "typio/log.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
 #include <pipewire/pipewire.h>
 #include <spa/param/audio/format-utils.h>
+#pragma GCC diagnostic pop
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-05-25
+
+### Added
+
+- **Meson build system.** Typio now uses Meson as its primary build system.
+  CMake remains present during a transition period but is deprecated.
+  New features are added to Meson only.
+  - Root `meson.build` with options for all optional components.
+  - Per-subdirectory `meson.build` files for `core/`, `daemon/`, `engines/`,
+    `control/`, `tests/`, and `cli/`.
+  - `subprojects/flux.wrap` for automatic git-clone fallback when local flux
+    source is unavailable.
+  - Sibling-directory `../flux` is automatically symlinked into `subprojects/`
+    when present.
+- **Installation layout reference** (`docs/reference/install-layout.md`).
+
+### Changed
+
+- `.desktop` and `.service` template variable renamed from
+  `@CMAKE_INSTALL_FULL_LIBEXECDIR@` to `@TYPIO_DAEMON_DIR@`.
+  Meson no longer needs `format: 'cmake@'` for `configure_file`.
+- `typio.service.in` comments translated from Chinese to English.
+- `engines/rime/meson.build` and `engines/mozc/meson.build` now define source
+  variables only; `shared_module()` is called from `engines/meson.build` so
+  plugin `.so` files are placed directly in `build/engines/` (matching the
+  daemon's engine loader expectations).
+- Updated documentation (`README.md`, `docs/tutorials/01-getting-started.md`,
+  `docs/how-to/install.md`, `docs/dev/setup.md`, `docs/dev/testing.md`,
+  `docs/how-to/create-custom-engine.md`, `docs/how-to/integrate-engine.md`,
+  `docs/explanation/librime-integration.md`, `docs/dev/project-layout.md`)
+  to reference Meson commands and options. CMake instructions are marked
+  as deprecated.
+
+### Fixed
+
+- CMake-generated `.desktop` and `.service` files had empty daemon paths
+  because `CMAKE_INSTALL_FULL_LIBEXECDIR` was never defined.
+- `pkgconfig.generate(rime_dep)` error (external dependency cannot be passed
+  to `pkgconfig.generate()`).
+- `declare_dependency(link_with: sherpa_onnx_lib)` type error
+  (external library must use `dependencies:`).
+- `include_directories(meson.current_build_dir())` absolute-path error
+  in `engines/mozc/meson.build`.
+- `cargo build ''` empty-string argument error in `cli/meson.build`.
+- `prefix` undefined variable in root `meson.build`.
+- `typio_build_config.h` missing from include paths.
+- `test_rime_engine` integration test pointed to wrong engine directory.
+- PipeWire header warnings suppressed with `#pragma GCC diagnostic` in
+  `daemon/voice/pw_capture.c`.
+
 ## [4.0.0] - 2026-05-25
 
 ### Added
