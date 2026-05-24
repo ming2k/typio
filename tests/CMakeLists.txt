@@ -91,6 +91,17 @@ if(HAVE_SYSTRAY)
 
 endif()
 
+add_executable(test_voice_proxy
+    test_voice_proxy.c
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/voice/voice_proxy.c
+)
+target_include_directories(test_voice_proxy PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/voice
+)
+target_link_libraries(test_voice_proxy PRIVATE pthread)
+add_test(NAME test_voice_proxy COMMAND test_voice_proxy)
+set_tests_properties(test_voice_proxy PROPERTIES TIMEOUT 30)
+
 if(HAVE_STATUS_BUS)
     add_executable(test_status_bus
         test_status_bus.c

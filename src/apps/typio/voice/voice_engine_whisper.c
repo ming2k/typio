@@ -5,14 +5,15 @@
  * Wraps the whisper.cpp TypioVoiceBackend as a TYPIO_ENGINE_TYPE_VOICE engine,
  * so it can be managed by engine_manager with [engines.whisper] config.
  *
- * Config reloads are non-blocking: a background thread loads the new model
- * and hot-swaps it into the proxy.  The inference thread always gets a
- * reference-counted snapshot so destroy is deferred until the call returns.
+ * Concurrency, refcounting, and deferred destruction of the backend live in
+ * voice_proxy.c — this file is only the engine-ops glue and the async-reload
+ * orchestration.
  */
 
 #include "typio_build_config.h"
 #include "voice_engine.h"
 #include "voice_backend.h"
+#include "voice_proxy.h"
 #include "typio/instance.h"
 #include "typio/config.h"
 #include "typio/log.h"
@@ -21,98 +22,21 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ── Proxy ──────────────────────────────────────────────────────────────── */
-
-/**
- * WhisperProxy sits between the engine and the real WhisperBackend.
- * It is itself a TypioVoiceBackend (base is the first field) so callers
- * that receive engine->user_data cast as TypioVoiceBackend * work unchanged.
- *
- * Thread-safety contract
- * ----------------------
- * - `lock` protects impl, pending_destroy, impl_refcount, reload_running,
- *   and pending_proxy_free.
- * - process() increments impl_refcount under lock before using impl, then
- *   decrements it afterwards and defers impl destruction if needed.
- * - The reload thread swaps impl under lock; if impl_refcount > 0 at that
- *   moment it parks the old impl in pending_destroy rather than freeing it.
- * - destroy() sets pending_proxy_free if a reload is still running so the
- *   background thread frees the proxy when it finishes.
- */
-typedef struct {
-    TypioVoiceBackend  base;             /* MUST be first — enables safe cast */
-    pthread_mutex_t    lock;
-    TypioVoiceBackend *impl;             /* current active backend, may be NULL */
-    TypioVoiceBackend *pending_destroy;  /* waiting for impl_refcount to drop */
-    int                impl_refcount;   /* process() calls in flight */
-    bool               reload_running;
-    bool               pending_proxy_free; /* destroy() called while reload runs */
-} WhisperProxy;
-
-static char *whisper_proxy_process(TypioVoiceBackend *backend,
-                                    const float *samples, size_t n_samples) {
-    WhisperProxy *p = (WhisperProxy *)backend;
-
-    pthread_mutex_lock(&p->lock);
-    TypioVoiceBackend *impl = p->impl;
-    if (impl) p->impl_refcount++;
-    pthread_mutex_unlock(&p->lock);
-
-    if (!impl) return NULL;
-
-    char *result = typio_voice_backend_process(impl, samples, n_samples);
-
-    pthread_mutex_lock(&p->lock);
-    p->impl_refcount--;
-    TypioVoiceBackend *to_destroy = NULL;
-    if (p->impl_refcount == 0 && p->pending_destroy) {
-        to_destroy = p->pending_destroy;
-        p->pending_destroy = NULL;
-    }
-    pthread_mutex_unlock(&p->lock);
-
-    if (to_destroy) typio_voice_backend_destroy(to_destroy);
-    return result;
-}
-
-static void whisper_proxy_destroy(TypioVoiceBackend *backend) {
-    WhisperProxy *p = (WhisperProxy *)backend;
-
-    pthread_mutex_lock(&p->lock);
-    if (p->reload_running) {
-        /* Reload thread still holds a pointer to this proxy; let it free us. */
-        p->pending_proxy_free = true;
-        /* Destroy the current impl now so the proxy doesn't keep the model
-         * alive past engine teardown — the new impl being loaded will be
-         * dropped by the reload thread once it sees pending_proxy_free. */
-        if (p->impl) {
-            typio_voice_backend_destroy(p->impl);
-            p->impl = NULL;
-        }
-        pthread_mutex_unlock(&p->lock);
-        return;
-    }
-    pthread_mutex_unlock(&p->lock);
-
-    if (p->impl) typio_voice_backend_destroy(p->impl);
-    if (p->pending_destroy) typio_voice_backend_destroy(p->pending_destroy);
-    pthread_mutex_destroy(&p->lock);
-    free(p);
-}
-
-static const TypioVoiceBackendOps whisper_proxy_ops = {
-    .process = whisper_proxy_process,
-    .destroy = whisper_proxy_destroy,
-};
-
-/* ── Background reload ──────────────────────────────────────────────────── */
+/* ── Async reload ──────────────────────────────────────────────────────── */
 
 typedef struct {
-    WhisperProxy *proxy;
-    char *data_dir;  /* heap-allocated snapshot; freed by thread */
-    char *language;  /* may be NULL */
+    TypioVoiceProxy *proxy;
+    char *data_dir;
+    char *language;
     char *model;
 } WhisperReloadArg;
+
+static void whisper_reload_arg_free(WhisperReloadArg *a) {
+    free(a->data_dir);
+    free(a->language);
+    free(a->model);
+    free(a);
+}
 
 static void *whisper_reload_bg(void *arg) {
     WhisperReloadArg *a = arg;
@@ -120,46 +44,17 @@ static void *whisper_reload_bg(void *arg) {
     TypioVoiceBackend *new_impl =
         typio_voice_backend_whisper_new(a->data_dir, a->language, a->model);
 
-    pthread_mutex_lock(&a->proxy->lock);
+    typio_voice_proxy_reload_end(a->proxy, new_impl);
 
-    bool should_free_proxy = a->proxy->pending_proxy_free;
-
-    if (should_free_proxy) {
-        /* Engine was destroyed while we were loading; discard the new model. */
-        if (new_impl) typio_voice_backend_destroy(new_impl);
-        pthread_mutex_unlock(&a->proxy->lock);
-        pthread_mutex_destroy(&a->proxy->lock);
-        free(a->proxy);
+    if (new_impl) {
+        typio_log(TYPIO_LOG_INFO,
+                  "Whisper: async reload complete, new model active");
     } else {
-        TypioVoiceBackend *old = a->proxy->impl;
-        a->proxy->impl = new_impl;
-
-        TypioVoiceBackend *to_destroy = NULL;
-        if (old) {
-            if (a->proxy->impl_refcount > 0) {
-                a->proxy->pending_destroy = old;
-            } else {
-                to_destroy = old;
-            }
-        }
-        a->proxy->reload_running = false;
-        pthread_mutex_unlock(&a->proxy->lock);
-
-        if (to_destroy) typio_voice_backend_destroy(to_destroy);
-
-        if (new_impl) {
-            typio_log(TYPIO_LOG_INFO,
-                      "Whisper: async reload complete, new model active");
-        } else {
-            typio_log(TYPIO_LOG_WARNING,
-                      "Whisper: async reload complete, no backend available");
-        }
+        typio_log(TYPIO_LOG_WARNING,
+                  "Whisper: async reload complete, no backend available");
     }
 
-    free(a->data_dir);
-    free(a->language);
-    free(a->model);
-    free(a);
+    whisper_reload_arg_free(a);
     return NULL;
 }
 
@@ -193,58 +88,39 @@ static TypioResult whisper_engine_init(TypioEngine *engine,
         if (m) model = m;
     }
 
-    WhisperProxy *proxy = calloc(1, sizeof(WhisperProxy));
-    if (!proxy) return TYPIO_ERROR_OUT_OF_MEMORY;
-
-    proxy->base.ops = &whisper_proxy_ops;
-    pthread_mutex_init(&proxy->lock, NULL);
-
     /* Load initial model synchronously — startup cost is acceptable. */
-    proxy->impl = typio_voice_backend_whisper_new(data_dir, language, model);
-    if (!proxy->impl) {
+    TypioVoiceBackend *impl = typio_voice_backend_whisper_new(data_dir, language, model);
+    if (!impl) {
         typio_log_warning("Whisper engine init: no backend available");
     }
 
-    engine->user_data = proxy;
+    TypioVoiceProxy *proxy = typio_voice_proxy_new(impl);
+    if (!proxy) return TYPIO_ERROR_OUT_OF_MEMORY;
+
+    engine->user_data = typio_voice_proxy_as_backend(proxy);
     return TYPIO_OK;
 }
 
 static void whisper_engine_destroy(TypioEngine *engine) {
     if (engine->user_data) {
+        /* This may return before the proxy is actually freed if process()
+         * is in flight; the proxy finalizes itself when refcount drops. */
         typio_voice_backend_destroy(engine->user_data);
         engine->user_data = NULL;
     }
 }
 
 static void whisper_engine_deactivate(TypioEngine *engine) {
-    WhisperProxy *proxy = engine->user_data;
-    if (!proxy) {
-        return;
-    }
-
-    pthread_mutex_lock(&proxy->lock);
-    if (proxy->impl) {
-        typio_voice_backend_destroy(proxy->impl);
-        proxy->impl = NULL;
-    }
-    pthread_mutex_unlock(&proxy->lock);
-
+    TypioVoiceProxy *proxy = (TypioVoiceProxy *)engine->user_data;
+    if (!proxy) return;
+    typio_voice_proxy_clear_impl(proxy);
     typio_log(TYPIO_LOG_INFO, "Whisper: model freed on deactivate");
 }
 
 static void whisper_engine_focus_in(TypioEngine *engine,
                                      [[maybe_unused]] TypioInputContext *ctx) {
-    WhisperProxy *proxy = engine->user_data;
-    if (!proxy || proxy->impl) {
-        return;
-    }
-
-    /* Lazily reload the model if it was freed during deactivate */
-    pthread_mutex_lock(&proxy->lock);
-    if (proxy->impl || proxy->reload_running) {
-        pthread_mutex_unlock(&proxy->lock);
-        return;
-    }
+    TypioVoiceProxy *proxy = (TypioVoiceProxy *)engine->user_data;
+    if (!proxy || typio_voice_proxy_is_ready(proxy)) return;
 
     const char *data_dir = typio_instance_get_data_dir(engine->instance);
     const char *language = NULL;
@@ -258,10 +134,10 @@ static void whisper_engine_focus_in(TypioEngine *engine,
         if (m) model = m;
     }
 
-    proxy->impl = typio_voice_backend_whisper_new(data_dir, language, model);
-    pthread_mutex_unlock(&proxy->lock);
+    TypioVoiceBackend *impl = typio_voice_backend_whisper_new(data_dir, language, model);
+    typio_voice_proxy_set_impl(proxy, impl);
 
-    if (proxy->impl) {
+    if (impl) {
         typio_log(TYPIO_LOG_INFO, "Whisper: model reloaded on focus_in");
     } else {
         typio_log(TYPIO_LOG_WARNING, "Whisper: failed to reload model on focus_in");
@@ -279,18 +155,14 @@ static void whisper_engine_reset([[maybe_unused]] TypioEngine *engine,
 static TypioResult whisper_engine_reload_config(TypioEngine *engine) {
     if (!engine || !engine->instance) return TYPIO_ERROR_INVALID_ARGUMENT;
 
-    WhisperProxy *proxy = engine->user_data;
+    TypioVoiceProxy *proxy = (TypioVoiceProxy *)engine->user_data;
     if (!proxy) return TYPIO_ERROR_INVALID_ARGUMENT;
 
-    pthread_mutex_lock(&proxy->lock);
-    if (proxy->reload_running) {
-        pthread_mutex_unlock(&proxy->lock);
+    if (!typio_voice_proxy_reload_begin(proxy)) {
         typio_log(TYPIO_LOG_INFO,
-                  "Whisper: reload already in progress, skipping");
+                  "Whisper: reload already in progress or proxy gone, skipping");
         return TYPIO_OK;
     }
-    proxy->reload_running = true;
-    pthread_mutex_unlock(&proxy->lock);
 
     /* Snapshot config on the main thread before spawning. */
     const char *data_dir = typio_instance_get_data_dir(engine->instance);
@@ -308,9 +180,7 @@ static TypioResult whisper_engine_reload_config(TypioEngine *engine) {
 
     WhisperReloadArg *arg = calloc(1, sizeof(WhisperReloadArg));
     if (!arg) {
-        pthread_mutex_lock(&proxy->lock);
-        proxy->reload_running = false;
-        pthread_mutex_unlock(&proxy->lock);
+        typio_voice_proxy_reload_end(proxy, NULL);
         return TYPIO_ERROR_OUT_OF_MEMORY;
     }
 
@@ -336,21 +206,14 @@ static TypioResult whisper_engine_reload_config(TypioEngine *engine) {
 /* ── Voice ops ──────────────────────────────────────────────────────────── */
 
 static bool whisper_engine_is_ready(TypioEngine *engine) {
-    WhisperProxy *proxy = engine ? engine->user_data : NULL;
-    if (!proxy) return false;
-    pthread_mutex_lock(&proxy->lock);
-    bool ready = proxy->impl != NULL;
-    pthread_mutex_unlock(&proxy->lock);
-    return ready;
+    return engine && typio_voice_proxy_is_ready((TypioVoiceProxy *)engine->user_data);
 }
 
 static char *whisper_engine_process_audio(TypioEngine *engine,
                                            const float *samples, size_t n_samples) {
-    if (!engine || !engine->user_data) {
-        return NULL;
-    }
-    return whisper_proxy_process((TypioVoiceBackend *)engine->user_data,
-                                  samples, n_samples);
+    if (!engine || !engine->user_data) return NULL;
+    return typio_voice_backend_process((TypioVoiceBackend *)engine->user_data,
+                                        samples, n_samples);
 }
 
 static const TypioVoiceEngineOps whisper_voice_ops = {

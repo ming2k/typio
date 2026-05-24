@@ -4,6 +4,30 @@
  *
  * Backend-agnostic: delegates speech-to-text to the active voice engine's
  * TypioVoiceEngineOps::process_audio callback obtained from engine_manager.
+ *
+ * Lifecycle contract
+ * ------------------
+ * The inference thread snapshots a borrowed @c voice_engine pointer under
+ * @c buffer_mutex and then calls @c engine->voice->process_audio outside the
+ * lock for what may be several seconds. Two invariants make that safe:
+ *
+ *   1. The @c TypioEngine struct must outlive the voice service.
+ *      Enforced by daemon teardown order: @c wl_frontend.c frees the voice
+ *      service before unbinding the engine manager. Any future caller that
+ *      tears the daemon down out of order must respect this — the assertion
+ *      in @c typio_voice_service_free flags violations.
+ *
+ *   2. The underlying speech-to-text BACKEND owned by that engine is
+ *      reference-counted via @c voice_proxy. So while the engine pointer
+ *      stays valid by virtue of (1), the backend the inference is touching
+ *      stays valid by virtue of the proxy's pending-destroy parking. That
+ *      means @c engine_manager_unload, @c set_active_voice, and engine
+ *      @c deactivate may all run concurrently with in-flight inference;
+ *      the proxy handles deferred release.
+ *
+ * In other words: voice_service relies on the proxy for backend safety, and
+ * on teardown order for engine safety. Don't add a third dependency without
+ * extending the contract here.
  */
 
 #include "typio_build_config.h"
@@ -313,7 +337,9 @@ void typio_voice_service_free(TypioVoiceService *svc) {
         typio_pw_capture_stop(svc->capture);
     }
 
-    /* Wait for inference thread if running */
+    /* Wait for inference thread if running. After this join returns no
+     * thread holds the borrowed engine pointer, so the caller may proceed
+     * to tear down the engine manager. Invariant (1) in the file header. */
     if (state == TYPIO_VOICE_PROCESSING) {
         pthread_join(svc->infer_thread, nullptr);
     }

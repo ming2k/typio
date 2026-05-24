@@ -5,14 +5,15 @@
  * Wraps the sherpa-onnx TypioVoiceBackend as a TYPIO_ENGINE_TYPE_VOICE engine,
  * so it can be managed by engine_manager with [engines.sherpa-onnx] config.
  *
- * Config reloads are non-blocking: a background thread loads the new model
- * and hot-swaps it into the proxy.  The inference thread always gets a
- * reference-counted snapshot so destroy is deferred until the call returns.
+ * Concurrency, refcounting, and deferred destruction of the backend live in
+ * voice_proxy.c — this file is only the engine-ops glue and the async-reload
+ * orchestration.
  */
 
 #include "typio_build_config.h"
 #include "voice_engine.h"
 #include "voice_backend.h"
+#include "voice_proxy.h"
 #include "typio/instance.h"
 #include "typio/config.h"
 #include "typio/log.h"
@@ -21,83 +22,21 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ── Proxy ──────────────────────────────────────────────────────────────── */
-
-/**
- * SherpaProxy mirrors the WhisperProxy design: a TypioVoiceBackend wrapper
- * that reference-counts the real SherpaBackend and allows the reload thread
- * to hot-swap the inner backend without blocking the main event loop.
- */
-typedef struct {
-    TypioVoiceBackend  base;             /* MUST be first — enables safe cast */
-    pthread_mutex_t    lock;
-    TypioVoiceBackend *impl;             /* current active backend, may be NULL */
-    TypioVoiceBackend *pending_destroy;  /* waiting for impl_refcount to drop */
-    int                impl_refcount;   /* process() calls in flight */
-    bool               reload_running;
-    bool               pending_proxy_free; /* destroy() called while reload runs */
-} SherpaProxy;
-
-static char *sherpa_proxy_process(TypioVoiceBackend *backend,
-                                   const float *samples, size_t n_samples) {
-    SherpaProxy *p = (SherpaProxy *)backend;
-
-    pthread_mutex_lock(&p->lock);
-    TypioVoiceBackend *impl = p->impl;
-    if (impl) p->impl_refcount++;
-    pthread_mutex_unlock(&p->lock);
-
-    if (!impl) return NULL;
-
-    char *result = typio_voice_backend_process(impl, samples, n_samples);
-
-    pthread_mutex_lock(&p->lock);
-    p->impl_refcount--;
-    TypioVoiceBackend *to_destroy = NULL;
-    if (p->impl_refcount == 0 && p->pending_destroy) {
-        to_destroy = p->pending_destroy;
-        p->pending_destroy = NULL;
-    }
-    pthread_mutex_unlock(&p->lock);
-
-    if (to_destroy) typio_voice_backend_destroy(to_destroy);
-    return result;
-}
-
-static void sherpa_proxy_destroy(TypioVoiceBackend *backend) {
-    SherpaProxy *p = (SherpaProxy *)backend;
-
-    pthread_mutex_lock(&p->lock);
-    if (p->reload_running) {
-        p->pending_proxy_free = true;
-        if (p->impl) {
-            typio_voice_backend_destroy(p->impl);
-            p->impl = NULL;
-        }
-        pthread_mutex_unlock(&p->lock);
-        return;
-    }
-    pthread_mutex_unlock(&p->lock);
-
-    if (p->impl) typio_voice_backend_destroy(p->impl);
-    if (p->pending_destroy) typio_voice_backend_destroy(p->pending_destroy);
-    pthread_mutex_destroy(&p->lock);
-    free(p);
-}
-
-static const TypioVoiceBackendOps sherpa_proxy_ops = {
-    .process = sherpa_proxy_process,
-    .destroy = sherpa_proxy_destroy,
-};
-
-/* ── Background reload ──────────────────────────────────────────────────── */
+/* ── Async reload ──────────────────────────────────────────────────────── */
 
 typedef struct {
-    SherpaProxy *proxy;
-    char *data_dir;  /* heap-allocated snapshot; freed by thread */
-    char *language;  /* may be NULL */
-    char *model;     /* may be NULL */
+    TypioVoiceProxy *proxy;
+    char *data_dir;
+    char *language;
+    char *model;
 } SherpaReloadArg;
+
+static void sherpa_reload_arg_free(SherpaReloadArg *a) {
+    free(a->data_dir);
+    free(a->language);
+    free(a->model);
+    free(a);
+}
 
 static void *sherpa_reload_bg(void *arg) {
     SherpaReloadArg *a = arg;
@@ -105,45 +44,17 @@ static void *sherpa_reload_bg(void *arg) {
     TypioVoiceBackend *new_impl =
         typio_voice_backend_sherpa_new(a->data_dir, a->language, a->model);
 
-    pthread_mutex_lock(&a->proxy->lock);
+    typio_voice_proxy_reload_end(a->proxy, new_impl);
 
-    bool should_free_proxy = a->proxy->pending_proxy_free;
-
-    if (should_free_proxy) {
-        if (new_impl) typio_voice_backend_destroy(new_impl);
-        pthread_mutex_unlock(&a->proxy->lock);
-        pthread_mutex_destroy(&a->proxy->lock);
-        free(a->proxy);
+    if (new_impl) {
+        typio_log(TYPIO_LOG_INFO,
+                  "Sherpa-ONNX: async reload complete, new model active");
     } else {
-        TypioVoiceBackend *old = a->proxy->impl;
-        a->proxy->impl = new_impl;
-
-        TypioVoiceBackend *to_destroy = NULL;
-        if (old) {
-            if (a->proxy->impl_refcount > 0) {
-                a->proxy->pending_destroy = old;
-            } else {
-                to_destroy = old;
-            }
-        }
-        a->proxy->reload_running = false;
-        pthread_mutex_unlock(&a->proxy->lock);
-
-        if (to_destroy) typio_voice_backend_destroy(to_destroy);
-
-        if (new_impl) {
-            typio_log(TYPIO_LOG_INFO,
-                      "Sherpa-ONNX: async reload complete, new model active");
-        } else {
-            typio_log(TYPIO_LOG_WARNING,
-                      "Sherpa-ONNX: async reload complete, no backend available");
-        }
+        typio_log(TYPIO_LOG_WARNING,
+                  "Sherpa-ONNX: async reload complete, no backend available");
     }
 
-    free(a->data_dir);
-    free(a->language);
-    free(a->model);
-    free(a);
+    sherpa_reload_arg_free(a);
     return NULL;
 }
 
@@ -175,18 +86,15 @@ static TypioResult sherpa_engine_init(TypioEngine *engine,
         model    = typio_config_get_string(ecfg, "model", NULL);
     }
 
-    SherpaProxy *proxy = calloc(1, sizeof(SherpaProxy));
-    if (!proxy) return TYPIO_ERROR_OUT_OF_MEMORY;
-
-    proxy->base.ops = &sherpa_proxy_ops;
-    pthread_mutex_init(&proxy->lock, NULL);
-
-    proxy->impl = typio_voice_backend_sherpa_new(data_dir, language, model);
-    if (!proxy->impl) {
+    TypioVoiceBackend *impl = typio_voice_backend_sherpa_new(data_dir, language, model);
+    if (!impl) {
         typio_log_warning("Sherpa-ONNX engine init: no backend available");
     }
 
-    engine->user_data = proxy;
+    TypioVoiceProxy *proxy = typio_voice_proxy_new(impl);
+    if (!proxy) return TYPIO_ERROR_OUT_OF_MEMORY;
+
+    engine->user_data = typio_voice_proxy_as_backend(proxy);
     return TYPIO_OK;
 }
 
@@ -198,34 +106,16 @@ static void sherpa_engine_destroy(TypioEngine *engine) {
 }
 
 static void sherpa_engine_deactivate(TypioEngine *engine) {
-    SherpaProxy *proxy = engine->user_data;
-    if (!proxy) {
-        return;
-    }
-
-    pthread_mutex_lock(&proxy->lock);
-    if (proxy->impl) {
-        typio_voice_backend_destroy(proxy->impl);
-        proxy->impl = NULL;
-    }
-    pthread_mutex_unlock(&proxy->lock);
-
+    TypioVoiceProxy *proxy = (TypioVoiceProxy *)engine->user_data;
+    if (!proxy) return;
+    typio_voice_proxy_clear_impl(proxy);
     typio_log(TYPIO_LOG_INFO, "Sherpa-ONNX: model freed on deactivate");
 }
 
 static void sherpa_engine_focus_in(TypioEngine *engine,
                                      [[maybe_unused]] TypioInputContext *ctx) {
-    SherpaProxy *proxy = engine->user_data;
-    if (!proxy || proxy->impl) {
-        return;
-    }
-
-    /* Lazily reload the model if it was freed during deactivate */
-    pthread_mutex_lock(&proxy->lock);
-    if (proxy->impl || proxy->reload_running) {
-        pthread_mutex_unlock(&proxy->lock);
-        return;
-    }
+    TypioVoiceProxy *proxy = (TypioVoiceProxy *)engine->user_data;
+    if (!proxy || typio_voice_proxy_is_ready(proxy)) return;
 
     const char *data_dir = typio_instance_get_data_dir(engine->instance);
     const char *language = NULL;
@@ -237,10 +127,10 @@ static void sherpa_engine_focus_in(TypioEngine *engine,
         model    = typio_config_get_string(ecfg, "model", NULL);
     }
 
-    proxy->impl = typio_voice_backend_sherpa_new(data_dir, language, model);
-    pthread_mutex_unlock(&proxy->lock);
+    TypioVoiceBackend *impl = typio_voice_backend_sherpa_new(data_dir, language, model);
+    typio_voice_proxy_set_impl(proxy, impl);
 
-    if (proxy->impl) {
+    if (impl) {
         typio_log(TYPIO_LOG_INFO, "Sherpa-ONNX: model reloaded on focus_in");
     } else {
         typio_log(TYPIO_LOG_WARNING, "Sherpa-ONNX: failed to reload model on focus_in");
@@ -258,18 +148,14 @@ static void sherpa_engine_reset([[maybe_unused]] TypioEngine *engine,
 static TypioResult sherpa_engine_reload_config(TypioEngine *engine) {
     if (!engine || !engine->instance) return TYPIO_ERROR_INVALID_ARGUMENT;
 
-    SherpaProxy *proxy = engine->user_data;
+    TypioVoiceProxy *proxy = (TypioVoiceProxy *)engine->user_data;
     if (!proxy) return TYPIO_ERROR_INVALID_ARGUMENT;
 
-    pthread_mutex_lock(&proxy->lock);
-    if (proxy->reload_running) {
-        pthread_mutex_unlock(&proxy->lock);
+    if (!typio_voice_proxy_reload_begin(proxy)) {
         typio_log(TYPIO_LOG_INFO,
-                  "Sherpa-ONNX: reload already in progress, skipping");
+                  "Sherpa-ONNX: reload already in progress or proxy gone, skipping");
         return TYPIO_OK;
     }
-    proxy->reload_running = true;
-    pthread_mutex_unlock(&proxy->lock);
 
     const char *data_dir = typio_instance_get_data_dir(engine->instance);
     const char *language = NULL;
@@ -284,9 +170,7 @@ static TypioResult sherpa_engine_reload_config(TypioEngine *engine) {
 
     SherpaReloadArg *arg = calloc(1, sizeof(SherpaReloadArg));
     if (!arg) {
-        pthread_mutex_lock(&proxy->lock);
-        proxy->reload_running = false;
-        pthread_mutex_unlock(&proxy->lock);
+        typio_voice_proxy_reload_end(proxy, NULL);
         return TYPIO_ERROR_OUT_OF_MEMORY;
     }
 
@@ -312,21 +196,14 @@ static TypioResult sherpa_engine_reload_config(TypioEngine *engine) {
 /* ── Voice ops ──────────────────────────────────────────────────────────── */
 
 static bool sherpa_engine_is_ready(TypioEngine *engine) {
-    SherpaProxy *proxy = engine ? engine->user_data : NULL;
-    if (!proxy) return false;
-    pthread_mutex_lock(&proxy->lock);
-    bool ready = proxy->impl != NULL;
-    pthread_mutex_unlock(&proxy->lock);
-    return ready;
+    return engine && typio_voice_proxy_is_ready((TypioVoiceProxy *)engine->user_data);
 }
 
 static char *sherpa_engine_process_audio(TypioEngine *engine,
                                           const float *samples, size_t n_samples) {
-    if (!engine || !engine->user_data) {
-        return NULL;
-    }
-    return sherpa_proxy_process((TypioVoiceBackend *)engine->user_data,
-                                 samples, n_samples);
+    if (!engine || !engine->user_data) return NULL;
+    return typio_voice_backend_process((TypioVoiceBackend *)engine->user_data,
+                                        samples, n_samples);
 }
 
 static const TypioVoiceEngineOps sherpa_voice_ops = {
@@ -350,5 +227,5 @@ const TypioEngineInfo *typio_engine_get_info_sherpa(void) {
 
 TypioEngine *typio_engine_create_sherpa(void) {
     return typio_engine_new(&sherpa_engine_info, &sherpa_base_ops, nullptr,
-                           &sherpa_voice_ops);
+                            &sherpa_voice_ops);
 }

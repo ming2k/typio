@@ -46,6 +46,14 @@
  * stalled acquires, so presentation resumes cleanly once the session is back. */
 #define POPUP_PRESENT_RECOVER_STREAK 2
 
+/* Hard cap on per-epoch retire-slot growth. During a long present stall the
+ * epoch does not advance, so geometries/layouts retired across many CONTENT
+ * deltas accumulate in the current slot. The cap converts pathological growth
+ * into a bounded vkDeviceWaitIdle + inline drain, trading a one-off ms-scale
+ * stall for predictable memory use. Picked well above the realistic worst
+ * case (one geometry + a handful of layout evictions per delta). */
+#define POPUP_RETIRE_SLOT_MAX 256
+
 /* ── Output tracking ────────────────────────────────────────────────── */
 
 typedef struct PopupOutputRef {
@@ -174,11 +182,25 @@ static void retire_item_free(PopupRetireItem *it) {
     it->ptr = nullptr;
 }
 
+static void retire_slot_drain(PopupRetireSlot *slot);
+
 static void retire_slot_push(PopupRetireSlot *slot,
                               PopupRetireKind kind, void *ptr) {
     if (!ptr) return;
+
+    /* Cap reached: fence the GPU and drain everything we've parked so far
+     * in this slot inline. This converts the worst-case "RETRY-storm while
+     * the user keeps paging candidates" into a bounded one-off stall
+     * instead of unbounded memory growth. */
+    if (slot->count >= POPUP_RETIRE_SLOT_MAX) {
+        flux_device *dev = typio_flux_device_get();
+        if (dev) flux_device_wait_idle(dev);
+        retire_slot_drain(slot);
+    }
+
     if (slot->count == slot->cap) {
         size_t ncap = slot->cap ? slot->cap * 2 : 4;
+        if (ncap > POPUP_RETIRE_SLOT_MAX) ncap = POPUP_RETIRE_SLOT_MAX;
         PopupRetireItem *n = (PopupRetireItem *)realloc(slot->items, ncap * sizeof(*n));
         if (!n) {
             /* Realloc failure: fall back to a device-wide fence so the

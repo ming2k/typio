@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.1] - 2026-05-24
+
+### Fixed
+
+- **Voice engine destroy-during-process UAF.** `whisper_engine_destroy`
+  and `sherpa_engine_destroy` (and the matching `deactivate` paths)
+  freed the speech-to-text backend without consulting the proxy's
+  in-flight refcount, so an `engine_manager_unload` or `set_active_voice`
+  landing while the inference thread was mid `process_audio` could
+  release the backend out from under the call. The proxy now defers
+  backend release until the last in-flight `process()` drops its
+  refcount; the proxy itself finalizes when nothing is in flight.
+- **Popup retire-slot unbounded growth.** During a long present stall
+  (display asleep / surface occluded) the present epoch does not
+  advance, so geometries and layouts retired across many CONTENT
+  deltas accumulated in the current slot without bound. The slot now
+  caps at 256 entries; on overflow it fences the GPU and drains
+  inline, trading a one-off ms-scale stall for predictable memory use.
+
+### Changed
+
+- **Voice proxy extracted to a shared module** (`voice_proxy.{h,c}`).
+  Whisper and sherpa adapters used to carry near-identical mirror
+  copies of the impl / refcount / pending-destroy / reload state
+  machine — two copies of tricky concurrency code is a latent
+  divergence bug. The state machine now lives in one tested place
+  and the adapters shrunk to thin glue. Adding a third voice engine
+  becomes trivial.
+- **Voice service lifecycle contract documented.** `voice_service.c`
+  now states the two invariants the inference thread relies on:
+  (1) the engine struct outlives the voice service, enforced by
+  teardown order in `wl_frontend.c`; (2) the backend is kept alive
+  by the proxy's pending-destroy parking during in-flight inference.
+
+### Added
+
+- **Voice proxy concurrency tests** (`tests/test_voice_proxy.c`)
+  covering destroy-idle, destroy-during-process,
+  deactivate-during-process, process-during-reload,
+  destroy-during-reload, and set_impl-after-destroy.
+
 ## [3.3.0] - 2026-05-24
 
 ### Added

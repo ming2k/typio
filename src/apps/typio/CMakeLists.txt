@@ -155,6 +155,7 @@ endif()
 if(HAVE_VOICE)
     list(APPEND TYPIO_DAEMON_SOURCES
         voice/voice_service.c
+        voice/voice_proxy.c
         voice/pw_capture.c
     )
 
