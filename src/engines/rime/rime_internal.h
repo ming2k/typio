@@ -12,8 +12,8 @@
 
 #include "typio/typio.h"
 #include "typio_build_config.h"
-#include "utils/log.h"
-#include "utils/string.h"
+#include "typio/log.h"
+#include "typio/string.h"
 
 #include <rime_api.h>
 
@@ -155,5 +155,18 @@ TypioResult typio_rime_set_mode(TypioEngine *engine,
 
 bool typio_rime_is_shift_keysym(uint32_t keysym);
 uint32_t typio_rime_modifiers_to_mask(uint32_t modifiers);
+
+/* -------------------------------------------------------------------------- */
+/* Session checkpoint (rime_checkpoint.c)                                     */
+/* -------------------------------------------------------------------------- */
+
+TypioResult typio_rime_snapshot_session(TypioEngine *engine,
+                                        TypioInputContext *ctx,
+                                        char **out_data,
+                                        size_t *out_size);
+TypioResult typio_rime_restore_session(TypioEngine *engine,
+                                       TypioInputContext *ctx,
+                                       const char *data,
+                                       size_t size);
 
 #endif /* TYPIO_RIME_INTERNAL_H */

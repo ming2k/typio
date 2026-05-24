@@ -175,6 +175,8 @@ Focus loss is reversible; `reset` is not.
 
 Engines store per-context session state via `typio_input_context_set_property` / `_get_property`. The property is keyed by engine name and survives focus loss because the `TypioInputContext` itself outlives focus — the engine reuses the same session across `focus_out` → `focus_in` round-trips.
 
+Focus churn is only the *announced* way composition state changes. System suspend, compositor restarts, and silent grab loss change the real state without any protocol event. The frontend recovers from those through a resume signal and a self-correcting reconciler rather than this focus path — see [Lifecycle Resilience and Recovery](lifecycle-resilience.md).
+
 ## Engine vs. Typio Authority
 
 Within this lifecycle the split is:

@@ -5,8 +5,29 @@
 
 #include "typio_build_config.h"
 #include "aux_handler.h"
-#include "utils/log.h"
+#include "resume_signal.h"
+#include "typio/log.h"
 #include <stdlib.h>
+
+static int resume_signal_aux_fd(void *userdata) {
+    TypioWlResumeSignal *rs = (TypioWlResumeSignal *)userdata;
+    return rs ? typio_wl_resume_signal_get_fd(rs) : -1;
+}
+
+static void resume_signal_aux_ready(void *userdata) {
+    TypioWlResumeSignal *rs = (TypioWlResumeSignal *)userdata;
+    if (rs)
+        typio_wl_resume_signal_dispatch(rs);
+}
+
+TypioWlAuxHandler *typio_wl_aux_handler_for_resume_signal(TypioWlResumeSignal *rs) {
+    if (!rs) return nullptr;
+    return typio_wl_aux_handler_new("resume_signal",
+                                     resume_signal_aux_fd,
+                                     resume_signal_aux_ready,
+                                     nullptr,
+                                     rs);
+}
 
 #ifdef HAVE_STATUS_BUS
 #include "status/status.h"

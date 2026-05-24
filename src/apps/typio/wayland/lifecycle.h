@@ -6,6 +6,7 @@
 #ifndef TYPIO_WL_LIFECYCLE_H
 #define TYPIO_WL_LIFECYCLE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -40,6 +41,27 @@ void typio_wl_lifecycle_set_phase(struct TypioWlFrontend *frontend,
                                   const char *reason);
 void typio_wl_lifecycle_hard_reset_keyboard(struct TypioWlFrontend *frontend,
                                             const char *reason);
+
+/**
+ * Drop every piece of in-flight input-method state that could plausibly
+ * be stale across a system suspend: the keyboard grab, per-key tracking
+ * and generations, any active repeat, the carried virtual-keyboard
+ * modifiers, and the compositor-visible preedit. The lifecycle phase is
+ * forced back to INACTIVE so the next @c activate from the compositor
+ * goes through the full activation sequence and rebuilds a fresh grab.
+ *
+ * Called from @c resume_signal — both the logind @c PrepareForSleep
+ * subscriber and the boottime-gap detector funnel here. The handler is
+ * idempotent: firing twice for the same wake-up is safe.
+ *
+ * @param reason   stable string identifying the source ("logind",
+ *                 "boottime_gap"); appears in trace output.
+ * @param sleep_ms wall-clock ms the system slept for, or 0 if the
+ *                 detector couldn't compute one (logind doesn't tell us).
+ */
+void typio_wl_lifecycle_on_resume(struct TypioWlFrontend *frontend,
+                                  const char *reason,
+                                  uint64_t sleep_ms);
 
 #ifdef __cplusplus
 }

@@ -78,6 +78,7 @@ if(HAVE_SYSTRAY)
     add_executable(test_server_app
         test_server_app.c
         ${CMAKE_SOURCE_DIR}/src/apps/typio/app.c
+        ${CMAKE_SOURCE_DIR}/src/apps/typio/state_controller.c
     )
     target_compile_definitions(test_server_app PRIVATE TYPIO_DAEMON_TEST)
     target_include_directories(test_server_app PRIVATE
@@ -94,6 +95,7 @@ if(HAVE_STATUS_BUS)
     add_executable(test_status_bus
         test_status_bus.c
         ${CMAKE_SOURCE_DIR}/src/apps/typio/status/status.c
+        ${CMAKE_SOURCE_DIR}/src/apps/typio/state_controller.c
     )
     target_include_directories(test_status_bus PRIVATE
         ${CMAKE_BINARY_DIR}
@@ -275,7 +277,6 @@ add_test(NAME test_key_arbiter COMMAND test_key_arbiter)
 add_executable(test_key_route
     test_key_route.c
     ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/key_route.c
-    ${CMAKE_SOURCE_DIR}/src/core/runtime/event.c
 )
 target_include_directories(test_key_route PRIVATE
     ${CMAKE_BINARY_DIR}
@@ -290,7 +291,7 @@ target_include_directories(test_key_route PRIVATE
     ${XKBCOMMON_INCLUDE_DIRS}
 )
 add_dependencies(test_key_route typio-protocols)
-target_link_libraries(test_key_route PRIVATE ${XKBCOMMON_LIBRARIES})
+target_link_libraries(test_key_route PRIVATE typio-core ${XKBCOMMON_LIBRARIES})
 add_test(NAME test_key_route COMMAND test_key_route)
 
 add_executable(test_shortcut_chord
@@ -333,6 +334,64 @@ target_include_directories(test_lifecycle PRIVATE
     ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
 )
 add_test(NAME test_lifecycle COMMAND test_lifecycle)
+
+add_executable(test_resume_model
+    test_resume_model.c
+)
+target_include_directories(test_resume_model PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+)
+add_test(NAME test_resume_model COMMAND test_resume_model)
+
+add_executable(test_lifecycle_state
+    test_lifecycle_state.c
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_state.c
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_model.c
+)
+target_include_directories(test_lifecycle_state PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+)
+add_test(NAME test_lifecycle_state COMMAND test_lifecycle_state)
+
+add_executable(test_reconcile_model
+    test_reconcile_model.c
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/reconcile_model.c
+)
+target_include_directories(test_reconcile_model PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+)
+add_test(NAME test_reconcile_model COMMAND test_reconcile_model)
+
+add_executable(test_checkpoint_codec
+    test_checkpoint_codec.c
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/checkpoint_codec.c
+)
+target_include_directories(test_checkpoint_codec PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+)
+add_test(NAME test_checkpoint_codec COMMAND test_checkpoint_codec)
+
+add_executable(test_reconnect_backoff
+    test_reconnect_backoff.c
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/reconnect_backoff.c
+)
+target_include_directories(test_reconnect_backoff PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+)
+add_test(NAME test_reconnect_backoff COMMAND test_reconnect_backoff)
+
+add_executable(test_state_machine_properties
+    test_state_machine_properties.c
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/reconcile_model.c
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_state.c
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/lifecycle_model.c
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/reconnect_backoff.c
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland/checkpoint_codec.c
+)
+target_include_directories(test_state_machine_properties PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/apps/typio/wayland
+)
+add_test(NAME test_state_machine_properties COMMAND test_state_machine_properties)
 
 if(BUILD_RIME_ENGINE)
     add_executable(test_rime_path_expand

@@ -7,6 +7,12 @@
 #define TYPIO_WL_AUX_ADAPTERS_H
 
 #include "aux_handler.h"
+#include "resume_signal.h"
+
+/* Always available: resume detector has no build-time dependency beyond
+ * libdbus (already required by the daemon) and degrades to the boottime
+ * gap heuristic when the system bus is absent. */
+TypioWlAuxHandler *typio_wl_aux_handler_for_resume_signal(TypioWlResumeSignal *rs);
 
 #ifdef HAVE_STATUS_BUS
 #include "status/status.h"

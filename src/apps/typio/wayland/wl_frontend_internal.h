@@ -13,6 +13,7 @@
 #include "lifecycle.h"
 #include "keyboard_repeat.h"
 #include "identity.h"
+#include "resume_signal.h"
 #include "startup_guard.h"
 #include "text_ui_backend.h"
 #include "vk_bridge.h"
@@ -199,6 +200,11 @@ struct TypioWlFrontend {
     struct wl_shm *shm;
     TypioWlOutput *outputs;
 
+    /* Display name to reconnect to (strdup of the configured name, or NULL
+     * for the default). Kept so the reconnect path can re-open the same
+     * display after a compositor restart. */
+    char *display_name;
+
     /* Input method protocol objects */
     struct zwp_input_method_manager_v2 *im_manager;
     struct zwp_input_method_v2 *input_method;
@@ -249,9 +255,16 @@ struct TypioWlFrontend {
 
     /* Optional subsystems registered as uniform TypioWlAuxHandler instances.
      * This replaces #ifdef-polluted struct members with a runtime array so
-     * that the struct layout is stable across build configurations. */
-    TypioWlAuxHandler *aux_handlers[4];
+     * that the struct layout is stable across build configurations.
+     * Capacity covers status_bus + tray + voice + resume_signal with
+     * headroom. */
+    TypioWlAuxHandler *aux_handlers[6];
     size_t aux_handler_count;
+
+    /* System-resume detector (logind PrepareForSleep + boottime gap).
+     * Always present; its DBus fd is polled via an aux handler while the
+     * gap heuristic is ticked once per event-loop iteration. */
+    TypioWlResumeSignal *resume_signal;
 
     /* Legacy optional subsystem pointers (kept for gradual migration) */
 #ifdef HAVE_STATUS_BUS
@@ -264,8 +277,15 @@ struct TypioWlFrontend {
     TypioVoiceService *voice;
 #endif
 
-    /* Protocol serial: must increment on every done, even without a session */
+    /* Protocol serial: must increment on every done, even without a session.
+     * This is the running count of zwp_input_method_v2 `done` events, which
+     * is exactly the value commit() must echo back. */
     uint32_t im_serial;
+
+    /* Serial passed to the most recent successful commit(); diagnostic
+     * breadcrumb for trace output and a hook for future reconnect logic
+     * that needs to know whether a staged commit was actually flushed. */
+    uint32_t last_committed_serial;
 
     /* Wayland dispatch epoch — incremented after each wl_display_dispatch.
      * Used by the startup guard to deterministically identify stale key
@@ -277,6 +297,15 @@ struct TypioWlFrontend {
     volatile bool running;
     TypioWlLifecyclePhase lifecycle_phase;
     bool pending_reactivation;
+
+    /* Reconciler: monotonic timestamp when the declared phase first
+     * diverged from observed reality, or 0 when they agree. The reconciler
+     * forces a recovery once a divergence outlives its threshold. */
+    uint64_t reconcile_divergence_since_ms;
+
+    /* Set once the first post-startup activation has attempted to restore a
+     * composition checkpoint, so later focus changes don't replay it. */
+    bool checkpoint_restore_attempted;
     bool popup_update_pending;
     int config_watch_fd;
     int config_dir_watch;
@@ -313,6 +342,14 @@ void typio_wl_frontend_dispatch_config_reload(TypioWlFrontend *frontend);
 
 /* Input method functions (wl_input_method.c) */
 void typio_wl_input_method_setup(TypioWlFrontend *frontend);
+void typio_wl_input_method_handle_resume(TypioWlFrontend *frontend,
+                                         const char *reason,
+                                         uint64_t sleep_ms);
+
+/* Reconnect after a lost Wayland display (wl_frontend.c). Tears down and
+ * re-establishes all Wayland objects with capped backoff, preserving engine
+ * state. Returns true once reconnected, false if it gave up or was stopped. */
+bool typio_wl_frontend_reconnect(TypioWlFrontend *frontend);
 
 /* Session functions */
 TypioWlSession *typio_wl_session_create(TypioWlFrontend *frontend);

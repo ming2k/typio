@@ -4,6 +4,7 @@ set(TYPIO_DAEMON_SOURCES
     main.c
     client_main.c
     app.c
+    state_controller.c
     cli.c
     notify/health.c
 )
@@ -43,6 +44,7 @@ if(HAVE_WAYLAND)
     list(APPEND TYPIO_DAEMON_SOURCES
         wayland/boundary_bridge.c
         wayland/candidate_guard.c
+        wayland/checkpoint_codec.c
         wayland/frontend_aux.c
         wayland/identity.c
         wayland/key_arbiter.c
@@ -52,6 +54,7 @@ if(HAVE_WAYLAND)
         wayland/keyboard_repeat.c
         wayland/lifecycle.c
         wayland/lifecycle_model.c
+        wayland/lifecycle_state.c
         wayland/modifier_policy.c
         wayland/wl_event_loop.c
         wayland/wl_runtime_config.c
@@ -64,7 +67,12 @@ if(HAVE_WAYLAND)
         wayland/candidate_popup_paint.cc
         wayland/flux_renderer.c
         wayland/candidate_popup_theme.c
+        wayland/reconcile_model.c
+        wayland/reconciler.c
+        wayland/reconnect_backoff.c
         wayland/repeat_guard.c
+        wayland/resume_signal.c
+        wayland/session_checkpoint.c
         wayland/shortcut_chord.c
         wayland/shortcut_config.c
         wayland/startup_guard.c

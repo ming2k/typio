@@ -7,11 +7,12 @@
 #include "identity.h"
 #include "monotonic_time.h"
 #include "preedit_format.h"
+#include "session_checkpoint.h"
 #include "text_ui_state.h"
 #include "wl_trace.h"
 #include "typio/typio.h"
-#include "utils/log.h"
-#include "utils/string.h"
+#include "typio/log.h"
+#include "typio/string.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -278,7 +279,25 @@ void typio_wl_commit(TypioWlFrontend *frontend) {
     if (!frontend || !frontend->input_method || !frontend->session) {
         return;
     }
+
+    /* The zwp_input_method_v2 commit serial is the count of `done` events
+     * received. A serial of 0 means the compositor has not yet sent a
+     * single done — the input method is not established, and any
+     * preedit/commit_string we staged would be silently dropped by the
+     * compositor. Skip the commit and keep the staged state pending until
+     * the first done arrives. (This is the single chokepoint for every
+     * commit in the frontend, so future reconnect/multi-source work has
+     * one place to revalidate the serial.) */
+    if (frontend->im_serial == 0) {
+        typio_wl_trace(frontend,
+                       "commit",
+                       "action=skip reason=no_done_yet serial=0 phase=%s",
+                       typio_wl_lifecycle_phase_name(frontend->lifecycle_phase));
+        return;
+    }
+
     zwp_input_method_v2_commit(frontend->input_method, frontend->im_serial);
+    frontend->last_committed_serial = frontend->im_serial;
 }
 
 /* Input method event handlers */
@@ -408,6 +427,18 @@ static void transition_to_active(TypioWlFrontend *frontend) {
 
     typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_ACTIVE, "focus in complete");
     set_pending_reactivation(frontend, false);
+
+    /* Once per daemon lifetime, on the first activation, try to resume a
+     * composition left by a previous (crashed) instance. The restore is a
+     * one-shot: try_restore unlinks the file, and the flag guards against
+     * replaying our own live-session checkpoints on later focus changes,
+     * where the engine session is still in memory and needs no restore. */
+    if (!frontend->checkpoint_restore_attempted) {
+        frontend->checkpoint_restore_attempted = true;
+        if (typio_wl_session_checkpoint_try_restore(frontend))
+            frontend->popup_update_pending = true;
+    }
+
     trace_session_state(frontend, "done_focus_in_complete");
 }
 
@@ -454,6 +485,57 @@ static void transition_to_inactive(TypioWlFrontend *frontend, const char *reason
     typio_wl_frontend_clear_identity(frontend);
     set_pending_reactivation(frontend, false);
     trace_session_state(frontend, "done_focus_out_complete");
+}
+
+void typio_wl_input_method_handle_resume(TypioWlFrontend *frontend,
+                                         const char *reason,
+                                         uint64_t sleep_ms) {
+    bool was_active;
+    TypioEngine *engine;
+
+    if (!frontend) {
+        return;
+    }
+
+    /* Capture intent before the scrub clears it: were we actively
+     * composing in a focused client when the machine went to sleep? */
+    was_active = session_is_focused(frontend) &&
+                 frontend->lifecycle_phase == TYPIO_WL_PHASE_ACTIVE;
+
+    /* Pure scrub: drop the grab, stale modifiers, key tracking, and the
+     * compositor preedit; force the phase to INACTIVE. */
+    typio_wl_lifecycle_on_resume(frontend, reason, sleep_ms);
+
+    if (!was_active) {
+        /* Not composing at suspend time. The next compositor activate
+         * runs the full path; nothing more to do here. */
+        return;
+    }
+
+    /* We *were* composing. Some compositors redeliver the full IM
+     * handshake on wake, but many keep their view of focus unchanged and
+     * send nothing — which would leave us deaf with no grab. Rebuild the
+     * grab proactively. The input context was never focus_out'd, so the
+     * engine's in-flight composition survives. */
+    engine = active_engine(frontend);
+    if (!engine) {
+        typio_log(TYPIO_LOG_WARNING,
+                  "Resume: no active engine, leaving input method inactive");
+        return;
+    }
+
+    typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_ACTIVATING,
+                                 "resume regrab");
+    if (!rebuild_keyboard_grab(frontend,
+                               "resume regrab",
+                               "Failed to recreate keyboard grab on resume")) {
+        typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_INACTIVE,
+                                     "resume regrab failed");
+        return;
+    }
+    typio_wl_lifecycle_set_phase(frontend, TYPIO_WL_PHASE_ACTIVE,
+                                 "resume regrab complete");
+    trace_session_state(frontend, "resume_regrab_complete");
 }
 
 static void im_handle_done(void *data, [[maybe_unused]] struct zwp_input_method_v2 *im) {
@@ -553,6 +635,9 @@ static void on_commit_callback([[maybe_unused]] TypioInputContext *ctx, const ch
                                     &session->last_preedit_text,
                                     &session->last_preedit_cursor);
 
+    /* Composition committed: there is nothing left to resume. */
+    typio_wl_session_checkpoint_discard(session->frontend);
+
     /* Notify the engine manager that the active engine committed text,
      * so the recent-engine pair used for slow-switch toggling stays current. */
     typio_engine_manager_notify_commit(
@@ -644,6 +729,16 @@ static void update_wayland_text_ui(TypioWlSession *session, TypioInputContext *c
             typio_wl_set_preedit(session->frontend, plain_text, cursor_pos, cursor_pos);
         }
         typio_wl_commit(session->frontend);
+
+        /* Persist the in-flight composition on each real preedit delta so a
+         * daemon crash can resume it. $XDG_RUNTIME_DIR is tmpfs, so the
+         * atomic write is cheap. A cleared preedit means the composition
+         * ended without a commit (e.g. Escape); drop the checkpoint. */
+        if (plain_text && plain_text[0]) {
+            typio_wl_session_checkpoint_save(session->frontend);
+        } else {
+            typio_wl_session_checkpoint_discard(session->frontend);
+        }
     }
 
     free(session->last_preedit_text);

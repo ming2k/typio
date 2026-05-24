@@ -5,11 +5,16 @@
 
 #include "wl_frontend.h"
 #include "identity.h"
+#include "key_tracking.h"
 #include "monotonic_time.h"
+#include "reconnect_backoff.h"
 #include "wl_frontend_internal.h"
 #include "aux_adapters.h"
 #include "typio/typio.h"
-#include "utils/log.h"
+#include "typio/log.h"
+#include "typio/string.h"
+
+#include <time.h>
 #ifdef HAVE_VOICE
 #include "../voice/voice_engine.h"
 #endif
@@ -183,84 +188,73 @@ static void frontend_setup_config_watch(TypioWlFrontend *frontend) {
 #ifdef HAVE_VOICE
 static void frontend_init_voice(TypioWlFrontend *frontend, TypioInstance *instance);
 #endif
+static void frontend_init_resume_signal(TypioWlFrontend *frontend);
 
-TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
-                                        const TypioWlFrontendConfig *config) {
-    if (!instance) {
-        return nullptr;
-    }
-
-    TypioWlFrontend *frontend = calloc(1, sizeof(TypioWlFrontend));
-    if (!frontend) {
-        return nullptr;
-    }
-
-    frontend->instance = instance;
-
-    /* Load shortcut bindings from config */
-    typio_shortcut_config_load(&frontend->shortcuts,
-                               typio_instance_get_config(instance));
-    typio_wl_frontend_log_shortcuts(frontend, "Shortcuts:");
-
-    /* Connect to Wayland display */
-    const char *display_name = config ? config->display_name : nullptr;
-    frontend->display = wl_display_connect(display_name);
+/*
+ * Bind (or rebind) every Wayland-derived object: connect the display, bind
+ * globals, create the input method + virtual keyboard, and build the text
+ * UI backend. Used both at startup and on reconnect; it touches nothing
+ * that must survive a compositor restart (engine/session state, aux
+ * handlers, config watch, resume signal). On a hard failure it writes
+ * frontend->error_msg and returns false WITHOUT tearing down — the caller
+ * decides whether to abort (startup) or retry (reconnect). Assumes all
+ * Wayland pointers start NULL (true after calloc or unbind).
+ */
+static bool frontend_wayland_bind(TypioWlFrontend *frontend) {
+    frontend->display = wl_display_connect(frontend->display_name);
     if (!frontend->display) {
-        typio_log(TYPIO_LOG_ERROR, "Failed to connect to Wayland display");
         snprintf(frontend->error_msg, sizeof(frontend->error_msg),
                  "Failed to connect to Wayland display: %s",
-                 display_name ? display_name : "(default)");
-        return frontend_init_failed(frontend, frontend->error_msg);
+                 frontend->display_name ? frontend->display_name : "(default)");
+        typio_log(TYPIO_LOG_ERROR, "%s", frontend->error_msg);
+        return false;
     }
-
     typio_log(TYPIO_LOG_INFO, "Connected to Wayland display");
 
-    /* Get registry */
     frontend->registry = wl_display_get_registry(frontend->display);
     if (!frontend->registry) {
-        typio_log(TYPIO_LOG_ERROR, "Failed to get Wayland registry");
-        return frontend_init_failed(frontend, "Failed to get Wayland registry");
+        snprintf(frontend->error_msg, sizeof(frontend->error_msg),
+                 "Failed to get Wayland registry");
+        typio_log(TYPIO_LOG_ERROR, "%s", frontend->error_msg);
+        return false;
     }
-
     wl_registry_add_listener(frontend->registry, &registry_listener, frontend);
 
-    /* Roundtrip to get globals */
     if (wl_display_roundtrip(frontend->display) < 0) {
-        typio_log(TYPIO_LOG_ERROR, "Wayland roundtrip failed");
-        return frontend_init_failed(frontend, "Wayland roundtrip failed");
+        snprintf(frontend->error_msg, sizeof(frontend->error_msg),
+                 "Wayland roundtrip failed");
+        typio_log(TYPIO_LOG_ERROR, "%s", frontend->error_msg);
+        return false;
     }
 
-    /* Verify we have required interfaces */
     if (!frontend->im_manager) {
+        snprintf(frontend->error_msg, sizeof(frontend->error_msg),
+                 "Session does not provide the required Wayland input-method/text-input protocol stack");
         typio_log(TYPIO_LOG_ERROR,
                   "Compositor does not support zwp_input_method_manager_v2");
-        return frontend_init_failed(frontend,
-                                    "Session does not provide the required Wayland input-method/text-input protocol stack");
+        return false;
     }
-
     if (!frontend->seat) {
+        snprintf(frontend->error_msg, sizeof(frontend->error_msg),
+                 "No seat available");
         typio_log(TYPIO_LOG_ERROR, "No seat available");
-        return frontend_init_failed(frontend, "No seat available");
+        return false;
     }
-
     if (!frontend->compositor || !frontend->shm) {
         typio_log(TYPIO_LOG_WARNING,
                   "Compositor missing wl_compositor or wl_shm; popup candidates disabled");
     }
 
-    /* Create input method */
     frontend->input_method = zwp_input_method_manager_v2_get_input_method(
         frontend->im_manager, frontend->seat);
     if (!frontend->input_method) {
+        snprintf(frontend->error_msg, sizeof(frontend->error_msg),
+                 "Failed to create input method");
         typio_log(TYPIO_LOG_ERROR, "Failed to create input method");
-        return frontend_init_failed(frontend, "Failed to create input method");
+        return false;
     }
-
-    /* Set up input method listener */
     typio_wl_input_method_setup(frontend);
-    frontend->identity_provider = typio_wl_identity_provider_new(instance);
 
-    /* Create virtual keyboard for forwarding unhandled keys */
     if (frontend->vk_manager && frontend->seat) {
         frontend->virtual_keyboard =
             zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(
@@ -298,12 +292,142 @@ TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
         typio_log(TYPIO_LOG_WARNING, "Failed to initialize text UI backend");
     }
 
+    return true;
+}
+
+/*
+ * Destroy every Wayland-derived object and disconnect the display, nulling
+ * each pointer so a subsequent bind starts clean. Leaves engine/session,
+ * aux handlers, config watch, and the resume signal untouched. Safe to call
+ * with any subset already NULL.
+ */
+static void frontend_wayland_unbind(TypioWlFrontend *frontend) {
+    if (frontend->keyboard) {
+        typio_wl_keyboard_destroy(frontend->keyboard);
+        frontend->keyboard = nullptr;
+    }
+    if (frontend->text_ui_backend) {
+        typio_wl_text_ui_backend_destroy(frontend->text_ui_backend);
+        frontend->text_ui_backend = nullptr;
+    }
+    if (frontend->virtual_keyboard) {
+        typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_ABSENT,
+                              "wayland unbind");
+        zwp_virtual_keyboard_v1_destroy(frontend->virtual_keyboard);
+        frontend->virtual_keyboard = nullptr;
+    }
+    if (frontend->vk_manager) {
+        zwp_virtual_keyboard_manager_v1_destroy(frontend->vk_manager);
+        frontend->vk_manager = nullptr;
+    }
+    if (frontend->input_method) {
+        zwp_input_method_v2_destroy(frontend->input_method);
+        frontend->input_method = nullptr;
+    }
+    if (frontend->im_manager) {
+        zwp_input_method_manager_v2_destroy(frontend->im_manager);
+        frontend->im_manager = nullptr;
+    }
+    if (frontend->seat) {
+        wl_seat_destroy(frontend->seat);
+        frontend->seat = nullptr;
+    }
+    if (frontend->shm) {
+        wl_shm_destroy(frontend->shm);
+        frontend->shm = nullptr;
+    }
+    if (frontend->viewporter) {
+        wp_viewporter_destroy(frontend->viewporter);
+        frontend->viewporter = nullptr;
+    }
+    if (frontend->fractional_scale_manager) {
+        wp_fractional_scale_manager_v1_destroy(frontend->fractional_scale_manager);
+        frontend->fractional_scale_manager = nullptr;
+    }
+    if (frontend->compositor) {
+        wl_compositor_destroy(frontend->compositor);
+        frontend->compositor = nullptr;
+    }
+    if (frontend->registry) {
+        wl_registry_destroy(frontend->registry);
+        frontend->registry = nullptr;
+    }
+    while (frontend->outputs) {
+        TypioWlOutput *output = frontend->outputs;
+        frontend->outputs = output->next;
+        if (output->output) {
+            wl_output_destroy(output->output);
+        }
+        free(output);
+    }
+    if (frontend->display) {
+        wl_display_disconnect(frontend->display);
+        frontend->display = nullptr;
+    }
+}
+
+TypioWlFrontend *typio_wl_frontend_new(TypioInstance *instance,
+                                        const TypioWlFrontendConfig *config) {
+    if (!instance) {
+        return nullptr;
+    }
+
+    TypioWlFrontend *frontend = calloc(1, sizeof(TypioWlFrontend));
+    if (!frontend) {
+        return nullptr;
+    }
+
+    frontend->instance = instance;
+
+    /* Load shortcut bindings from config */
+    typio_shortcut_config_load(&frontend->shortcuts,
+                               typio_instance_get_config(instance));
+    typio_wl_frontend_log_shortcuts(frontend, "Shortcuts:");
+
+    /* Remember the display name so the reconnect path can re-open it. */
+    const char *display_name = config ? config->display_name : nullptr;
+    frontend->display_name = display_name ? typio_strdup(display_name) : nullptr;
+
+    /* Bind all Wayland-derived objects. */
+    if (!frontend_wayland_bind(frontend)) {
+        return frontend_init_failed(frontend, frontend->error_msg);
+    }
+
+    frontend->identity_provider = typio_wl_identity_provider_new(instance);
+
     typio_log(TYPIO_LOG_INFO, "Wayland input method frontend initialized");
     frontend_setup_config_watch(frontend);
+    frontend_init_resume_signal(frontend);
 #ifdef HAVE_VOICE
     frontend_init_voice(frontend, instance);
 #endif
     return frontend;
+}
+
+static void frontend_on_resume(void *user_data, const char *reason,
+                               uint64_t sleep_ms) {
+    TypioWlFrontend *frontend = user_data;
+    typio_wl_input_method_handle_resume(frontend, reason, sleep_ms);
+}
+
+static void frontend_init_resume_signal(TypioWlFrontend *frontend) {
+    if (!frontend)
+        return;
+
+    frontend->resume_signal =
+        typio_wl_resume_signal_create(frontend_on_resume, frontend);
+    if (!frontend->resume_signal) {
+        typio_log(TYPIO_LOG_WARNING, "Failed to create resume signal detector");
+        return;
+    }
+
+    if (frontend->aux_handler_count <
+        sizeof(frontend->aux_handlers) / sizeof(frontend->aux_handlers[0])) {
+        TypioWlAuxHandler *h =
+            typio_wl_aux_handler_for_resume_signal(frontend->resume_signal);
+        if (h)
+            frontend->aux_handlers[frontend->aux_handler_count++] = h;
+    }
 }
 
 #ifdef HAVE_VOICE
@@ -354,6 +478,77 @@ void typio_wl_frontend_stop(TypioWlFrontend *frontend) {
     if (frontend) {
         frontend->running = false;
     }
+}
+
+bool typio_wl_frontend_reconnect(TypioWlFrontend *frontend) {
+    uint32_t attempt = 0;
+
+    if (!frontend)
+        return false;
+
+    typio_log(TYPIO_LOG_WARNING,
+              "Wayland connection lost; attempting to reconnect");
+
+    /* No event-loop progress happens during the blocking backoff, so park
+     * the watchdog. Destroying the keyboard in unbind also disarms it; this
+     * is belt-and-suspenders for the case where no grab existed. */
+    atomic_store(&frontend->watchdog_armed, false);
+
+    /* Drop every Wayland-derived object. Engine/session state, aux handlers,
+     * config watch, and the resume signal are intentionally preserved, so an
+     * in-flight composition survives the compositor restart. */
+    frontend_wayland_unbind(frontend);
+
+    /* Reset the input-method state to a clean disconnected baseline. A held
+     * key during the outage produced no key-up, so fence the key generation
+     * and clear tracking; the fresh grab after reconnect starts from zero. */
+    frontend->lifecycle_phase = TYPIO_WL_PHASE_INACTIVE;
+    frontend->pending_reactivation = false;
+    frontend->reconcile_divergence_since_ms = 0;
+    frontend->active_generation_owned_keys = false;
+    frontend->carried_vk_modifiers = false;
+    frontend->active_key_generation++;
+    if (frontend->active_key_generation == 0)
+        frontend->active_key_generation = 1;
+    typio_wl_key_tracking_reset(frontend->key_states, TYPIO_WL_MAX_TRACKED_KEYS);
+    typio_wl_key_tracking_reset_generations(frontend->key_generations,
+                                            TYPIO_WL_MAX_TRACKED_KEYS);
+
+    while (typio_wl_reconnect_should_retry(attempt)) {
+        uint32_t delay_ms = typio_wl_reconnect_delay_ms(attempt);
+        struct timespec ts = {
+            .tv_sec = delay_ms / 1000,
+            .tv_nsec = (long)(delay_ms % 1000) * 1000000L,
+        };
+
+        /* Honor a stop request that arrived before/while we were down. */
+        if (!frontend->running)
+            return false;
+
+        nanosleep(&ts, nullptr);
+
+        if (!frontend->running)
+            return false;
+
+        if (frontend_wayland_bind(frontend)) {
+            typio_log(TYPIO_LOG_INFO,
+                      "Reconnected to Wayland display after %u attempt(s)",
+                      attempt + 1);
+            /* The fatal path that called us may have cleared running; the
+             * connection is healthy again, so resume the loop. */
+            frontend->running = true;
+            return true;
+        }
+
+        /* Bind left partial state; clear it before the next attempt. */
+        frontend_wayland_unbind(frontend);
+        attempt++;
+    }
+
+    typio_log(TYPIO_LOG_ERROR,
+              "Failed to reconnect to Wayland display after %u attempts; exiting",
+              attempt);
+    return false;
 }
 
 bool typio_wl_frontend_is_running(TypioWlFrontend *frontend) {
@@ -416,50 +611,18 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
     }
     frontend->aux_handler_count = 0;
 
-    /* Clean up Wayland objects */
-    if (frontend->virtual_keyboard) {
-        typio_wl_vk_set_state(frontend, TYPIO_WL_VK_STATE_ABSENT,
-                              "frontend shutdown");
-        zwp_virtual_keyboard_v1_destroy(frontend->virtual_keyboard);
+    /* The resume-signal aux handler wrapper is freed above, but it does not
+     * own the detector itself (free_fn was null), so release it here. */
+    if (frontend->resume_signal) {
+        typio_wl_resume_signal_destroy(frontend->resume_signal);
+        frontend->resume_signal = nullptr;
     }
-    if (frontend->vk_manager) {
-        zwp_virtual_keyboard_manager_v1_destroy(frontend->vk_manager);
-    }
-    if (frontend->input_method) {
-        zwp_input_method_v2_destroy(frontend->input_method);
-    }
-    if (frontend->im_manager) {
-        zwp_input_method_manager_v2_destroy(frontend->im_manager);
-    }
-    if (frontend->seat) {
-        wl_seat_destroy(frontend->seat);
-    }
-    if (frontend->shm) {
-        wl_shm_destroy(frontend->shm);
-    }
-    if (frontend->viewporter) {
-        wp_viewporter_destroy(frontend->viewporter);
-    }
-    if (frontend->fractional_scale_manager) {
-        wp_fractional_scale_manager_v1_destroy(frontend->fractional_scale_manager);
-    }
-    if (frontend->compositor) {
-        wl_compositor_destroy(frontend->compositor);
-    }
-    if (frontend->registry) {
-        wl_registry_destroy(frontend->registry);
-    }
-    while (frontend->outputs) {
-        TypioWlOutput *output = frontend->outputs;
-        frontend->outputs = output->next;
-        if (output->output) {
-            wl_output_destroy(output->output);
-        }
-        free(output);
-    }
-    if (frontend->display) {
-        wl_display_disconnect(frontend->display);
-    }
+
+    /* Clean up all Wayland-derived objects (keyboard already destroyed
+     * above; unbind tolerates the NULL). */
+    frontend_wayland_unbind(frontend);
+
+    free(frontend->display_name);
 
     typio_log(TYPIO_LOG_INFO, "Wayland frontend destroyed");
     free(frontend);

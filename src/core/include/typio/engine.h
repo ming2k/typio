@@ -152,6 +152,46 @@ typedef struct TypioKeyboardEngineOps {
     TypioResult (*set_mode)(TypioEngine *engine,
                             TypioInputContext *ctx,
                             const char *mode_id);
+
+    /**
+     * @brief Serialize the in-flight composition session for durability.
+     *
+     * Produce a self-contained blob from which @c restore_session can
+     * reconstruct the current composition (e.g. the raw input buffer and
+     * mode flags) after a daemon restart. The engine allocates the blob;
+     * the caller takes ownership and releases it with free().
+     *
+     * On success return TYPIO_OK and set @c *out_data / @c *out_size. When
+     * there is nothing worth persisting (no active composition), return
+     * TYPIO_OK with @c *out_data = NULL and @c *out_size = 0 — this is not
+     * an error.
+     *
+     * Optional — engines without resumable session state (e.g. the
+     * built-in `basic` engine) leave this NULL, which the framework reads
+     * as "no durable session." Restore is only attempted when both this
+     * and restore_session are provided.
+     */
+    TypioResult (*snapshot_session)(TypioEngine *engine,
+                                    TypioInputContext *ctx,
+                                    char **out_data,
+                                    size_t *out_size);
+
+    /**
+     * @brief Reconstruct a composition session from a snapshot blob.
+     *
+     * Replays the state captured by @c snapshot_session into @c ctx so the
+     * user's in-flight composition survives a daemon restart. The blob is
+     * owned by the caller and remains valid only for the duration of the
+     * call. The engine must validate the blob defensively (it may come
+     * from a different engine build) and return an error rather than crash
+     * on malformed input.
+     *
+     * Optional — see snapshot_session.
+     */
+    TypioResult (*restore_session)(TypioEngine *engine,
+                                   TypioInputContext *ctx,
+                                   const char *data,
+                                   size_t size);
 } TypioKeyboardEngineOps;
 
 /**
@@ -258,6 +298,42 @@ const char *typio_engine_get_config_path(const TypioEngine *engine);
 void typio_engine_set_config_path(TypioEngine *engine, const char *path);
 void typio_engine_set_user_data(TypioEngine *engine, void *data);
 void *typio_engine_get_user_data(const TypioEngine *engine);
+
+/* -------------------------------------------------------------------------- */
+/* Session durability (optional; Stage 3a)                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief Whether @c engine provides both session snapshot and restore ops.
+ *
+ * The frontend checks this before attempting to persist or resume a
+ * composition across a daemon restart.
+ */
+bool typio_engine_has_session_ops(const TypioEngine *engine);
+
+/**
+ * @brief Dispatch to the engine's snapshot_session op.
+ *
+ * @return TYPIO_ERROR_NOT_FOUND when the engine does not implement the op;
+ *         otherwise the engine's own result. On TYPIO_OK, @c *out_data /
+ *         @c *out_size hold a heap blob the caller frees (may be NULL/0 when
+ *         there is nothing to persist).
+ */
+TypioResult typio_engine_snapshot_session(TypioEngine *engine,
+                                          TypioInputContext *ctx,
+                                          char **out_data,
+                                          size_t *out_size);
+
+/**
+ * @brief Dispatch to the engine's restore_session op.
+ *
+ * @return TYPIO_ERROR_NOT_FOUND when the engine does not implement the op;
+ *         otherwise the engine's own result.
+ */
+TypioResult typio_engine_restore_session(TypioEngine *engine,
+                                         TypioInputContext *ctx,
+                                         const char *data,
+                                         size_t size);
 
 #ifdef __cplusplus
 }

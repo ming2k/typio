@@ -7,6 +7,7 @@ add_library(typio-engine-rime MODULE
     rime_sync.c
     rime_mode.c
     rime_key.c
+    rime_checkpoint.c
     rime_engine.c
 )
 

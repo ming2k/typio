@@ -11,9 +11,10 @@
 
 #include "frontend_aux.h"
 #include "monotonic_time.h"
+#include "reconciler.h"
 #include "text_ui_state.h"
 #include "typio/input_context.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <errno.h>
 #include <poll.h>
@@ -58,7 +59,8 @@ static int event_loop_prepare_and_flush(TypioWlFrontend *frontend) {
         typio_log(TYPIO_LOG_ERROR, "Wayland display flush failed: %s",
                   strerror(errno));
         wl_display_cancel_read(frontend->display);
-        frontend->running = false;
+        /* Connection lost — let the caller drive reconnect rather than
+         * forcing shutdown. Don't clear running here. */
         return -1;
     }
 
@@ -152,7 +154,7 @@ static int event_loop_handle_wayland(TypioWlFrontend *frontend,
         if (wl_display_read_events(frontend->display) < 0) {
             typio_log(TYPIO_LOG_ERROR, "Failed to read Wayland events: %s",
                       strerror(errno));
-            frontend->running = false;
+            /* Connection lost — caller drives reconnect. */
             return -1;
         }
         typio_wl_frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_DISPATCH_PENDING);
@@ -166,7 +168,7 @@ static int event_loop_handle_wayland(TypioWlFrontend *frontend,
 
     if (display_fd->revents & (POLLERR | POLLHUP)) {
         typio_log(TYPIO_LOG_ERROR, "Wayland display connection error");
-        frontend->running = false;
+        /* Connection lost — caller drives reconnect. */
         return -1;
     }
 
@@ -202,9 +204,21 @@ static void event_loop_handle_aux_handlers(TypioWlFrontend *frontend,
     }
 }
 
+/* Drive reconnect after a lost display. On success the display fd has
+ * changed, so refresh the cached aux fds and tell the caller to continue the
+ * loop. On failure (gave up or stopped) clear running so the loop exits. */
+static bool event_loop_recover(TypioWlFrontend *frontend, TypioWlLoopAuxFds *aux) {
+    if (typio_wl_frontend_reconnect(frontend)) {
+        *aux = event_loop_init_aux_fds(frontend);
+        return true;
+    }
+    frontend->running = false;
+    return false;
+}
+
 int typio_wl_frontend_run(TypioWlFrontend *frontend) {
     TypioWlLoopAuxFds aux;
-    int aux_indices[4];
+    int aux_indices[6];
 
     if (!frontend || !frontend->display) {
         return -1;
@@ -226,9 +240,22 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
 
         typio_wl_frontend_watchdog_heartbeat(frontend);
         typio_wl_frontend_watchdog_set_stage(frontend, TYPIO_WL_LOOP_STAGE_IDLE);
+
+        /* Detect a suspend/resume gap before doing any work this turn.
+         * Cheap (two clock reads); the callback path scrubs stale keyboard
+         * state and rebuilds the grab when the kernel woke us up. */
+        typio_wl_resume_signal_tick(frontend->resume_signal);
+
+        /* Reconcile our believed phase against observed reality. Catches
+         * the cases the resume signal misses: a compositor that silently
+         * dropped our grab without a deactivate, leaving us wedged. */
+        typio_wl_reconcile_tick(frontend);
+
         event_loop_flush_pending_popup(frontend);
 
         if (event_loop_prepare_and_flush(frontend) < 0) {
+            if (event_loop_recover(frontend, &aux))
+                continue;
             return -1;
         }
 
@@ -256,6 +283,8 @@ int typio_wl_frontend_run(TypioWlFrontend *frontend) {
         }
 
         if (event_loop_handle_wayland(frontend, &fds[idx_display]) < 0) {
+            if (event_loop_recover(frontend, &aux))
+                continue;
             return -1;
         }
 
