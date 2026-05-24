@@ -9,7 +9,7 @@
 #include "monotonic_time.h"
 #include "wl_frontend_internal.h"
 #include "wl_trace.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <inttypes.h>
 #include <string.h>

@@ -10,8 +10,8 @@
 #include "typio/engine.h"
 #include "typio/engine_manager.h"
 #include "typio/instance.h"
-#include "utils/log.h"
-#include "utils/string.h"
+#include "typio/log.h"
+#include "typio/string.h"
 
 #include <errno.h>
 #include <stdbool.h>

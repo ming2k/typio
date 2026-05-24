@@ -4,9 +4,10 @@
  */
 
 #include "tray_internal.h"
+#include "state_controller.h"
 #include "typio_build_config.h"
-#include "utils/log.h"
-#include "utils/string.h"
+#include "typio/log.h"
+#include "typio/string.h"
 
 #define TYPIO_TRAY_BUS_MAX_DISPATCH_PER_TICK 16
 
@@ -257,4 +258,54 @@ int typio_tray_dispatch(TypioTray *tray) {
     }
 
     return 0;
+}
+
+static void tray_state_change_callback(void *user_data,
+                                       TypioStateChangeType change_type) {
+    TypioTray *tray = user_data;
+    TypioStateController *ctrl = tray ? tray->state_controller : nullptr;
+    if (!ctrl) {
+        return;
+    }
+
+    switch (change_type) {
+        case TYPIO_STATE_CHANGE_ENGINE:
+        case TYPIO_STATE_CHANGE_VOICE_ENGINE:
+        case TYPIO_STATE_CHANGE_STATUS_ICON: {
+            const char *engine_name =
+                typio_state_controller_get_active_engine_name(ctrl);
+            const char *icon_name =
+                typio_state_controller_get_status_icon(ctrl);
+            bool is_active =
+                typio_state_controller_get_engine_active(ctrl);
+            typio_tray_set_icon(tray, icon_name);
+            typio_tray_update_engine(tray, engine_name, is_active);
+            break;
+        }
+        case TYPIO_STATE_CHANGE_MODE: {
+            const TypioEngineMode *mode =
+                typio_state_controller_get_current_mode(ctrl);
+            if (mode && mode->icon_name) {
+                typio_tray_set_icon(tray, mode->icon_name);
+            }
+            break;
+        }
+    }
+}
+
+void typio_tray_bind_state_controller(TypioTray *tray,
+                                      TypioStateController *ctrl) {
+    if (!tray) {
+        return;
+    }
+    if (tray->state_controller && tray->state_controller != ctrl) {
+        typio_state_controller_remove_listener(tray->state_controller, tray);
+    }
+    tray->state_controller = ctrl;
+    if (ctrl) {
+        typio_state_controller_add_listener(
+            ctrl,
+            (TypioStateListener){ .user_data = tray,
+                                  .callback = tray_state_change_callback });
+    }
 }

@@ -14,7 +14,7 @@
 #include "typio/instance.h"
 #include "typio/engine_manager.h"
 #include "typio/input_context.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <pthread.h>
 #include <stdlib.h>

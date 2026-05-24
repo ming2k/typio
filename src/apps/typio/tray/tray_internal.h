@@ -9,6 +9,8 @@
 #include "tray.h"
 #include <dbus/dbus.h>
 
+typedef struct TypioStateController TypioStateController;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -69,6 +71,9 @@ struct TypioTray {
     /* Callbacks */
     TypioTrayMenuCallback menu_callback;
     void *user_data;
+
+    /* State controller binding */
+    struct TypioStateController *state_controller;
 };
 
 /* SNI implementation functions */

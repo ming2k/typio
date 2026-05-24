@@ -20,7 +20,7 @@
 #include "wl_trace.h"
 #include "typio/engine_manager.h"
 #include "typio/typio.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <wayland-client-protocol.h>
 

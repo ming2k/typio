@@ -26,7 +26,7 @@ If `XDG_CONFIG_HOME` or `XDG_DATA_HOME` is unset, Typio falls back to `~/.config
 | `candidate_layout` | string | `"vertical"` | `"horizontal"` or `"vertical"` |
 | `font_size` | int | `11` | Popup text size (6–72) |
 | `font_family` | string | `"Sans"` | Font family name |
-| `popup_mode_indicator` | bool | `true` | Show engine mode label in popup |
+| `popup_mode_indicator` | bool | `false` | Show engine mode label in popup |
 
 ## `[display.colors.light]` and `[display.colors.dark]`
 

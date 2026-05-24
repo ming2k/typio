@@ -4,7 +4,7 @@
 #include "typio/engine.h"
 #include "typio/engine_manager.h"
 #include "typio/typio.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <string.h>
 #include <stdlib.h>

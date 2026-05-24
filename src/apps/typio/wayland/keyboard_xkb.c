@@ -9,7 +9,7 @@
 #include "wl_frontend_internal.h"
 #include "keyboard_xkb.h"
 #include "vk_bridge.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <errno.h>
 #include <string.h>

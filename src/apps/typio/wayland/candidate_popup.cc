@@ -23,7 +23,7 @@
 #include "typio/engine_label.h"
 #include "typio/engine_manager.h"
 #include "typio/instance.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <inttypes.h>
 #include <math.h>
@@ -329,29 +329,13 @@ static void refresh_visible(TypioWlCandidatePopup *popup);
 
 static char *build_mode_label(TypioWlCandidatePopup *popup) {
     const TypioEngineMode *mode;
-    TypioEngineManager    *mgr;
-    TypioEngine           *active;
-    const char            *engine_name;
-    const char            *engine_label;
-    char buf[128];
 
     if (!popup || !popup->frontend || !popup->frontend->instance) return nullptr;
 
     mode = typio_instance_get_last_mode(popup->frontend->instance);
     if (!mode || !mode->display_label || !mode->display_label[0]) return nullptr;
 
-    mgr          = typio_instance_get_engine_manager(popup->frontend->instance);
-    active       = mgr  ? typio_engine_manager_get_active(mgr) : nullptr;
-    engine_name  = active ? typio_engine_get_name(active)      : nullptr;
-    engine_label = typio_engine_label_fallback(engine_name);
-
-    if (engine_label && *engine_label) {
-        snprintf(buf, sizeof(buf), "%s %s", engine_label, mode->display_label);
-    } else {
-        snprintf(buf, sizeof(buf), "%s", mode->display_label);
-    }
-
-    return strdup(buf);
+    return strdup(mode->display_label);
 }
 
 /* ── Config helpers ─────────────────────────────────────────────────── */

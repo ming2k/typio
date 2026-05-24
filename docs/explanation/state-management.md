@@ -163,7 +163,7 @@ Rules:
 When adding a new stateful feature:
 
 1. decide whether it is persisted, runtime, or both
-2. if persisted, add it to `config_schema.c`
+2. if persisted, add it to `config_schema.rs`
 3. if runtime, expose it through the status bus
 4. if a persisted key has a direct runtime mirror, set `runtime_property`
 5. make control surfaces read from the correct authority

@@ -6,13 +6,14 @@
 #include "status.h"
 
 #include "../dbus_helpers.h"
+#include "state_controller.h"
 #include "typio/config.h"
 #include "typio/engine_manager.h"
 #include "typio/instance.h"
 #include "typio/typio.h"
 #include "typio_build_config.h"
-#include "utils/log.h"
-#include "utils/string.h"
+#include "typio/log.h"
+#include "typio/string.h"
 
 #include <dbus/dbus.h>
 #include <stdint.h>
@@ -30,6 +31,7 @@ struct TypioStatusBus {
     void *runtime_state_user_data;
     TypioStatusBusStopCallback stop_callback;
     void *stop_user_data;
+    struct TypioStateController *state_controller;
 };
 
 static const char *engine_type_name(TypioEngineType type) {
@@ -1095,4 +1097,29 @@ void typio_status_bus_emit_properties_changed(TypioStatusBus *bus) {
 
     dbus_connection_send(bus->conn, sig, nullptr);
     dbus_message_unref(sig);
+}
+
+static void status_bus_state_change_callback(void *user_data,
+                                             [[maybe_unused]] TypioStateChangeType change_type) {
+    TypioStatusBus *bus = user_data;
+    if (bus) {
+        typio_status_bus_emit_properties_changed(bus);
+    }
+}
+
+void typio_status_bus_bind_state_controller(TypioStatusBus *bus,
+                                            TypioStateController *ctrl) {
+    if (!bus) {
+        return;
+    }
+    if (bus->state_controller && bus->state_controller != ctrl) {
+        typio_state_controller_remove_listener(bus->state_controller, bus);
+    }
+    bus->state_controller = ctrl;
+    if (ctrl) {
+        typio_state_controller_add_listener(
+            ctrl,
+            (TypioStateListener){ .user_data = bus,
+                                  .callback = status_bus_state_change_callback });
+    }
 }

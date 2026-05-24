@@ -9,8 +9,8 @@
 #include "typio/config.h"
 #include "typio/rime_schema_list.h"
 #include "typio/typio.h"
-#include "utils/log.h"
-#include "utils/string.h"
+#include "typio/log.h"
+#include "typio/string.h"
 
 #include <stdlib.h>
 #include <string.h>

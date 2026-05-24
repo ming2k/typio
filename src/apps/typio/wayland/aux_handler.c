@@ -4,7 +4,7 @@
  */
 
 #include "aux_handler.h"
-#include "utils/log.h"
+#include "typio/log.h"
 #include <stdlib.h>
 
 typedef struct {

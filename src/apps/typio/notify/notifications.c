@@ -5,7 +5,7 @@
 
 #include "notifications.h"
 
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <dbus/dbus.h>
 #include <stdint.h>

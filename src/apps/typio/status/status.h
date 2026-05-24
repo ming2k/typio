@@ -6,6 +6,7 @@
 #ifndef TYPIO_STATUS_H
 #define TYPIO_STATUS_H
 
+#include "state_controller.h"
 #include "typio/dbus_protocol.h"
 #include "typio/types.h"
 
@@ -45,6 +46,8 @@ void typio_status_bus_set_runtime_state_callback(
 void typio_status_bus_set_stop_callback(TypioStatusBus *bus,
                                         TypioStatusBusStopCallback callback,
                                         void *user_data);
+void typio_status_bus_bind_state_controller(TypioStatusBus *bus,
+                                            TypioStateController *ctrl);
 
 #ifdef __cplusplus
 }

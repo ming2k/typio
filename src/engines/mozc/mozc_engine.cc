@@ -9,8 +9,8 @@
 extern "C" {
 #include "typio/typio.h"
 #include "typio_build_config.h"
-#include "utils/log.h"
-#include "utils/string.h"
+#include "typio/log.h"
+#include "typio/string.h"
 }
 
 #include "mozc_commands.pb.h"

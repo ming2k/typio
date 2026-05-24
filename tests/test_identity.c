@@ -5,7 +5,7 @@
 
 #include "typio/instance.h"
 #include "typio/config.h"
-#include "utils/string.h"
+#include "typio/string.h"
 #include "wayland/identity.h"
 #include "wayland/wl_frontend_internal.h"
 

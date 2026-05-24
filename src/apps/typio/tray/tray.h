@@ -9,6 +9,7 @@
 #ifndef TYPIO_TRAY_H
 #define TYPIO_TRAY_H
 
+#include "state_controller.h"
 #include "typio/types.h"
 
 #ifdef __cplusplus
@@ -113,6 +114,14 @@ void typio_tray_update_engine(TypioTray *tray, const char *engine_name,
  * @return true if registered and visible
  */
 bool typio_tray_is_registered(TypioTray *tray);
+
+/**
+ * @brief Bind tray to a StateController so it updates automatically
+ * @param tray System tray
+ * @param ctrl State controller (nullable to unbind)
+ */
+void typio_tray_bind_state_controller(TypioTray *tray,
+                                      TypioStateController *ctrl);
 
 #ifdef __cplusplus
 }

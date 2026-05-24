@@ -7,7 +7,7 @@
 
 #include "wl_frontend_internal.h"
 #include "lifecycle.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <inttypes.h>
 #include <stdarg.h>

@@ -4,7 +4,7 @@
  */
 
 #include "path_expand.h"
-#include "utils/string.h"
+#include "typio/string.h"
 
 #include <ctype.h>
 #include <stdlib.h>

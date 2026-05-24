@@ -4,7 +4,7 @@
  */
 
 #include "voice_backend.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <whisper.h>
 #include <stdlib.h>

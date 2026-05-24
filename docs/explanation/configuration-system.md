@@ -2,13 +2,13 @@
 
 ## Design Goal
 
-All configuration fields, their types, defaults, and UI metadata are defined once in a static schema table (`config_schema.c`). Every other component — the daemon, control surfaces, user documentation — derives its behaviour from that table rather than maintaining parallel field lists.
+All configuration fields, their types, defaults, and UI metadata are defined once in a static schema table (`config_schema.rs`). Every other component — the daemon, control surfaces, user documentation — derives its behaviour from that table rather than maintaining parallel field lists.
 
 ## Single Source Of Truth
 
 ```mermaid
 flowchart TD
-    Schema[config_schema.c<br/>static field table]
+    Schema[config_schema.rs<br/>static field table]
     Schema --> Defaults[apply_defaults<br/>daemon init]
     Schema --> UI[UI metadata<br/>typio-control]
 ```
@@ -110,7 +110,7 @@ Fields with `runtime_property` are still persisted config keys. The extra metada
 
 ## How To Add A New Configuration Field
 
-1. Add one `TypioConfigField` entry to `schema_fields[]` in `config_schema.c`.
+1. Add one `TypioConfigField` entry to `schema_fields[]` in `config_schema.rs`.
 2. If it should appear in `typio-control`, set the `ui_*` fields.
 3. Update [Configuration Reference](../reference/configuration.md) with the user-facing description.
 4. No other code changes are needed for the field to be parsed, defaulted, serialised, and exposed over D-Bus.

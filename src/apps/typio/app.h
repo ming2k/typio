@@ -14,6 +14,8 @@
 #include "status/status.h"
 #endif
 
+#include "state_controller.h"
+
 #ifdef HAVE_SYSTRAY
 #include "tray/tray.h"
 #endif
@@ -24,6 +26,7 @@ extern "C" {
 
 typedef struct TypioDaemonApp {
     TypioInstance *instance;
+    TypioStateController *state_controller;
     char **argv;
     bool restart_requested;
     bool shutdown_requested_by_signal;

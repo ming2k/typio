@@ -6,7 +6,7 @@
 #include "candidate_popup_layout.h"
 #include "flux_renderer.h"
 #include "typio/config.h"
-#include "utils/string.h"
+#include "typio/string.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -528,7 +528,7 @@ void popup_config_load(PopupConfig *cfg, TypioInstance *instance) {
     cfg->theme_mode     = TYPIO_CANDIDATE_POPUP_THEME_AUTO;
     cfg->layout_mode    = POPUP_LAYOUT_VERTICAL;
     cfg->font_size      = POPUP_DEFAULT_FONT_SIZE;
-    cfg->mode_indicator = true;
+    cfg->mode_indicator = false;
     memset(&cfg->light_custom, 0, sizeof(cfg->light_custom));
     memset(&cfg->dark_custom,  0, sizeof(cfg->dark_custom));
     snprintf(cfg->font_family, sizeof(cfg->font_family), "Sans");
@@ -554,7 +554,7 @@ void popup_config_load(PopupConfig *cfg, TypioInstance *instance) {
     if (font_size > 72) font_size = 72;
     cfg->font_size = font_size;
 
-    cfg->mode_indicator = typio_config_get_bool(global_cfg, "display.popup_mode_indicator", true);
+    cfg->mode_indicator = typio_config_get_bool(global_cfg, "display.popup_mode_indicator", false);
 
     font_family = typio_config_get_string(global_cfg, "display.font_family", nullptr);
     if (font_family && font_family[0]) {

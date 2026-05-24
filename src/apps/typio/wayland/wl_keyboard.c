@@ -26,7 +26,7 @@
 #include "wl_trace.h"
 #include "xkb_modifiers.h"
 #include "typio/typio.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <stdlib.h>
 #include <string.h>

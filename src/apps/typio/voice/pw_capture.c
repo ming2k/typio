@@ -6,7 +6,7 @@
 #define _GNU_SOURCE
 
 #include "pw_capture.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <pipewire/pipewire.h>
 #include <spa/param/audio/format-utils.h>

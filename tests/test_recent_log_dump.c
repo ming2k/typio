@@ -3,7 +3,7 @@
  * @brief Tests for recent log ring-buffer dumping
  */
 
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -20,8 +20,8 @@ font_size = 11
 # Font family for the popup  (default: "Sans")
 # font_family = "Noto Sans CJK SC"
 
-# Show engine mode label (e.g. "中" / "A") in popup  (default: true)
-# popup_mode_indicator = true
+# Show engine mode label (e.g. "中" / "A") in popup  (default: false)
+# popup_mode_indicator = false
 
 # ── Custom color schemas ─────────────────────────────────────────────
 # Define per-channel overrides for the light and/or dark variants.

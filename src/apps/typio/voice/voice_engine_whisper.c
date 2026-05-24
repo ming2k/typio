@@ -15,7 +15,7 @@
 #include "voice_backend.h"
 #include "typio/instance.h"
 #include "typio/config.h"
-#include "utils/log.h"
+#include "typio/log.h"
 
 #include <pthread.h>
 #include <stdlib.h>

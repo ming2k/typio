@@ -4,7 +4,7 @@
  */
 
 #include "mock_compositor.h"
-#include "utils/log.h"
+#include "typio/log.h"
 #include <stdlib.h>
 #include <string.h>
 #include <wayland-server.h>

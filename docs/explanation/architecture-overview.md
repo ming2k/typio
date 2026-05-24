@@ -46,13 +46,13 @@ Typio runs on the following protocol layers:
 The source tree is organized by stable product boundary first:
 
 - `src/core/`
-  Shared library code. `include/typio/` holds the public C headers, `runtime/` holds the core implementation, and `utils/` holds internal support code used by the runtime.
+  The `typio-core` Rust crate (`Cargo.toml` + `src/`) and the hand-written public C ABI headers in `include/typio/`. The crate implements the full ABI; everything else in the project links it. No platform dependencies.
 - `src/apps/`
   Executable programs. `typio/` contains the Wayland IME host, the D-Bus command-line control surface, status bus, tray, and voice plumbing. `control/` is the GTK control panel.
 - `src/engines/`
   Built-in and pluggable input-engine implementations.
 
-This keeps top-level `src/` directories on one axis: reusable core, user-facing applications, and engine implementations.
+Top-level `src/` directories sit on one axis: the reusable core library, user-facing applications, and engine implementations. The dependency direction — apps and engines both depend on core, never the reverse — is the rule the layout encodes. See [Core ↔ Apps Boundary](#core--apps-boundary) for the full contract.
 
 ## Main Components
 
@@ -71,9 +71,8 @@ Responsibilities:
 
 Internal split:
 
-- `src/core/include/typio/` — installed public headers and cross-component protocol constants
-- `src/core/runtime/` — core implementation units that build `typio-core`
-- `src/core/utils/` — internal support helpers used by the core, daemon, engines, and selected tests
+- `src/core/include/typio/` — installed public C ABI headers (hand-written, single source of truth)
+- `src/core/Cargo.toml` + `src/core/src/` — the `typio-core` Rust crate that implements the entire ABI (config, input context, engine manager, schema registry, key events, logging, string utilities)
 
 ### `typio` (daemon)
 
@@ -136,6 +135,74 @@ Responsibilities:
 - provide a zero-dependency built-in keyboard engine
 - commit printable Unicode text directly
 - give the daemon a usable default engine even when no plugins are installed
+
+## Core ↔ Apps Boundary
+
+The single most important rule for this codebase: **core is a library, apps are hosts.** The dependency graph runs one direction.
+
+### Dependency direction
+
+```text
+       apps ──────┐                ┌────── engines  (built-in or .so plugins)
+                  ▼                ▼
+                 core ◄────────────┘
+```
+
+- Apps `#include "typio/*.h"` and link `typio-core`. Core never reaches back.
+- Engines link `typio-core` and are loaded at runtime by core's `engine_manager`; core does not know which engines exist at compile time.
+- Core depends on **nothing platform-specific** — no Wayland, no D-Bus, no GTK, no X11, no Vulkan, no event loop, no signal handlers, no GUI toolkit. `tests/test_core.c` exercises core with zero compositor.
+
+### What each side owns
+
+| Concern | Owner |
+|---|---|
+| `TypioInstance`, `TypioInputContext`, `TypioEngine` lifecycles | core |
+| Engine plugin loading and switching (`engine_manager`) | core |
+| Config parsing (TOML), schema, persisted state | core |
+| Key-event *types* (`TypioKeyEvent`, `TypioModifier`) and voice-engine *types* (`TypioVoiceEngineOps`) | core |
+| Wayland protocol bindings, XKB state, popup Vulkan surface | apps (`src/apps/typio/wayland/`) |
+| Translating `wl_keyboard` events → `TypioKeyEvent` | apps |
+| Translating engine callbacks → `zwp_input_method_v2.commit_string` / preedit | apps |
+| D-Bus surfaces (`org.typio.InputMethod1`), tray, GTK panel | apps |
+| PipeWire capture, voice recording/transcribing state machine, voice orchestration | apps (`src/apps/typio/voice/`) |
+| The main event loop, signal handlers, file descriptors | apps |
+
+### Direction of data flow across the boundary
+
+Calls go both ways; the dependency does not.
+
+- **App → Core (synchronous):** `typio_instance_init`, `typio_input_context_focus_in`, `typio_input_context_process_key(ctx, &event)`, `typio_instance_reload_config`. The app translates platform events into `Typio*` structs and pushes them in.
+- **Core → App (callbacks the app registered):** `commit_callback`, `preedit_callback`, `candidate_callback`, `engine_changed_callback`, `status_icon_changed_callback`. When an engine commits text or the active engine changes, core invokes the registered callbacks. The app turns those into protocol writes, tray updates, or D-Bus signals.
+
+The app never exposes `wl_display*` or `xkb_state*` to core. Core never calls into platform APIs. This is what keeps core unit-testable in CI without a compositor.
+
+### Decision rule for new code
+
+When deciding whether a file belongs in `src/core/` or `src/apps/`:
+
+| If the code… | …it goes in |
+|---|---|
+| Mentions `wl_*`, `xkb_*`, D-Bus types, `Gtk*`, `flux_*`, `pw_*` (PipeWire), file descriptors, signals, or threads | **apps** |
+| Is data or state belonging to `TypioInstance`, `TypioInputContext`, engines, config, or the engine ABI | **core** |
+| Is a pure state machine, but only one frontend (Wayland, voice, panel) cares about it | **apps** — keep platform-named types with their platform, even when the code is pure |
+
+The third row is the one that catches people. *Purity* alone is not a reason to migrate to core. If no other host needs the concept (`TypioWlLifecyclePhase`, the voice service state machine, popup geometry), putting it in core just leaks platform vocabulary into a platform-agnostic library. Core's value is precisely what it *doesn't* mention.
+
+### Worked example: voice
+
+Voice is the cleanest illustration of the boundary working correctly:
+
+- **In core:** `TypioEngineTypeVoice` and `TypioVoiceEngineOps` — the "PCM in, text out" engine ABI. Whisper and sherpa-onnx register as voice engines through the same `engine_manager` that loads keyboard engines.
+- **In apps (`src/apps/typio/voice/`):** PipeWire capture, the recording/transcribing state machine, the pthread that runs inference, the `eventfd` that wakes the main loop when inference finishes, the daemon-side reading of voice config sections.
+
+The reusable abstraction is already on the core side. The orchestration that drives it is platform-bound and stays in apps. A future X11 or CLI host would link the same voice engines through the same ABI, but would need its own audio capture and event-loop integration — that's exactly what "apps own platform glue" means.
+
+### Why this asymmetry
+
+- Core can be linked into a Wayland daemon, a future X11 daemon, a fuzzer, a CLI tool, or a unit test without change.
+- Adding a new frontend or a new control surface does not require touching core.
+- The dependency graph has no cycles. Callbacks transport data, not types.
+- The C ABI stays narrow: a new host language (Python, Lua) can drive core through the same headers without re-implementing platform glue.
 
 ## Engine Manager Model
 
@@ -309,9 +376,12 @@ Still limited in this repository:
 
 ## Ownership Rules
 
+These are data-structure-level ownership rules. For the component-level boundary (which side owns what *concern*), see [Core ↔ Apps Boundary](#core--apps-boundary).
+
 - `TypioInstance` owns `TypioEngineManager`, `TypioConfig`, and created contexts.
 - `TypioInputContext` owns its preedit, candidates, and property storage.
 - `TypioWlFrontend` owns the Wayland connection, popup surface, current session, and keyboard grab.
+- `TypioVoiceService` owns the PipeWire capture, the audio buffer, the inference thread, and the `eventfd` notification.
 - Engine implementations own their own `user_data`.
 
 For persisted config vs runtime-state ownership across daemon and control surfaces, see [State Management](state-management.md).
