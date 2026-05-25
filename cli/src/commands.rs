@@ -25,10 +25,10 @@ pub fn cmd_status() -> io::Result<()> {
     ];
 
     for (label, key) in &scalars {
-        if let Some(v) = result.get(key).and_then(|v| v.as_str()) {
-            if !v.is_empty() {
-                println!("{:<26} {}", label, v);
-            }
+        if let Some(v) = result.get(key).and_then(|v| v.as_str())
+            && !v.is_empty()
+        {
+            println!("{:<26} {}", label, v);
         }
     }
 

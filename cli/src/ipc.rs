@@ -11,24 +11,24 @@ use serde_json::Value;
 /// falls back to ~/.local/share/typio/daemon.sock,
 /// then /tmp/typio-daemon.sock.
 pub fn socket_path() -> Option<PathBuf> {
-    if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
-        if !runtime_dir.is_empty() {
-            let mut p = PathBuf::from(runtime_dir);
-            p.push("typio");
-            p.push("daemon.sock");
-            return Some(p);
-        }
+    if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR")
+        && !runtime_dir.is_empty()
+    {
+        let mut p = PathBuf::from(runtime_dir);
+        p.push("typio");
+        p.push("daemon.sock");
+        return Some(p);
     }
 
-    if let Ok(home) = env::var("HOME") {
-        if !home.is_empty() {
-            let mut p = PathBuf::from(home);
-            p.push(".local");
-            p.push("share");
-            p.push("typio");
-            p.push("daemon.sock");
-            return Some(p);
-        }
+    if let Ok(home) = env::var("HOME")
+        && !home.is_empty()
+    {
+        let mut p = PathBuf::from(home);
+        p.push(".local");
+        p.push("share");
+        p.push("typio");
+        p.push("daemon.sock");
+        return Some(p);
     }
 
     Some(PathBuf::from("/tmp/typio-daemon.sock"))
@@ -96,13 +96,13 @@ impl IpcClient {
         })?;
 
         // Check id matches
-        if let Some(resp_id) = resp.get("id").and_then(|v| v.as_i64()) {
-            if resp_id != id {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "response id mismatch",
-                ));
-            }
+        if let Some(resp_id) = resp.get("id").and_then(|v| v.as_i64())
+            && resp_id != id
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "response id mismatch",
+            ));
         }
 
         // Return either result or error
@@ -111,7 +111,7 @@ impl IpcClient {
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown error");
-            return Err(io::Error::new(io::ErrorKind::Other, msg.to_string()));
+            return Err(io::Error::other(msg.to_string()));
         }
 
         Ok(resp.get("result").cloned().unwrap_or(Value::Null))

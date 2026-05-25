@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # flux (Vulkan renderer) is pulled via subprojects/flux.wrap on CI.
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-test:
+    name: Build, test & clippy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            meson ninja-build pkg-config \
+            libwayland-dev wayland-protocols libxkbcommon-dev \
+            libdbus-1-dev libpipewire-0.3-dev \
+            libgtk-4-dev librime-dev \
+            libvulkan-dev glslang-tools
+
+      - name: Install clippy
+        run: rustup component add clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Configure (feature-rich)
+        run: |
+          meson setup build \
+            -Dbuild_rime_engine=true \
+            -Dbuild_control_panel=true \
+            -Denable_systray=true
+
+      - name: Build
+        run: ninja -C build
+
+      - name: Test
+        run: meson test -C build --print-errorlogs
+
+      - name: Clippy (core, all features, deny warnings)
+        working-directory: core
+        run: cargo clippy --all-features -- -D warnings
+
+      - name: Clippy (cli, deny warnings)
+        working-directory: cli
+        run: cargo clippy -- -D warnings
+
+  sanitizers:
+    name: ASan + UBSan + LeakSanitizer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            meson ninja-build pkg-config \
+            libwayland-dev wayland-protocols libxkbcommon-dev \
+            libdbus-1-dev libpipewire-0.3-dev \
+            libgtk-4-dev librime-dev \
+            libvulkan-dev glslang-tools
+
+      - name: Configure (sanitizers)
+        run: |
+          meson setup build-san \
+            -Dbuild_rime_engine=true \
+            -Denable_asan=true \
+            -Denable_ubsan=true
+
+      - name: Build
+        run: ninja -C build-san
+
+      - name: Test under sanitizers (fails on leaks / UB)
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: meson test -C build-san --print-errorlogs

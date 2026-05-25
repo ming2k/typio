@@ -18,6 +18,19 @@ meson test -C build --print-errorlogs
 
 Expected output: startup logs ending with `engine basic activated`.
 
+> **Note:** the default build includes only the `basic` engine. Rime, Mozc, the
+> voice backends, and the GTK4 control panel are opt-in. Enable what you need at
+> configure time, e.g.:
+>
+> ```bash
+> meson setup build \
+>   -Dbuild_rime_engine=true \
+>   -Dbuild_sherpa_onnx=true \
+>   -Dbuild_control_panel=true
+> ```
+>
+> See `meson_options.txt` for the full list of options.
+
 ## Documentation
 
 - [Full documentation](docs/index.md)
