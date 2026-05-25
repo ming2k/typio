@@ -146,7 +146,6 @@ daemon_inc = [
 
 if enable_wayland
     daemon_inc += include_directories('wayland')
-    daemon_inc += include_directories('wayland-protocols')
 endif
 
 if enable_systray

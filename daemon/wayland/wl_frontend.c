@@ -531,10 +531,13 @@ static void frontend_init_voice(TypioWlFrontend *frontend,
     else
         typio_log(TYPIO_LOG_WARNING, "Failed to create voice input service");
 
-    if (voice && frontend->aux_handler_count < 4) {
-        TypioWlAuxHandler *h = typio_wl_aux_handler_for_voice(voice, frontend);
-        if (h)
-            frontend->aux_handlers[frontend->aux_handler_count++] = h;
+    if (voice) {
+        size_t cap = sizeof(frontend->aux_handlers) / sizeof(frontend->aux_handlers[0]);
+        if (frontend->aux_handler_count < cap) {
+            TypioWlAuxHandler *h = typio_wl_aux_handler_for_voice(voice, frontend);
+            if (h)
+                frontend->aux_handlers[frontend->aux_handler_count++] = h;
+        }
     }
 }
 #endif
@@ -856,47 +859,39 @@ static void output_handle_scale(void *data, [[maybe_unused]] struct wl_output *w
 void typio_wl_frontend_set_tray([[maybe_unused]] TypioWlFrontend *frontend,
                                 [[maybe_unused]] void *tray) {
 #ifdef HAVE_SYSTRAY
-    if (frontend) {
-        frontend->tray = (TypioTray *)tray;
-        if (frontend->aux_handler_count < 4) {
-            TypioWlAuxHandler *h = typio_wl_aux_handler_for_tray((TypioTray *)tray);
-            if (h)
-                frontend->aux_handlers[frontend->aux_handler_count++] = h;
-        }
-    }
+    if (!frontend || !tray) return;
+    size_t cap = sizeof(frontend->aux_handlers) / sizeof(frontend->aux_handlers[0]);
+    if (frontend->aux_handler_count >= cap) return;
+    TypioWlAuxHandler *h = typio_wl_aux_handler_for_tray((TypioTray *)tray);
+    if (h) frontend->aux_handlers[frontend->aux_handler_count++] = h;
 #endif
 }
 
 void typio_wl_frontend_set_status_bus([[maybe_unused]] TypioWlFrontend *frontend,
                                       [[maybe_unused]] void *status_bus) {
 #ifdef HAVE_STATUS_BUS
-    if (frontend) {
-        frontend->status_bus = (TypioStatusBus *)status_bus;
-        typio_status_bus_set_runtime_state_callback(frontend->status_bus,
-                                                    frontend_fill_runtime_state,
-                                                    frontend);
-        if (frontend->aux_handler_count < 4) {
-            TypioWlAuxHandler *h =
-                typio_wl_aux_handler_for_status_bus((TypioStatusBus *)status_bus);
-            if (h)
-                frontend->aux_handlers[frontend->aux_handler_count++] = h;
-        }
-    }
+    if (!frontend || !status_bus) return;
+    frontend->status_bus = (TypioStatusBus *)status_bus;
+    typio_status_bus_set_runtime_state_callback(frontend->status_bus,
+                                                frontend_fill_runtime_state,
+                                                frontend);
+    size_t cap = sizeof(frontend->aux_handlers) / sizeof(frontend->aux_handlers[0]);
+    if (frontend->aux_handler_count >= cap) return;
+    TypioWlAuxHandler *h =
+        typio_wl_aux_handler_for_status_bus((TypioStatusBus *)status_bus);
+    if (h) frontend->aux_handlers[frontend->aux_handler_count++] = h;
 #endif
 }
 
-void typio_wl_frontend_set_ipc_bus([[maybe_unused]] TypioWlFrontend *frontend,
-                                    [[maybe_unused]] void *ipc_bus) {
-    if (frontend) {
-        frontend->ipc_bus = (struct TypioIpcBus *)ipc_bus;
-        typio_ipc_bus_set_runtime_state_callback(frontend->ipc_bus,
-                                                  (TypioIpcBusRuntimeStateCallback)frontend_fill_runtime_state,
-                                                  frontend);
-        if (frontend->aux_handler_count < 6) {
-            TypioWlAuxHandler *h =
-                typio_wl_aux_handler_for_ipc_bus((struct TypioIpcBus *)ipc_bus);
-            if (h)
-                frontend->aux_handlers[frontend->aux_handler_count++] = h;
-        }
-    }
+void typio_wl_frontend_set_ipc_bus(TypioWlFrontend *frontend, void *ipc_bus) {
+    if (!frontend || !ipc_bus) return;
+    frontend->ipc_bus = (struct TypioIpcBus *)ipc_bus;
+    typio_ipc_bus_set_runtime_state_callback(frontend->ipc_bus,
+                                              (TypioIpcBusRuntimeStateCallback)frontend_fill_runtime_state,
+                                              frontend);
+    size_t cap = sizeof(frontend->aux_handlers) / sizeof(frontend->aux_handlers[0]);
+    if (frontend->aux_handler_count >= cap) return;
+    TypioWlAuxHandler *h =
+        typio_wl_aux_handler_for_ipc_bus((struct TypioIpcBus *)ipc_bus);
+    if (h) frontend->aux_handlers[frontend->aux_handler_count++] = h;
 }

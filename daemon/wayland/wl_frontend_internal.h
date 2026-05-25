@@ -36,9 +36,6 @@
 #ifdef HAVE_STATUS_BUS
 #include "state/dbus.h"
 #endif
-#ifdef HAVE_SYSTRAY
-#include "tray/tray.h"
-#endif
 #ifdef HAVE_VOICE
 #include "typio/voice.h"
 #include "voice/pw_capture.h"
@@ -270,12 +267,13 @@ struct TypioWlFrontend {
     /* IPC bus (UDS) — always available */
     struct TypioIpcBus *ipc_bus;
 
-    /* Legacy optional subsystem pointers (kept for gradual migration) */
+    /* Status bus pointer is kept (not just as an aux handler) because two
+     * call sites need to emit PropertiesChanged synchronously rather than
+     * via fd dispatch: runtime-state edges from the keyboard/VK code and
+     * the config-reload path. The tray has no such requirement, so it
+     * lives only in the aux_handlers array. */
 #ifdef HAVE_STATUS_BUS
     TypioStatusBus *status_bus;
-#endif
-#ifdef HAVE_SYSTRAY
-    TypioTray *tray;
 #endif
 
     /* Protocol serial: must increment on every done, even without a session.

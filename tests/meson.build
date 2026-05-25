@@ -96,8 +96,7 @@ test('frontend_aux', test_frontend_aux)
 
 test_vk_bridge = executable('test_vk_bridge',
     ['test_vk_bridge.c', '../daemon/wayland/vk_bridge.c', '../daemon/wayland/lifecycle_model.c'],
-    include_directories: [top_inc, include_directories('../daemon/wayland-protocols'),
-        core_test_inc, daemon_test_inc, include_directories('../daemon/tray'),
+    include_directories: [top_inc, core_test_inc, daemon_test_inc, include_directories('../daemon/tray'),
         include_directories('../daemon/voice'), wayland_test_inc],
     dependencies: [typio_core_dep, wayland_client_dep, xkbcommon_dep],
 )
@@ -105,8 +104,7 @@ test('vk_bridge', test_vk_bridge)
 
 test_identity = executable('test_identity',
     ['test_identity.c', '../daemon/wayland/identity.c'],
-    include_directories: [top_inc, include_directories('../daemon/wayland-protocols'),
-        core_test_inc, daemon_test_inc, include_directories('../daemon/tray'),
+    include_directories: [top_inc, core_test_inc, daemon_test_inc, include_directories('../daemon/tray'),
         include_directories('../daemon/voice'), wayland_test_inc],
     dependencies: typio_core_dep,
 )
@@ -128,8 +126,7 @@ test('text_ui_state', test_text_ui_state)
 test_key_arbiter = executable('test_key_arbiter',
     ['test_key_arbiter.c', '../daemon/wayland/key_arbiter.c',
      '../daemon/wayland/shortcut_chord.c', '../daemon/wayland/shortcut_config.c'],
-    include_directories: [top_inc, include_directories('../daemon/wayland-protocols'),
-        core_test_inc, daemon_test_inc, include_directories('../daemon/tray'),
+    include_directories: [top_inc, core_test_inc, daemon_test_inc, include_directories('../daemon/tray'),
         include_directories('../daemon/voice'), wayland_test_inc],
     dependencies: typio_core_dep,
 )
@@ -137,7 +134,7 @@ test('key_arbiter', test_key_arbiter)
 
 test_key_route = executable('test_key_route',
     ['test_key_route.c', '../daemon/wayland/key_route.c'],
-    include_directories: [top_inc, include_directories('../daemon/wayland-protocols'),
+    include_directories: [top_inc,
         core_test_inc, daemon_test_inc, include_directories('../daemon/tray'),
         include_directories('../core/src/voice'), wayland_test_inc],
     dependencies: [typio_core_dep, xkbcommon_dep],
