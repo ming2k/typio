@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-05-25
+
+### Added
+
+- **Voice backend rewritten in Rust.** The C voice service, proxy, and engine
+  implementations (`daemon/voice/voice_*.c`) are replaced by a Rust voice module
+  in `core` covering the session state machine, audio buffering, idle-timeout
+  unloading, and the sherpa-onnx / whisper adapters. The Wayland frontend wires
+  the session over the existing audio-source and event callbacks.
+  New public header `core/include/typio/voice.h`.
+- **Engine trait layer** (`core/src/engine/`): built-in engines implement a Rust
+  `Engine` trait; plugin `.so` engines are wrapped by a `CPluginAdapter`. The
+  engine-plugin C ABI (`engine.h`) is unchanged.
+- **Continuous integration** (`.github/workflows/ci.yml`): a build + test +
+  `cargo clippy -D warnings` job, and an ASan/UBSan/LeakSanitizer job that fails
+  the build on memory leaks or undefined behaviour.
+
+### Changed
+
+- Meson cargo `custom_target`s (`core`, `cli`) now declare `depend_files`, so
+  `ninja` re-runs cargo after a `.rs` edit instead of linking a stale staticlib.
+- `typio_config_key_at` now returns owned memory (caller frees with `free()`);
+  documented in `config.h`. Source-compatible for existing callers.
+- `README` documents that engines (rime, mozc, voice, control panel) are opt-in
+  at configure time; the default build includes only the basic engine.
+
+### Fixed
+
+- **Memory leaks** (the test suite is now leak-clean under LeakSanitizer):
+  - `CPluginAdapter` never freed the wrapped plugin engine struct or its
+    `config_path`.
+  - `typio_config_load_file` leaked the file content on every load (`into_raw`
+    handed to a function that only borrows).
+  - `tip_json_builder_steal` never freed the builder struct — leaked on every
+    IPC/status response.
+  - `typio_config_key_at` results were never freed by the daemon callers.
+  - Latent double-free on the engine-load error path.
+- Clippy is clean across the codebase (FFI lint policy plus ~30 style fixes),
+  making it usable as a CI gate.
+
+### Known limitations
+
+- The voice speech-to-text path has no automated test (it requires audio
+  hardware); the migration is verified by compilation, wiring, and the
+  non-voice test suite, not end-to-end.
+
 ## [4.1.0] - 2026-05-25
 
 ### Added
