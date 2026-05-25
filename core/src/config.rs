@@ -242,7 +242,14 @@ pub extern "C" fn typio_config_load_file(path: *const c_char) -> *mut Config {
         Ok(c) => c,
         Err(_) => return ptr::null_mut(),
     };
-    typio_config_load_string(CString::new(content).unwrap().into_raw())
+    // `load_string` only borrows the pointer, so keep ownership locally and let
+    // the CString drop at end of scope. Using `into_raw()` here leaked the
+    // buffer on every config load.
+    let content_c = match CString::new(content) {
+        Ok(c) => c,
+        Err(_) => return ptr::null_mut(),
+    };
+    typio_config_load_string(content_c.as_ptr())
 }
 
 #[no_mangle]

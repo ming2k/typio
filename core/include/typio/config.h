@@ -91,7 +91,9 @@ int typio_config_get_array_int(const TypioConfig *config,
 
 /* Key enumeration */
 size_t typio_config_key_count(const TypioConfig *config);
-const char *typio_config_key_at(const TypioConfig *config, size_t index);
+/* Returns a newly allocated, NUL-terminated string (or NULL). Caller owns it
+ * and must release it with free(). */
+char *typio_config_key_at(const TypioConfig *config, size_t index);
 bool typio_config_has_key(const TypioConfig *config, const char *key);
 
 /* Remove key */

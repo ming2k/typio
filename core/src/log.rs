@@ -57,7 +57,7 @@ fn format_time() -> String {
         libc::strftime(
             buf.as_mut_ptr() as *mut c_char,
             buf.len(),
-            "%Y-%m-%d %H:%M:%S\0".as_ptr() as *const c_char,
+            c"%Y-%m-%d %H:%M:%S".as_ptr(),
             tm_info,
         );
         CStr::from_ptr(buf.as_ptr() as *const c_char)
@@ -129,10 +129,8 @@ pub extern "C" fn typio_log_dump_recent(path: *const c_char) -> bool {
 
     let parent = Path::new(path_str.as_ref()).parent();
     if let Some(p) = parent {
-        if !p.exists() {
-            if std::fs::create_dir_all(p).is_err() {
-                return false;
-            }
+        if !p.exists() && std::fs::create_dir_all(p).is_err() {
+            return false;
         }
     }
 

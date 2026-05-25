@@ -72,25 +72,30 @@ static dbus_bool_t append_config_entries(DBusMessageIter *dict,
 
     count = typio_config_key_count(config);
     for (size_t i = 0; i < count; ++i) {
-        const char *key = typio_config_key_at(config, i);
+        char *key = typio_config_key_at(config, i);
         const TypioConfigValue *value;
         char *prefixed;
         bool ok = true;
 
         if (!key || !*key) {
+            free(key);
             continue;
         }
 
         value = typio_config_get(config, key);
         if (!value) {
+            free(key);
             continue;
         }
 
         prefixed = calloc(strlen("config.") + strlen(key) + 1U, sizeof(char));
         if (!prefixed) {
+            free(key);
             return FALSE;
         }
         snprintf(prefixed, strlen("config.") + strlen(key) + 1U, "config.%s", key);
+        free(key);
+        key = NULL;
 
         switch (value->type) {
         case TYPIO_CONFIG_STRING:

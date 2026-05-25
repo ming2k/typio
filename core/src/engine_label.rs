@@ -7,15 +7,15 @@ use crate::types::TypioEngineInfo;
 #[no_mangle]
 pub extern "C" fn typio_engine_label_fallback(engine_name: *const c_char) -> *const c_char {
     if engine_name.is_null() {
-        return "".as_ptr() as *const c_char;
+        return c"".as_ptr();
     }
     let name = unsafe { CStr::from_ptr(engine_name) }.to_string_lossy();
     match name.as_ref() {
-        "basic" => "Basic\0".as_ptr() as *const c_char,
-        "rime" => "Rime\0".as_ptr() as *const c_char,
-        "mozc" => "Mozc\0".as_ptr() as *const c_char,
-        "whisper" => "Whisper\0".as_ptr() as *const c_char,
-        "sherpa-onnx" => "Sherpa ONNX\0".as_ptr() as *const c_char,
+        "basic" => c"Basic".as_ptr(),
+        "rime" => c"Rime".as_ptr(),
+        "mozc" => c"Mozc".as_ptr(),
+        "whisper" => c"Whisper".as_ptr(),
+        "sherpa-onnx" => c"Sherpa ONNX".as_ptr(),
         _ => engine_name,
     }
 }

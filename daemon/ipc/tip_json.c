@@ -350,8 +350,10 @@ char *tip_json_builder_steal(TipJsonBuilder *b)
     if (!b)
         return NULL;
     s = b->buf;
-    b->buf = NULL;
-    b->len = b->cap = 0;
+    /* Ownership of the buffer transfers to the caller; the builder struct is
+     * discarded (steal == take buffer + drop builder). Freeing it here avoids
+     * leaking the struct at every call site. */
+    free(b);
     return s;
 }
 

@@ -181,18 +181,21 @@ pub extern "C" fn typio_config_key_count(config: *const Config) -> usize {
 }
 
 #[no_mangle]
-pub extern "C" fn typio_config_key_at(config: *const Config, index: usize) -> *const c_char {
+pub extern "C" fn typio_config_key_at(config: *const Config, index: usize) -> *mut c_char {
     if config.is_null() {
-        return ptr::null();
+        return ptr::null_mut();
     }
     let cfg = unsafe { &*config };
     let keys: Vec<&String> = cfg.entries.keys().collect();
     if index >= keys.len() {
-        return ptr::null();
+        return ptr::null_mut();
     }
+    // Return an owned, libc-allocated copy (caller frees with free()), matching
+    // the typio_strdup string-ownership convention. Using `into_raw()` here
+    // returned Rust-allocated memory that callers never reclaimed -> leak.
     match CString::new(keys[index].clone()) {
-        Ok(cs) => cs.into_raw(),
-        Err(_) => ptr::null(),
+        Ok(cs) => crate::string::typio_strdup(cs.as_ptr()),
+        Err(_) => ptr::null_mut(),
     }
 }
 

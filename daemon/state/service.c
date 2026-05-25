@@ -248,10 +248,12 @@ static char *build_active_engine_state(TypioStatusService *svc)
         if (config) {
             size_t ccount = typio_config_key_count(config);
             for (size_t i = 0; i < ccount; i++) {
-                const char *key = typio_config_key_at(config, i);
+                char *key = typio_config_key_at(config, i);
                 const TypioConfigValue *value = key ? typio_config_get(config, key) : nullptr;
-                if (!value)
+                if (!value) {
+                    free(key);
                     continue;
+                }
                 if (!first) TIP_JSON_COMMA(b);
                 {
                     char *prefixed = calloc(strlen("config.") + strlen(key) + 1, sizeof(char));
@@ -263,6 +265,7 @@ static char *build_active_engine_state(TypioStatusService *svc)
                         TIP_JSON_KEY(b, key);
                     }
                 }
+                free(key);
                 switch (value->type) {
                 case TYPIO_CONFIG_STRING:
                     tip_json_builder_append_string(b, value->data.string_val);
