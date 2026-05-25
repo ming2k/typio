@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.1] - 2026-05-25
+
+### Fixed
+
+- **Voice input was broken after the 4.2.0 Rust migration.** Two regressions
+  from the original C behaviour are restored:
+  - Model loading was asynchronous and left the session stuck in a "loading"
+    state (Super+V showed "load model" and never advanced). `focus_in` now
+    loads the model synchronously, so the session proceeds straight to
+    recording and a failed load returns cleanly.
+  - The inference thread never signalled completion, so results were never
+    delivered and the status indicator never cleared (no auto-release).
+    The thread now writes the completion eventfd as the C code did.
+
+  Note: synchronous loading briefly blocks the main loop on first use while the
+  model loads, and the transient "loading" indicator is no longer shown.
+
 ## [4.2.0] - 2026-05-25
 
 ### Added
