@@ -1,5 +1,5 @@
 project('typio', 'c', 'cpp',
-    version: '4.2.1',
+    version: '4.2.2',
     default_options: [
         'c_std=c23',
         'cpp_std=c++17',

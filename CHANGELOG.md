@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.2] - 2026-05-25
+
+### Fixed
+
+- **Status-bus aux-handler could fail to register.** The cap check in
+  `set_status_bus`, `set_tray`, and the voice init path was hard-coded to `< 4`
+  even though `frontend->aux_handlers` is `[6]`. With voice, resume, and IPC
+  already registered, the status bus would be silently dropped. All four call
+  sites now derive the cap from `sizeof(...)/sizeof(...[0])`.
+
+### Removed
+
+- **Dead `frontend->tray` field** in `TypioWlFrontend`. It was written by
+  `set_tray()` and never read; the tray is dispatched via `aux_handlers` like
+  every other optional subsystem. Removing it also drops the only `#include
+  "tray/tray.h"` from `wl_frontend_internal.h`.
+- **Stale `daemon/wayland-protocols/` references.** The directory had been
+  emptied; the `include_directories('wayland-protocols')` entries in
+  `daemon/meson.build` and `tests/meson.build` pointed at a missing path and
+  broke meson reconfigures. Generated client-protocol headers come from
+  `custom_target` outputs in the build dir, so no include path is required.
+
 ## [4.2.1] - 2026-05-25
 
 ### Fixed
