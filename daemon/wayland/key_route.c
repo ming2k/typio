@@ -4,7 +4,12 @@
  */
 
 
+#include "typio_build_config.h"
 #include "key_route.h"
+
+#ifdef HAVE_VOICE
+#include "typio/voice.h"
+#endif
 
 #include "boundary_bridge.h"
 #include "candidate_guard.h"
@@ -413,19 +418,18 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
     }
 
 #ifdef HAVE_VOICE
+    TypioVoiceSession *voice = typio_instance_get_voice_session(frontend->instance);
     const TypioShortcutBinding *ptt = &frontend->shortcuts.voice_ptt;
     typio_log(TYPIO_LOG_DEBUG,
               "PTT check: keysym=0x%x mods=0x%x ptt_keysym=0x%x ptt_mods=0x%x voice_available=%s",
               keysym, modifiers, ptt->keysym, ptt->modifiers,
-              typio_voice_service_is_available(frontend->voice) ? "yes" : "no");
+              typio_voice_session_is_available(voice) ? "yes" : "no");
     if (reserved_action == TYPIO_WL_RESERVED_ACTION_VOICE_PTT &&
         keysym == ptt->keysym &&
         (modifiers & ptt->modifiers) == ptt->modifiers) {
-        if (typio_voice_service_is_available(frontend->voice)) {
-            typio_voice_service_start(frontend->voice);
+        if (typio_voice_session_is_available(voice)) {
+            typio_voice_session_start(voice);
             key_set_state(frontend, key, TYPIO_KEY_TRACK_VOICE_PTT);
-            typio_wl_text_ui_backend_show_status(frontend->text_ui_backend,
-                                                  "[Recording...]");
             decision = key_route_decision(TYPIO_WL_KEY_ACTION_CONSUME,
                                           TYPIO_WL_KEY_REASON_VOICE_PTT);
             key_route_trace_decision(keyboard, "press-ptt", key, keysym,
@@ -434,7 +438,7 @@ void typio_wl_key_route_process_press(TypioWlKeyboard *keyboard,
             typio_log(TYPIO_LOG_DEBUG, "Voice PTT started: keycode=%u", key);
         } else {
             const char *reason =
-                typio_voice_service_get_unavail_reason(frontend->voice);
+                typio_voice_session_get_unavail_reason(voice);
             char hint[160];
             snprintf(hint, sizeof(hint), "[Voice unavailable: %s]",
                      reason ? reason : "unknown");
@@ -602,9 +606,11 @@ void typio_wl_key_route_process_release(TypioWlKeyboard *keyboard,
                                       TYPIO_WL_KEY_REASON_VOICE_PTT);
         key_route_trace_decision(keyboard, "release-ptt", key, keysym,
                                  modifiers, unicode, kstate, decision, "stop");
-        typio_voice_service_stop(frontend->voice);
-        typio_wl_text_ui_backend_show_status(frontend->text_ui_backend,
-                                              "[Processing...]");
+        {
+            TypioVoiceSession *voice =
+                typio_instance_get_voice_session(frontend->instance);
+            typio_voice_session_stop(voice);
+        }
         key_clear_tracking(frontend, key);
         typio_log(TYPIO_LOG_DEBUG, "Voice PTT released: keycode=%u", key);
         return;

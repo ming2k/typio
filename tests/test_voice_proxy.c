@@ -10,7 +10,7 @@
  *   - destroy() during reload
  */
 
-#include "../daemon/voice/voice_proxy.h"
+#include "../core/src/voice/voice_proxy.h"
 #include "typio/log.h"
 
 #include <assert.h>

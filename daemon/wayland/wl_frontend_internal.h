@@ -40,7 +40,8 @@
 #include "tray/tray.h"
 #endif
 #ifdef HAVE_VOICE
-#include "voice/voice_service.h"
+#include "typio/voice.h"
+#include "voice/pw_capture.h"
 #endif
 
 #ifdef __cplusplus
@@ -275,9 +276,6 @@ struct TypioWlFrontend {
 #endif
 #ifdef HAVE_SYSTRAY
     TypioTray *tray;
-#endif
-#ifdef HAVE_VOICE
-    TypioVoiceService *voice;
 #endif
 
     /* Protocol serial: must increment on every done, even without a session.

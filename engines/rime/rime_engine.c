@@ -48,6 +48,10 @@ static void typio_rime_notification(void *context_object,
         }
         state->ascii_mode = ascii_mode;
         state->ascii_mode_known = true;
+        if (state->engine && state->engine->instance) {
+            typio_instance_notify_mode(state->engine->instance,
+                                        typio_rime_mode_for_ascii(ascii_mode));
+        }
         return;
     }
 }
@@ -82,6 +86,7 @@ static TypioResult typio_rime_init(TypioEngine *engine, TypioInstance *instance)
         return TYPIO_ERROR;
     }
 
+    state->engine = engine;
     state->api = rime_get_api();
     if (!state->api) {
         typio_rime_free_config(&state->config);
@@ -175,7 +180,6 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
     bool committed;
     bool composing;
     bool is_release;
-    bool is_shift;
     uint32_t rime_mask;
 
     if (!engine || !ctx || !event) {
@@ -183,7 +187,6 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
     }
 
     is_release = (event->type == TYPIO_EVENT_KEY_RELEASE);
-    is_shift = typio_rime_is_shift_keysym(event->keysym);
 
     /* Handle Escape on press only */
     if (!is_release && typio_key_event_is_escape(event)) {
@@ -231,11 +234,14 @@ static TypioKeyProcessResult typio_rime_process_key(TypioEngine *engine,
         (int)rime_mask);
 
     /* Mode switch detection via notification handler is preferred, but
-     * fall back to polling get_option on Shift for older librime or
-     * when the notification fires before our handler is registered. */
-    if (is_shift) {
+     * fall back to polling get_option after every key for older librime
+     * or when the notification fires before our handler is registered. */
+    {
         Bool ascii_after = session->state->api->get_option(session->session_id, "ascii_mode");
-        typio_rime_notify_mode(engine, session, ascii_after != 0);
+        bool ascii_bool = ascii_after != 0;
+        if (!session->ascii_mode_known || session->ascii_mode != ascii_bool) {
+            typio_rime_notify_mode(engine, session, ascii_bool);
+        }
     }
 
     if (!handled) {

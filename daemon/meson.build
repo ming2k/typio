@@ -109,23 +109,7 @@ endif
 
 if build_whisper or build_sherpa_onnx
     daemon_sources += files(
-        'voice/voice_service.c',
-        'voice/voice_proxy.c',
         'voice/pw_capture.c',
-    )
-endif
-
-if build_whisper
-    daemon_sources += files(
-        'voice/voice_whisper.c',
-        'voice/voice_engine_whisper.c',
-    )
-endif
-
-if build_sherpa_onnx
-    daemon_sources += files(
-        'voice/voice_sherpa.c',
-        'voice/voice_engine_sherpa.c',
     )
 endif
 
@@ -151,14 +135,6 @@ if build_whisper or build_sherpa_onnx
     daemon_deps += pipewire_dep
 endif
 
-if build_whisper
-    daemon_deps += [whisper_dep] + whisper_link_libs
-endif
-
-if build_sherpa_onnx
-    daemon_deps += sherpa_onnx_dep
-endif
-
 # ── Include directories ───────────────────────────────────────────────────
 daemon_inc = [
     top_inc,
@@ -179,6 +155,7 @@ endif
 
 if build_whisper or build_sherpa_onnx
     daemon_inc += include_directories('voice')
+    daemon_inc += include_directories('../core/src/voice')
 endif
 
 # ── Executable ────────────────────────────────────────────────────────────

@@ -48,10 +48,10 @@ pub union TypioConfigValueData {
 }
 
 impl Clone for TypioConfigValueData {
+    // Manual impl exists only to satisfy derive requirements on enclosing
+    // structs; the union is `Copy`, so a bitwise copy is the correct clone.
     fn clone(&self) -> Self {
-        // Union clone is unsafe; callers must know the active variant.
-        // This impl exists only to satisfy derive requirements on enclosing structs.
-        unsafe { std::ptr::read(self) }
+        *self
     }
 }
 
@@ -94,7 +94,7 @@ pub union TypioFieldDefault {
 
 impl Clone for TypioFieldDefault {
     fn clone(&self) -> Self {
-        unsafe { std::ptr::read(self) }
+        *self
     }
 }
 
@@ -223,11 +223,7 @@ pub struct TypioEvent {
 
 impl Clone for TypioEvent {
     fn clone(&self) -> Self {
-        Self {
-            type_: self.type_,
-            time: self.time,
-            data: self.data.clone(),
-        }
+        *self
     }
 }
 
@@ -269,6 +265,9 @@ pub struct TypioEngineInfo {
     pub api_version: c_int,
     pub struct_size: usize,
 }
+
+// SAFETY: All pointers point to immutable string literals used for C ABI.
+unsafe impl Sync for TypioEngineInfo {}
 
 use crate::TypioInstance;
 
@@ -312,6 +311,15 @@ pub struct TypioVoiceEngineOps {
     pub process_audio: Option<extern "C" fn(*mut TypioEngine, *const f32, usize) -> *mut c_char>,
 }
 
+
+/* -------------------------------------------------------------------------- */
+/* Voice session (opaque — defined in C)                                      */
+/* -------------------------------------------------------------------------- */
+
+#[repr(C)]
+pub struct TypioVoiceSession {
+    _opaque: [u8; 0],
+}
 
 /* -------------------------------------------------------------------------- */
 /* Instance config                                                            */

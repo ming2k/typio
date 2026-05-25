@@ -70,6 +70,8 @@ typedef struct TypioRimeState {
     bool initialized;
     bool maintenance_done;
     uint32_t deploy_id;
+    /* Back-pointer to the owning engine for notification callbacks */
+    struct TypioEngine *engine;
     /* Cached from the last notification callback */
     bool ascii_mode;
     bool ascii_mode_known;

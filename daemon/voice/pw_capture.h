@@ -1,10 +1,14 @@
 /**
  * @file pw_capture.h
  * @brief PipeWire audio capture for voice input
+ *
+ * Implements the TypioAudioSource vtable defined in core/include/typio/voice.h.
  */
 
 #ifndef TYPIO_PW_CAPTURE_H
 #define TYPIO_PW_CAPTURE_H
+
+#include "typio/voice.h"
 
 #include <stddef.h>
 
@@ -24,6 +28,9 @@ bool typio_pw_capture_start(TypioPwCapture *cap);
 void typio_pw_capture_stop(TypioPwCapture *cap);
 int typio_pw_capture_get_fd(TypioPwCapture *cap);
 void typio_pw_capture_dispatch(TypioPwCapture *cap);
+
+/** Return this capture as a TypioAudioSource for injection into core. */
+TypioAudioSource *typio_pw_capture_as_audio_source(TypioPwCapture *cap);
 
 #ifdef __cplusplus
 }

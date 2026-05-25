@@ -156,10 +156,9 @@ static TypioKeyEvent *key_event_for_char(char ch) {
 
 static TypioKeyEvent *shift_event(TypioEventType type) {
     return typio_key_event_new(type,
-                               42,
-                               TYPIO_KEY_Shift_L,
-                               type == TYPIO_EVENT_KEY_RELEASE ? TYPIO_MOD_SHIFT
-                                                               : TYPIO_MOD_NONE);
+                               65,
+                               TYPIO_KEY_space,
+                               TYPIO_MOD_SHIFT);
 }
 
 static TypioKeyEvent *keysym_press_event(uint32_t keycode, uint32_t keysym) {
@@ -172,6 +171,37 @@ static void reset_update_counters(CaptureState *capture) {
     }
 
     capture->composition_callback_count = 0;
+}
+
+static bool ensure_rime_user_data(const char *data_dir) {
+    char rime_dir[1024];
+    char cmd[4096];
+    if (snprintf(rime_dir, sizeof(rime_dir), "%s/rime", data_dir) >= (int)sizeof(rime_dir))
+        return false;
+    if (!ensure_dir(rime_dir))
+        return false;
+
+    /* Copy system rime data and fix default.yaml to only list existing schemas.
+     * Add a Shift+space binding that toggles ascii_mode for the shift tests. */
+    if (snprintf(cmd, sizeof(cmd),
+                 "cp -r /usr/share/rime-data/* '%s/' 2>/dev/null && "
+                 "python3 -c \""
+                 "import yaml, os, glob; "
+                 "files=glob.glob('/usr/share/rime-data/*.schema.yaml'); "
+                 "schemas=[os.path.basename(f)[:-12] for f in files]; "
+                 "data=yaml.safe_load(open('/usr/share/rime-data/default.yaml')); "
+                 "data['schema_list']=[{'schema':s} for s in schemas]; "
+                 "yaml.dump(data,open('%s/default.yaml','w'),allow_unicode=True,sort_keys=False) "
+                 "\" && "
+                 "cat > '%s/default.custom.yaml' <<'PYEOF'\n"
+                 "patch:\n"
+                 "  key_binder/bindings:\n"
+                 "    - {accept: \"Shift+space\", toggle: ascii_mode, when: always}\n"
+                 "PYEOF",
+                 rime_dir, rime_dir, rime_dir) >= (int)sizeof(cmd))
+        return false;
+
+    return system(cmd) == 0;
 }
 
 TEST(load_and_compose) {
@@ -193,6 +223,7 @@ TEST(load_and_compose) {
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
     ASSERT(ensure_dir(state_dir));
+    ASSERT(ensure_rime_user_data(data_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
@@ -264,6 +295,7 @@ TEST(switch_to_rime_first_shift_toggles_latin_mode) {
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
     ASSERT(ensure_dir(state_dir));
+    ASSERT(ensure_rime_user_data(data_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"basic\"\n"
                       "[engines.rime]\n"
@@ -325,6 +357,7 @@ TEST(switch_back_to_rime_first_shift_toggles_latin_mode) {
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
     ASSERT(ensure_dir(state_dir));
+    ASSERT(ensure_rime_user_data(data_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
@@ -390,6 +423,7 @@ TEST(refocus_preserves_latin_mode) {
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
     ASSERT(ensure_dir(state_dir));
+    ASSERT(ensure_rime_user_data(data_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
@@ -465,6 +499,7 @@ TEST(engine_switch_preserves_latin_mode_within_context) {
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
     ASSERT(ensure_dir(state_dir));
+    ASSERT(ensure_rime_user_data(data_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
@@ -541,6 +576,7 @@ TEST(selection_navigation_only_updates_candidates) {
     ASSERT(ensure_dir(config_dir));
     ASSERT(ensure_dir(data_dir));
     ASSERT(ensure_dir(state_dir));
+    ASSERT(ensure_rime_user_data(data_dir));
     ASSERT(write_file(config_path,
                       "default_engine = \"rime\"\n"
                       "[engines.rime]\n"
@@ -662,6 +698,7 @@ TEST(deploy_rime_config_rebuilds_generated_yaml) {
 }
 
 int main(void) {
+    setenv("TYPIO_RIME_SYNC_DEPLOY", "1", 1);
     printf("Running rime integration tests:\n");
     run_test_load_and_compose();
     run_test_switch_to_rime_first_shift_toggles_latin_mode();

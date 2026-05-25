@@ -6,6 +6,7 @@
 #include "key_route.h"
 #include "wl_frontend_internal.h"
 #include "typio/event.h"
+#include "typio/voice.h"
 
 #include <stdarg.h>
 #include <stdbool.h>
@@ -273,29 +274,34 @@ void typio_wl_commit(TypioWlFrontend *frontend) {
 }
 
 #ifdef HAVE_VOICE
-bool typio_voice_service_start(TypioVoiceService *svc) {
-    (void)svc;
+bool typio_voice_session_start(TypioVoiceSession *session) {
+    (void)session;
     return false;
 }
 
-void typio_voice_service_stop(TypioVoiceService *svc) {
-    (void)svc;
+void typio_voice_session_stop(TypioVoiceSession *session) {
+    (void)session;
 }
 
-bool typio_voice_service_is_available(TypioVoiceService *svc) {
-    (void)svc;
+bool typio_voice_session_is_available(const TypioVoiceSession *session) {
+    (void)session;
     return false;
 }
 
-const char *typio_voice_service_get_unavail_reason(TypioVoiceService *svc) {
-    (void)svc;
+const char *typio_voice_session_get_unavail_reason(const TypioVoiceSession *session) {
+    (void)session;
     return "disabled";
 }
 
-void typio_voice_service_set_idle_timeout_ms(TypioVoiceService *svc,
+void typio_voice_session_set_idle_timeout_ms(TypioVoiceSession *session,
                                               uint32_t timeout_ms) {
-    (void)svc;
+    (void)session;
     (void)timeout_ms;
+}
+
+TypioVoiceSession *typio_instance_get_voice_session(TypioInstance *instance) {
+    (void)instance;
+    return NULL;
 }
 #endif
 

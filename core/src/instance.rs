@@ -37,6 +37,11 @@ extern "C" {
     fn typio_engine_create_basic() -> *mut TypioEngine;
 }
 
+#[allow(improper_ctypes)]
+extern "C" {
+    pub(crate) fn typio_voice_session_free(session: *mut TypioVoiceSession);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Internal helpers                                                           */
 /* -------------------------------------------------------------------------- */
@@ -236,6 +241,7 @@ pub struct TypioInstance {
 
     pub(crate) rime_deploy_requested: bool,
     pub(crate) initialized: bool,
+    pub(crate) voice_session: *mut TypioVoiceSession,
 }
 
 impl Drop for TypioInstance {
@@ -268,6 +274,11 @@ impl Drop for TypioInstance {
         if !self.last_mode.icon_name.is_null() {
             unsafe { libc::free(self.last_mode.icon_name as *mut c_void) };
         }
+
+        if !self.voice_session.is_null() {
+            unsafe { typio_voice_session_free(self.voice_session) };
+            self.voice_session = ptr::null_mut();
+        }
     }
 }
 
@@ -290,11 +301,13 @@ impl TypioInstance {
     }
 
     pub(crate) fn register_builtin_engines(&mut self) {
-        if self.engine_manager.is_null() {
-            return;
-        }
+        // The guard lives inside the cfg block so the function body is empty
+        // (no dangling `return`) when no built-in engines are compiled in.
         #[cfg(feature = "build_basic_engine")]
         {
+            if self.engine_manager.is_null() {
+                return;
+            }
             let result = engine_manager::typio_engine_manager_register(
                 self.engine_manager,
                 typio_engine_create_basic,
@@ -418,6 +431,7 @@ pub extern "C" fn typio_instance_new_with_config(config: *const TypioInstanceCon
         log_user_data,
         rime_deploy_requested: false,
         initialized: false,
+        voice_session: ptr::null_mut(),
     });
 
     Box::into_raw(instance)
@@ -562,4 +576,27 @@ pub extern "C" fn typio_instance_shutdown(instance: *mut TypioInstance) {
     }
     let inst = unsafe { &mut *instance };
     inst.shutdown();
+}
+
+#[no_mangle]
+pub extern "C" fn typio_instance_get_voice_session(
+    instance: *mut TypioInstance,
+) -> *mut TypioVoiceSession {
+    if instance.is_null() {
+        return ptr::null_mut();
+    }
+    unsafe { (*instance).voice_session }
+}
+
+#[no_mangle]
+pub extern "C" fn typio_instance_set_voice_session(
+    instance: *mut TypioInstance,
+    session: *mut TypioVoiceSession,
+) {
+    if instance.is_null() {
+        return;
+    }
+    unsafe {
+        (*instance).voice_session = session;
+    }
 }

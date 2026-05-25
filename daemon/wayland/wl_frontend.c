@@ -17,7 +17,8 @@
 
 #include <time.h>
 #ifdef HAVE_VOICE
-#include "../voice/voice_engine.h"
+#include "typio/voice.h"
+#include "../voice/pw_capture.h"
 #endif
 
 #include <wayland-client.h>
@@ -188,6 +189,55 @@ static void frontend_setup_config_watch(TypioWlFrontend *frontend) {
 
 #ifdef HAVE_VOICE
 static void frontend_init_voice(TypioWlFrontend *frontend, TypioInstance *instance);
+
+static void pw_audio_cb(const float *samples, size_t count, void *user_data) {
+    typio_voice_session_feed_audio((TypioVoiceSession *)user_data, samples, count);
+}
+
+static void voice_event_cb(const TypioVoiceSessionEvent *event, void *user_data) {
+    TypioWlFrontend *frontend = user_data;
+    switch (event->type) {
+    case TYPIO_VOICE_EVENT_STATE_CHANGE:
+        switch (event->state) {
+        case TYPIO_VOICE_STATE_LOADING:
+            typio_wl_text_ui_backend_show_status(frontend->text_ui_backend,
+                                                  "[Loading voice model...]");
+            break;
+        case TYPIO_VOICE_STATE_RECORDING:
+            typio_wl_text_ui_backend_show_status(frontend->text_ui_backend,
+                                                  "[Recording...]");
+            break;
+        case TYPIO_VOICE_STATE_PROCESSING:
+            typio_wl_text_ui_backend_show_status(frontend->text_ui_backend,
+                                                  "[Processing...]");
+            break;
+        case TYPIO_VOICE_STATE_IDLE:
+        default:
+            typio_wl_text_ui_backend_hide_status(frontend->text_ui_backend);
+            break;
+        }
+        break;
+    case TYPIO_VOICE_EVENT_RESULT:
+        if (event->text && event->text[0]) {
+            typio_log(TYPIO_LOG_INFO, "Voice raw: \"%s\"", event->text);
+            typio_voice_filter_tags_inplace(event->text);
+            const char *p = event->text;
+            while (*p == ' ') p++;
+            if (*p != '\0') {
+                typio_log(TYPIO_LOG_INFO, "Voice result: \"%s\"", p);
+                if (frontend->session && frontend->session->ctx) {
+                    typio_input_context_commit(frontend->session->ctx, p);
+                }
+            }
+            free(event->text);  /* ownership transferred to callback */
+        }
+        break;
+    case TYPIO_VOICE_EVENT_ERROR:
+        typio_wl_text_ui_backend_show_status(frontend->text_ui_backend,
+                                              event->error);
+        break;
+    }
+}
 #endif
 static void frontend_init_resume_signal(TypioWlFrontend *frontend);
 
@@ -459,23 +509,30 @@ static void frontend_init_voice(TypioWlFrontend *frontend,
     if (voice_engine)
         typio_engine_manager_set_active_voice(mgr, voice_engine);
 
-    frontend->voice = typio_voice_service_new(instance);
-    if (frontend->voice) {
+    TypioVoiceSession *voice = typio_voice_session_new(instance);
+    if (voice) {
+        TypioPwCapture *pw = typio_pw_capture_new(pw_audio_cb, voice);
+        if (pw) {
+            typio_voice_session_set_audio_source(voice,
+                typio_pw_capture_as_audio_source(pw));
+        }
+        typio_voice_session_set_callback(voice, voice_event_cb, frontend);
+
         int idle_ms = typio_config_get_int(inst_config,
                                            "voice.unload_after_ms", 480000);
         if (idle_ms < 0) idle_ms = 0;
-        typio_voice_service_set_idle_timeout_ms(frontend->voice,
-                                                 (uint32_t)idle_ms);
+        typio_voice_session_set_idle_timeout_ms(voice, (uint32_t)idle_ms);
+        typio_instance_set_voice_session(instance, voice);
     }
-    if (frontend->voice && typio_voice_service_is_available(frontend->voice))
+    if (voice && typio_voice_session_is_available(voice))
         typio_log(TYPIO_LOG_INFO, "Voice input service ready");
-    else if (frontend->voice)
+    else if (voice)
         typio_log(TYPIO_LOG_INFO, "Voice input service created but no model");
     else
         typio_log(TYPIO_LOG_WARNING, "Failed to create voice input service");
 
-    if (frontend->voice && frontend->aux_handler_count < 4) {
-        TypioWlAuxHandler *h = typio_wl_aux_handler_for_voice(frontend->voice, frontend);
+    if (voice && frontend->aux_handler_count < 4) {
+        TypioWlAuxHandler *h = typio_wl_aux_handler_for_voice(voice, frontend);
         if (h)
             frontend->aux_handlers[frontend->aux_handler_count++] = h;
     }
@@ -608,9 +665,14 @@ void typio_wl_frontend_destroy(TypioWlFrontend *frontend) {
 
     /* Clean up optional subsystems */
 #ifdef HAVE_VOICE
-    if (frontend->voice) {
-        typio_voice_service_free(frontend->voice);
-        frontend->voice = nullptr;
+    {
+        TypioVoiceSession *voice = typio_instance_get_voice_session(frontend->instance);
+        if (voice) {
+            /* Detach audio source (daemon-owned) before freeing session. */
+            typio_voice_session_set_audio_source(voice, NULL);
+            typio_voice_session_free(voice);
+            typio_instance_set_voice_session(frontend->instance, NULL);
+        }
     }
 #endif
     for (size_t i = 0; i < frontend->aux_handler_count; i++) {

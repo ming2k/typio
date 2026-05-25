@@ -228,6 +228,12 @@ void typio_instance_set_focused_context(TypioInstance *instance,
                                         TypioInputContext *ctx);
 bool typio_instance_rime_deploy_requested(TypioInstance *instance);
 
+/* Voice session — created by frontend, owned by instance */
+struct TypioVoiceSession;
+struct TypioVoiceSession *typio_instance_get_voice_session(TypioInstance *instance);
+void typio_instance_set_voice_session(TypioInstance *instance,
+                                      struct TypioVoiceSession *session);
+
 #ifdef __cplusplus
 }
 #endif

@@ -22,6 +22,8 @@
 #define TYPIO_PW_CHANNELS 1
 
 struct TypioPwCapture {
+    TypioAudioSource base;      /* Must be first field for casting */
+
     struct pw_thread_loop *loop;
     struct pw_stream *stream;
 
@@ -104,6 +106,21 @@ static const struct pw_stream_events stream_events = {
     .process = on_process,
 };
 
+/* Forward declarations for TypioAudioSourceOps vtable */
+static bool pw_cap_start(TypioAudioSource *source);
+static void pw_cap_stop(TypioAudioSource *source);
+static void pw_cap_free(TypioAudioSource *source);
+static int pw_cap_get_fd(TypioAudioSource *source);
+static void pw_cap_dispatch(TypioAudioSource *source);
+
+static const TypioAudioSourceOps pw_audio_ops = {
+    .start    = pw_cap_start,
+    .stop     = pw_cap_stop,
+    .free     = pw_cap_free,
+    .get_fd   = pw_cap_get_fd,
+    .dispatch = pw_cap_dispatch,
+};
+
 TypioPwCapture *typio_pw_capture_new(TypioPwCaptureCallback cb,
                                      void *user_data) {
     TypioPwCapture *cap = calloc(1, sizeof(TypioPwCapture));
@@ -132,11 +149,14 @@ TypioPwCapture *typio_pw_capture_new(TypioPwCaptureCallback cb,
         return nullptr;
     }
 
+    cap->base.ops = &pw_audio_ops;
+
     typio_log(TYPIO_LOG_INFO, "PipeWire capture initialized");
     return cap;
 }
 
-void typio_pw_capture_free(TypioPwCapture *cap) {
+static void pw_cap_free(TypioAudioSource *source) {
+    TypioPwCapture *cap = (TypioPwCapture *)source;
     if (!cap) {
         return;
     }
@@ -152,6 +172,10 @@ void typio_pw_capture_free(TypioPwCapture *cap) {
 
     pw_deinit();
     free(cap);
+}
+
+void typio_pw_capture_free(TypioPwCapture *cap) {
+    pw_cap_free(&cap->base);
 }
 
 static struct pw_stream *pw_capture_make_stream(TypioPwCapture *cap) {
@@ -172,7 +196,8 @@ static struct pw_stream *pw_capture_make_stream(TypioPwCapture *cap) {
         cap);
 }
 
-bool typio_pw_capture_start(TypioPwCapture *cap) {
+static bool pw_cap_start(TypioAudioSource *source) {
+    TypioPwCapture *cap = (TypioPwCapture *)source;
     if (!cap || cap->capturing) {
         return false;
     }
@@ -228,7 +253,8 @@ bool typio_pw_capture_start(TypioPwCapture *cap) {
     return true;
 }
 
-void typio_pw_capture_stop(TypioPwCapture *cap) {
+static void pw_cap_stop(TypioAudioSource *source) {
+    TypioPwCapture *cap = (TypioPwCapture *)source;
     if (!cap || !cap->capturing) {
         return;
     }
@@ -244,7 +270,8 @@ void typio_pw_capture_stop(TypioPwCapture *cap) {
               cap->frames_received);
 }
 
-int typio_pw_capture_get_fd(TypioPwCapture *cap) {
+static int pw_cap_get_fd(TypioAudioSource *source) {
+    TypioPwCapture *cap = (TypioPwCapture *)source;
     if (!cap || !cap->loop) {
         return -1;
     }
@@ -253,7 +280,27 @@ int typio_pw_capture_get_fd(TypioPwCapture *cap) {
     return -1;
 }
 
-void typio_pw_capture_dispatch([[maybe_unused]] TypioPwCapture *cap) {
+static void pw_cap_dispatch([[maybe_unused]] TypioAudioSource *source) {
     /* With pw_thread_loop, dispatching is handled internally.
      * This is a no-op but kept for API completeness. */
+}
+
+int typio_pw_capture_get_fd(TypioPwCapture *cap) {
+    return pw_cap_get_fd(&cap->base);
+}
+
+void typio_pw_capture_dispatch([[maybe_unused]] TypioPwCapture *cap) {
+    pw_cap_dispatch(&cap->base);
+}
+
+bool typio_pw_capture_start(TypioPwCapture *cap) {
+    return pw_cap_start(&cap->base);
+}
+
+void typio_pw_capture_stop(TypioPwCapture *cap) {
+    pw_cap_stop(&cap->base);
+}
+
+TypioAudioSource *typio_pw_capture_as_audio_source(TypioPwCapture *cap) {
+    return cap ? &cap->base : NULL;
 }

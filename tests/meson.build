@@ -42,12 +42,9 @@ test_preedit_format = executable('test_preedit_format',
 )
 test('preedit_format', test_preedit_format)
 
-test_voice_proxy = executable('test_voice_proxy',
-    ['test_voice_proxy.c', '../daemon/voice/voice_proxy.c'],
-    include_directories: [include_directories('../daemon/voice'), core_test_inc],
-    dependencies: [thread_dep, typio_core_dep],
-)
-test('voice_proxy', test_voice_proxy, timeout: 30)
+# test_voice_proxy removed — voice proxy is now Rust-only (proxy.rs).
+# Rust unit tests for VoiceBackendProxy would live in core/src/voice/proxy.rs
+# under #[cfg(test)]; there is no C equivalent to test anymore.
 
 test_uds_ipc = executable('test_uds_ipc',
     [
@@ -142,7 +139,7 @@ test_key_route = executable('test_key_route',
     ['test_key_route.c', '../daemon/wayland/key_route.c'],
     include_directories: [top_inc, include_directories('../daemon/wayland-protocols'),
         core_test_inc, daemon_test_inc, include_directories('../daemon/tray'),
-        include_directories('../daemon/voice'), wayland_test_inc],
+        include_directories('../core/src/voice'), wayland_test_inc],
     dependencies: [typio_core_dep, xkbcommon_dep],
 )
 test('key_route', test_key_route)

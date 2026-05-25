@@ -21,6 +21,7 @@
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <libgen.h>
 
 #define TYPIO_UDS_BACKLOG      8
 #define TYPIO_UDS_MAX_CLIENTS  16
@@ -267,6 +268,23 @@ TypioUdsServer *typio_uds_server_new(const char *socket_path)
 
     for (int i = 0; i < TYPIO_UDS_MAX_CLIENTS; i++)
         srv->clients[i].fd = -1;
+
+    /* Ensure parent directory exists */
+    {
+        char *path_copy = strdup(socket_path);
+        if (path_copy) {
+            char *dir = dirname(path_copy);
+            if (dir && strcmp(dir, ".") != 0 && strcmp(dir, "/") != 0) {
+                struct stat st;
+                if (stat(dir, &st) != 0) {
+                    if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
+                        typio_log(TYPIO_LOG_WARNING, "UDS failed to create directory %s: %s", dir, strerror(errno));
+                    }
+                }
+            }
+            free(path_copy);
+        }
+    }
 
     /* Stale socket cleanup */
     if (access(socket_path, F_OK) == 0 && stale_socket_probe(socket_path)) {

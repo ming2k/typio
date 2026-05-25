@@ -28,16 +28,14 @@ pub extern "C" fn typio_engine_manager_load_dir(manager: *mut TypioEngineManager
     };
 
     let mut count = 0;
-    for entry in dir {
-        if let Ok(entry) = entry {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.ends_with(".so") {
-                let full_path = entry.path();
-                if let Ok(c_path) = CString::new(full_path.to_string_lossy().as_bytes()) {
-                    if super::typio_engine_manager_load(manager, c_path.as_ptr()) == TypioResult::TypioOk {
-                        count += 1;
-                    }
+    for entry in dir.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.ends_with(".so") {
+            let full_path = entry.path();
+            if let Ok(c_path) = CString::new(full_path.to_string_lossy().as_bytes()) {
+                if super::typio_engine_manager_load(manager, c_path.as_ptr()) == TypioResult::TypioOk {
+                    count += 1;
                 }
             }
         }
@@ -131,7 +129,7 @@ pub extern "C" fn typio_engine_manager_load(manager: *mut TypioEngineManager, pa
         factory: Some(factory),
         info_func: Some(info_func),
         info,
-        instance: ptr::null_mut(),
+        c_engine: ptr::null_mut(),
         is_builtin: false,
     };
 

@@ -4,6 +4,13 @@
 //! It is intended to gradually replace the C runtime implementations
 //! in `core/src/runtime/`.
 
+// This crate is a C-ABI boundary: almost every public function is a
+// `#[no_mangle] extern "C"` entry point that dereferences raw pointers passed
+// in by the C caller. Marking them all `unsafe` does not change the C-callable
+// signature and only adds noise, so the lint is allowed crate-wide. The safety
+// contract lives at the call sites in `daemon/` and the engine plugins.
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 pub mod build_info;
 pub mod config;
 pub mod config_schema;
@@ -17,6 +24,7 @@ pub mod log;
 pub mod rime_schema_list;
 pub mod string;
 pub mod types;
+pub mod voice;
 
 // Re-export at crate root so cbindgen can see them easily
 pub use build_info::*;

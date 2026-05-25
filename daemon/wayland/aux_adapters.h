@@ -29,8 +29,8 @@ TypioWlAuxHandler *typio_wl_aux_handler_for_tray(TypioTray *tray);
 #endif
 
 #ifdef HAVE_VOICE
-#include "voice/voice_service.h"
-TypioWlAuxHandler *typio_wl_aux_handler_for_voice(TypioVoiceService *voice,
+#include "typio/voice.h"
+TypioWlAuxHandler *typio_wl_aux_handler_for_voice(TypioVoiceSession *voice,
                                                     struct TypioWlFrontend *frontend);
 #endif
 

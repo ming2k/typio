@@ -13,8 +13,7 @@ pub use switch::*;
 
 use crate::config;
 use crate::engine::{
-    typio_engine_activate, typio_engine_free,
-    typio_engine_set_config_path,
+    rust_adapter, typio_engine_set_config_path,
 };
 use crate::log::_typio_log;
 use crate::types::*;
@@ -68,14 +67,28 @@ pub(crate) struct EngineEntry {
     pub(crate) factory: Option<TypioEngineFactory>,
     pub(crate) info_func: Option<TypioEngineInfoFunc>,
     pub(crate) info: *const TypioEngineInfo,
-    pub(crate) instance: *mut TypioEngine,
+    /// Wrapper `TypioEngine` shell.  Always a unified-wrapper (built-in) or
+    /// a `CPluginAdapter` wrapper around a plugin engine.
+    pub(crate) c_engine: *mut TypioEngine,
     pub(crate) is_builtin: bool,
+}
+
+impl EngineEntry {
+    /// # Safety
+    /// `c_engine` must be a valid wrapper created by `create_wrapper_typio_engine`.
+    // The engine lives behind a raw `*mut TypioEngine`; `&self` only holds that
+    // pointer, so returning `&mut` to the pointee does not alias `self`. The
+    // caller upholds exclusivity (single-threaded engine dispatch).
+    #[allow(clippy::mut_from_ref)]
+    pub(crate) unsafe fn rust_engine(&self) -> Option<&mut dyn crate::engine::Engine> {
+        rust_adapter::get_engine(self.c_engine)
+    }
 }
 
 impl Drop for EngineEntry {
     fn drop(&mut self) {
-        if !self.instance.is_null() {
-            typio_engine_free(self.instance);
+        if !self.c_engine.is_null() {
+            unsafe { rust_adapter::destroy_wrapper_typio_engine(self.c_engine) };
         }
         if let Some(handle) = self.library_handle.take() {
             unsafe { dlclose(handle.0) };
@@ -168,7 +181,7 @@ impl TypioEngineManager {
     }
 
     pub(crate) fn name_is_keyboard(&self, name: &str) -> bool {
-        self.find_entry(name).map_or(false, |e| {
+        self.find_entry(name).is_some_and(|e| {
             !e.info.is_null() && unsafe { (*e.info).type_ } == TypioEngineType::TypioEngineTypeKeyboard
         })
     }
@@ -313,7 +326,7 @@ impl TypioEngineManager {
             None => return TypioResult::TypioErrorInvalidArgument,
         };
 
-        if !entry.instance.is_null() {
+        if !entry.c_engine.is_null() {
             return TypioResult::TypioOk;
         }
 
@@ -325,68 +338,67 @@ impl TypioEngineManager {
             }
         };
 
-        entry.instance = unsafe { factory() };
-        if entry.instance.is_null() {
+        let raw_engine = unsafe { factory() };
+        if raw_engine.is_null() {
             log_msg(TypioLogLevel::TypioLogError, &format!("Failed to create engine instance: {}", entry.name.to_string_lossy()));
             return TypioResult::TypioErrorEngineLoadFailed;
         }
 
+        // Built-in wrappers already have the unified vtable; plugin engines need
+        // a CPluginAdapter wrapper so engine-manager internals speak only traits.
+        let is_unified = unsafe {
+            !(*raw_engine).base_ops.is_null() && (*raw_engine).base_ops == &rust_adapter::UNIFIED_BASE_OPS
+        };
+
+        let c_engine = if is_unified {
+            raw_engine
+        } else {
+            // The adapter takes ownership of `raw_engine` (freed via its Drop).
+            let adapter = unsafe { crate::engine::CPluginAdapter::new(raw_engine) };
+            let wrapper = crate::engine::create_wrapper_typio_engine(Box::new(adapter), unsafe { (*raw_engine).info });
+            if wrapper.is_null() {
+                // create_wrapper dropped the adapter Box on failure, which already
+                // freed `raw_engine`; freeing again here would double-free.
+                return TypioResult::TypioErrorEngineLoadFailed;
+            }
+            wrapper
+        };
+
+        entry.c_engine = c_engine;
+
         let info = if entry.info.is_null() {
             log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: missing info", entry.name.to_string_lossy()));
-            typio_engine_free(entry.instance);
-            entry.instance = ptr::null_mut();
             return TypioResult::TypioErrorInvalidArgument;
         } else {
             unsafe { &*entry.info }
         };
 
-        let engine = unsafe { &mut *entry.instance };
-
-        if engine.base_ops.is_null() {
-            log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: missing base_ops", entry.name.to_string_lossy()));
-            typio_engine_free(entry.instance);
-            entry.instance = ptr::null_mut();
-            return TypioResult::TypioErrorInvalidArgument;
-        }
-
-        match info.type_ {
-            TypioEngineType::TypioEngineTypeKeyboard => {
-                if engine.keyboard.is_null() {
+        // Validate trait capabilities instead of raw vtables.
+        unsafe {
+            let engine = match entry.rust_engine() {
+                Some(e) => e,
+                None => {
+                    log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: failed to extract Rust engine", entry.name.to_string_lossy()));
+                    return TypioResult::TypioErrorInvalidArgument;
+                }
+            };
+            match info.type_ {
+                TypioEngineType::TypioEngineTypeKeyboard if engine.as_keyboard().is_none() => {
                     log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: keyboard engine missing keyboard ops", entry.name.to_string_lossy()));
-                    typio_engine_free(entry.instance);
-                    entry.instance = ptr::null_mut();
                     return TypioResult::TypioErrorInvalidArgument;
                 }
-                let kb = unsafe { &*engine.keyboard };
-                if kb.process_key.is_none() {
-                    log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: keyboard engine missing process_key", entry.name.to_string_lossy()));
-                    typio_engine_free(entry.instance);
-                    entry.instance = ptr::null_mut();
-                    return TypioResult::TypioErrorInvalidArgument;
-                }
-            }
-            TypioEngineType::TypioEngineTypeVoice => {
-                if engine.voice.is_null() {
+                TypioEngineType::TypioEngineTypeVoice if engine.as_voice().is_none() => {
                     log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: voice engine missing voice ops", entry.name.to_string_lossy()));
-                    typio_engine_free(entry.instance);
-                    entry.instance = ptr::null_mut();
                     return TypioResult::TypioErrorInvalidArgument;
                 }
-                let voice = unsafe { &*engine.voice };
-                if voice.process_audio.is_none() {
-                    log_msg(TypioLogLevel::TypioLogError, &format!("Engine {}: voice engine missing process_audio", entry.name.to_string_lossy()));
-                    typio_engine_free(entry.instance);
-                    entry.instance = ptr::null_mut();
-                    return TypioResult::TypioErrorInvalidArgument;
-                }
+                _ => {}
             }
-            _ => {}
         }
 
         let engine_name = entry.name.to_string_lossy().to_string();
         let instance_ptr = self.instance;
         if let Some(path) = Self::engine_config_path(instance_ptr, &engine_name) {
-            typio_engine_set_config_path(entry.instance, path.as_ptr());
+            typio_engine_set_config_path(entry.c_engine, path.as_ptr());
         }
 
         TypioResult::TypioOk
@@ -394,19 +406,29 @@ impl TypioEngineManager {
 
     pub(crate) fn try_restore_engine(&self, entry: Option<&EngineEntry>, slot_name: &str) {
         if let Some(entry) = entry {
-            if !entry.instance.is_null() {
-                let result = typio_engine_activate(entry.instance, self.instance);
-                if result != TypioResult::TypioOk {
-                    log_msg(TypioLogLevel::TypioLogError, &format!(
-                        "Failed to restore previous {} engine '{}' after switch failure: {:?}",
-                        slot_name, entry.name.to_string_lossy(), result
-                    ));
+            if entry.c_engine.is_null() {
+                return;
+            }
+            unsafe {
+                if let Some(engine) = entry.rust_engine() {
+                    if !(*entry.c_engine).initialized {
+                        let result = engine.init(&mut *self.instance);
+                        if result != TypioResult::TypioOk {
+                            log_msg(TypioLogLevel::TypioLogError, &format!(
+                                "Failed to re-init previous {} engine '{}' after switch failure: {:?}",
+                                slot_name, entry.name.to_string_lossy(), result
+                            ));
+                            return;
+                        }
+                        (*entry.c_engine).initialized = true;
+                    }
+                    (*entry.c_engine).active = true;
                 }
             }
         }
     }
 
-    pub(crate) fn rebind_focused_context(&self, old_engine: *mut TypioEngine, new_engine: *mut TypioEngine) {
+    pub(crate) fn rebind_focused_context(&self, old_entry: Option<&EngineEntry>, new_entry: Option<&EngineEntry>) {
         if self.instance.is_null() {
             return;
         }
@@ -415,12 +437,10 @@ impl TypioEngineManager {
             return;
         }
 
-        if !old_engine.is_null() {
-            let engine = unsafe { &*old_engine };
-            if !engine.base_ops.is_null() {
-                let ops = unsafe { &*engine.base_ops };
-                if let Some(focus_out) = ops.focus_out {
-                    focus_out(old_engine, ctx);
+        if let Some(entry) = old_entry {
+            unsafe {
+                if let Some(engine) = entry.rust_engine() {
+                    engine.focus_out(ctx);
                 }
             }
         }
@@ -428,23 +448,15 @@ impl TypioEngineManager {
         typio_instance_clear_status_icon(self.instance);
         typio_instance_clear_mode(self.instance);
 
-        if !new_engine.is_null() {
-            let engine = unsafe { &*new_engine };
-            if !engine.base_ops.is_null() {
-                let ops = unsafe { &*engine.base_ops };
-                if let Some(reset) = ops.reset {
-                    reset(new_engine, ctx);
-                }
-                if let Some(focus_in) = ops.focus_in {
-                    focus_in(new_engine, ctx);
-                }
-            }
-            if !engine.keyboard.is_null() {
-                let kb = unsafe { &*engine.keyboard };
-                if let Some(get_mode) = kb.get_mode {
-                    let mode = get_mode(new_engine, ctx);
-                    if !mode.is_null() {
-                        typio_instance_notify_mode(self.instance, mode);
+        if let Some(entry) = new_entry {
+            unsafe {
+                if let Some(engine) = entry.rust_engine() {
+                    engine.reset(ctx);
+                    engine.focus_in(ctx);
+                    if let Some(kb) = engine.as_keyboard() {
+                        if let Some(mode) = kb.get_mode(ctx) {
+                            typio_instance_notify_mode(self.instance, mode);
+                        }
                     }
                 }
             }
@@ -534,7 +546,7 @@ pub extern "C" fn typio_engine_manager_register(
         factory: Some(factory),
         info_func: Some(info_func),
         info,
-        instance: ptr::null_mut(),
+        c_engine: ptr::null_mut(),
         is_builtin: true,
     };
 

@@ -1,5 +1,9 @@
 #include "wl_frontend_internal.h"
 
+#ifdef HAVE_VOICE
+#include "typio/voice.h"
+#endif
+
 #include "typio/config.h"
 #include "typio/engine.h"
 #include "typio/engine_manager.h"
@@ -74,11 +78,15 @@ static void runtime_config_refresh(TypioWlFrontend *frontend) {
             voice->base_ops->reload_config(voice);
         }
 
-        if (frontend->voice) {
-            typio_voice_service_reload(frontend->voice);
-            typio_log(TYPIO_LOG_INFO,
-                      "Config reload: voice available=%s",
-                      typio_voice_service_is_available(frontend->voice) ? "yes" : "no");
+        {
+            TypioVoiceSession *voice =
+                typio_instance_get_voice_session(frontend->instance);
+            if (voice) {
+                typio_voice_session_reload_engine(voice);
+                typio_log(TYPIO_LOG_INFO,
+                          "Config reload: voice available=%s",
+                          typio_voice_session_is_available(voice) ? "yes" : "no");
+            }
         }
     }
 #endif

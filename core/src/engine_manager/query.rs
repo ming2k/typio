@@ -170,18 +170,28 @@ pub extern "C" fn typio_engine_manager_get_engine(
     };
 
     let entry = &mut manager_ref.entries[idx];
-    if entry.instance.is_null() {
+    if entry.c_engine.is_null() {
         if let Some(factory) = entry.factory {
-            entry.instance = unsafe { factory() };
-            if entry.instance.is_null() {
+            let raw = unsafe { factory() };
+            if raw.is_null() {
                 log_msg(TypioLogLevel::TypioLogError, &format!("Failed to create engine instance: {}", name_str));
                 return ptr::null_mut();
             }
+            // Plugin engines need wrapping; built-in wrappers are already unified.
+            let is_unified = unsafe {
+                !(*raw).base_ops.is_null() && (*raw).base_ops == &crate::engine::rust_adapter::UNIFIED_BASE_OPS
+            };
+            entry.c_engine = if is_unified {
+                raw
+            } else {
+                let adapter = unsafe { crate::engine::CPluginAdapter::new(raw) };
+                crate::engine::create_wrapper_typio_engine(Box::new(adapter), unsafe { (*raw).info })
+            };
             if let Some(path) = TypioEngineManager::engine_config_path(manager_ref.instance, &name_str) {
-                typio_engine_set_config_path(entry.instance, path.as_ptr());
+                typio_engine_set_config_path(entry.c_engine, path.as_ptr());
             }
         }
     }
 
-    entry.instance
+    entry.c_engine
 }

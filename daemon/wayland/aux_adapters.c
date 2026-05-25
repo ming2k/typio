@@ -109,59 +109,29 @@ TypioWlAuxHandler *typio_wl_aux_handler_for_tray(TypioTray *tray) {
 #endif
 
 #ifdef HAVE_VOICE
-#include "voice/voice_service.h"
-#include "wl_frontend_internal.h"
+#include "typio/voice.h"
 
 typedef struct {
-    TypioVoiceService *voice;
+    TypioVoiceSession *voice;
     TypioWlFrontend *frontend;
 } VoiceAuxData;
 
 static int voice_aux_fd(void *userdata) {
     VoiceAuxData *d = (VoiceAuxData *)userdata;
-    return d ? typio_voice_service_get_fd(d->voice) : -1;
+    return d ? typio_voice_session_get_fd(d->voice) : -1;
 }
 
 static void voice_aux_ready(void *userdata) {
     VoiceAuxData *d = (VoiceAuxData *)userdata;
-    if (!d || !d->voice || !d->frontend) return;
-
-    TypioInputContext *ctx = (d->frontend->session)
-                             ? d->frontend->session->ctx : nullptr;
-
-    char *text = typio_voice_service_collect(d->voice);
-
-    /* Hide the voice status indicator (replaces preedit-string hack). */
-    typio_wl_text_ui_backend_hide_status(d->frontend->text_ui_backend);
-
-    if (text && ctx) {
-        typio_log(TYPIO_LOG_INFO, "Voice raw: \"%s\"", text);
-        typio_voice_filter_tags_inplace(text);
-
-        const char *p = text;
-        while (*p == ' ') p++;
-        if (*p != '\0') {
-            typio_log(TYPIO_LOG_INFO, "Voice result: \"%s\"", p);
-            typio_wl_commit_string(d->frontend, p);
-        } else {
-            typio_log(TYPIO_LOG_INFO, "Voice result: (empty after tag filter)");
-        }
-    } else if (!text || !text[0]) {
-        typio_log(TYPIO_LOG_INFO, "Voice result: (empty)");
-    } else {
-        typio_log(TYPIO_LOG_WARNING,
-                  "Voice result discarded: no active input context");
-    }
-
-    typio_wl_commit(d->frontend);
-    free(text);
+    if (!d || !d->voice) return;
+    typio_voice_session_dispatch(d->voice);
 }
 
 static void voice_aux_free(void *userdata) {
     free(userdata);
 }
 
-TypioWlAuxHandler *typio_wl_aux_handler_for_voice(TypioVoiceService *voice,
+TypioWlAuxHandler *typio_wl_aux_handler_for_voice(TypioVoiceSession *voice,
                                                     TypioWlFrontend *frontend) {
     if (!voice) return nullptr;
     VoiceAuxData *d = calloc(1, sizeof(VoiceAuxData));
