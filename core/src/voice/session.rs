@@ -350,7 +350,9 @@ pub extern "C" fn typio_voice_session_start(session: *mut TypioVoiceSession) -> 
         return true;
     }
 
-    // Trigger lazy load via focus_in if model not ready.
+    // Load the model on demand via focus_in. This is synchronous: when it
+    // returns the model is ready (or load failed), so we proceed straight to
+    // recording or report failure below — no intermediate "loading" state.
     unsafe {
         if !session.voice_engine.load(Ordering::SeqCst).is_null()
             && !(*session.voice_engine.load(Ordering::SeqCst)).base_ops.is_null()
@@ -361,14 +363,6 @@ pub extern "C" fn typio_voice_session_start(session: *mut TypioVoiceSession) -> 
                 drop(state);
                 focus_in(session.voice_engine.load(Ordering::SeqCst), std::ptr::null_mut());
                 state = session.state.lock().unwrap();
-
-                if !engine_has_voice(session.voice_engine.load(Ordering::SeqCst)) {
-                    *state = VoiceState::Loading;
-                    session.auto_start_on_load.store(true, Ordering::SeqCst);
-                    drop(state);
-                    session.fire_state_change(VoiceState::Loading);
-                    return true;
-                }
             }
         }
     }
@@ -452,7 +446,7 @@ pub extern "C" fn typio_voice_session_stop(session: *mut TypioVoiceSession) {
             std::mem::take(&mut *buf)
         };
         let audio = prepare_audio(&mut audio.clone());
-        if audio.is_empty() {
+        let result = if audio.is_empty() {
             crate::voice::log_msg(
                 TypioLogLevel::TypioLogWarning,
                 "Voice inference: no audio captured or usable",
@@ -469,24 +463,41 @@ pub extern "C" fn typio_voice_session_stop(session: *mut TypioVoiceSession) {
                     &format!("Voice inference: processing {} samples", audio.len()),
                 );
                 unsafe {
-                    let e = match crate::engine::rust_adapter::get_engine(engine) {
-                        Some(e) => e,
+                    match crate::engine::rust_adapter::get_engine(engine) {
+                        Some(e) => match e.as_voice() {
+                            Some(v) => v.process_audio(&audio),
+                            None => {
+                                crate::voice::log_msg(TypioLogLevel::TypioLogWarning, "Voice inference: engine is not a voice engine");
+                                None
+                            }
+                        },
                         None => {
                             crate::voice::log_msg(TypioLogLevel::TypioLogWarning, "Voice inference: no Rust engine available");
-                            return None;
+                            None
                         }
-                    };
-                    let voice = match e.as_voice() {
-                        Some(v) => v,
-                        None => {
-                            crate::voice::log_msg(TypioLogLevel::TypioLogWarning, "Voice inference: engine is not a voice engine");
-                            return None;
-                        }
-                    };
-                    voice.process_audio(&audio)
+                    }
                 }
             }
+        };
+
+        // Wake the event loop so dispatch() joins this thread and delivers the
+        // result. Without this signal the session stays stuck in Processing and
+        // the indicator never clears.
+        let fd = session_arc
+            .event_fd
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|efd| efd.as_raw_fd())
+            .unwrap_or(-1);
+        if fd >= 0 {
+            let val: u64 = 1;
+            unsafe {
+                let _ = libc::write(fd, &val as *const _ as *const libc::c_void, 8);
+            }
         }
+
+        result
     });
 
     *session.infer_handle.lock().unwrap() = Some(handle);

@@ -21,8 +21,6 @@ use crate::{TypioInstance, TypioInputContext};
 use std::ffi::{CStr, CString};
 #[cfg(any(feature = "have_sherpa_onnx", feature = "have_whisper"))]
 use std::sync::Arc;
-#[cfg(any(feature = "have_sherpa_onnx", feature = "have_whisper"))]
-use std::thread;
 
 #[cfg(feature = "have_sherpa_onnx")]
 mod sherpa {
@@ -90,29 +88,11 @@ mod sherpa {
         }
 
         fn focus_in(&mut self, _ctx: *mut TypioInputContext) {
-            let proxy = Arc::clone(&self.proxy);
-            if proxy.is_ready() {
-                return;
-            }
-            if !proxy.reload_begin() {
-                crate::voice::log_msg(
-                    TypioLogLevel::TypioLogInfo,
-                    "Sherpa-ONNX: async load already in progress",
-                );
+            if self.proxy.is_ready() {
                 return;
             }
 
             let instance = self.instance.load(std::sync::atomic::Ordering::SeqCst);
-            let fd = if instance.is_null() {
-                -1
-            } else {
-                let voice = crate::instance::typio_instance_get_voice_session(instance);
-                if voice.is_null() {
-                    -1
-                } else {
-                    crate::voice::session::typio_voice_session_get_fd(voice)
-                }
-            };
 
             let data_dir = crate::instance::typio_instance_get_data_dir(instance);
             let data_dir = if data_dir.is_null() {
@@ -145,38 +125,30 @@ mod sherpa {
                 }
             }
 
-            thread::spawn(move || {
-                let lang_ptr = language
-                    .as_ref()
-                    .map(|s| s.as_ptr())
-                    .unwrap_or(std::ptr::null());
-                let model_ptr = model
-                    .as_ref()
-                    .map(|s| s.as_ptr())
-                    .unwrap_or(std::ptr::null());
-                let backend = unsafe {
-                    typio_voice_backend_sherpa_new(data_dir.as_ptr(), lang_ptr, model_ptr)
-                };
-                let backend = if backend.is_null() {
-                    None
-                } else {
-                    unsafe { CBackend::new(backend) }.map(Arc::new)
-                };
+            // Load synchronously: when focus_in returns the model is ready, so
+            // the caller (voice session start) begins recording immediately.
+            // This matches the original C behaviour; the previous async load
+            // left the session stuck in the "loading" state.
+            let lang_ptr = language.as_ref().map(|s| s.as_ptr()).unwrap_or(std::ptr::null());
+            let model_ptr = model.as_ref().map(|s| s.as_ptr()).unwrap_or(std::ptr::null());
+            let backend = unsafe {
+                typio_voice_backend_sherpa_new(data_dir.as_ptr(), lang_ptr, model_ptr)
+            };
+            let backend = if backend.is_null() {
+                None
+            } else {
+                unsafe { CBackend::new(backend) }.map(Arc::new)
+            };
+            self.proxy.set_impl(backend);
 
-                proxy.reload_end(backend);
-
-                if fd >= 0 {
-                    let val: u64 = 1;
-                    unsafe {
-                        let _ = libc::write(fd, &val as *const _ as *const libc::c_void, 8);
-                    }
-                }
-
+            if self.proxy.is_ready() {
+                crate::voice::log_msg(TypioLogLevel::TypioLogInfo, "Sherpa-ONNX: model loaded");
+            } else {
                 crate::voice::log_msg(
-                    TypioLogLevel::TypioLogInfo,
-                    "Sherpa-ONNX: model loaded asynchronously",
+                    TypioLogLevel::TypioLogWarning,
+                    "Sherpa-ONNX: failed to load model",
                 );
-            });
+            }
         }
 
         fn focus_out(&mut self, _ctx: *mut TypioInputContext) {}
@@ -268,29 +240,11 @@ mod whisper {
         }
 
         fn focus_in(&mut self, _ctx: *mut TypioInputContext) {
-            let proxy = Arc::clone(&self.proxy);
-            if proxy.is_ready() {
-                return;
-            }
-            if !proxy.reload_begin() {
-                crate::voice::log_msg(
-                    TypioLogLevel::TypioLogInfo,
-                    "Whisper: async load already in progress",
-                );
+            if self.proxy.is_ready() {
                 return;
             }
 
             let instance = self.instance.load(std::sync::atomic::Ordering::SeqCst);
-            let fd = if instance.is_null() {
-                -1
-            } else {
-                let voice = crate::instance::typio_instance_get_voice_session(instance);
-                if voice.is_null() {
-                    -1
-                } else {
-                    crate::voice::session::typio_voice_session_get_fd(voice)
-                }
-            };
 
             let data_dir = crate::instance::typio_instance_get_data_dir(instance);
             let data_dir = if data_dir.is_null() {
@@ -323,34 +277,26 @@ mod whisper {
                 }
             }
 
-            thread::spawn(move || {
-                let lang_ptr = language
-                    .as_ref()
-                    .map(|s| s.as_ptr())
-                    .unwrap_or(std::ptr::null());
-                let backend = unsafe {
-                    typio_voice_backend_whisper_new(data_dir.as_ptr(), lang_ptr, model.as_ptr())
-                };
-                let backend = if backend.is_null() {
-                    None
-                } else {
-                    unsafe { CBackend::new(backend) }.map(Arc::new)
-                };
+            // Load synchronously (see SherpaEngine::focus_in).
+            let lang_ptr = language.as_ref().map(|s| s.as_ptr()).unwrap_or(std::ptr::null());
+            let backend = unsafe {
+                typio_voice_backend_whisper_new(data_dir.as_ptr(), lang_ptr, model.as_ptr())
+            };
+            let backend = if backend.is_null() {
+                None
+            } else {
+                unsafe { CBackend::new(backend) }.map(Arc::new)
+            };
+            self.proxy.set_impl(backend);
 
-                proxy.reload_end(backend);
-
-                if fd >= 0 {
-                    let val: u64 = 1;
-                    unsafe {
-                        let _ = libc::write(fd, &val as *const _ as *const libc::c_void, 8);
-                    }
-                }
-
+            if self.proxy.is_ready() {
+                crate::voice::log_msg(TypioLogLevel::TypioLogInfo, "Whisper: model loaded");
+            } else {
                 crate::voice::log_msg(
-                    TypioLogLevel::TypioLogInfo,
-                    "Whisper: model loaded asynchronously",
+                    TypioLogLevel::TypioLogWarning,
+                    "Whisper: failed to load model",
                 );
-            });
+            }
         }
 
         fn focus_out(&mut self, _ctx: *mut TypioInputContext) {}
