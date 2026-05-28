@@ -1,3 +1,5 @@
+# THE REPO IS MIGRATED, THE NEWER AND ANDVANCED ONE IS LOCATED [typio-ime](https://github.com/typio-ime/typiod-wayland)
+
 # Typio
 
 Typio is a native Wayland input method daemon. The low-level Wayland frontend and engine plugins remain in C; business logic (config, input context, engine orchestration) is written in Rust for memory safety and maintainability. It runs on the Wayland text-input/input-method protocol stack and provides a daemon frontend, a shared core library, a plugin engine ABI, and a GTK4 control panel.
